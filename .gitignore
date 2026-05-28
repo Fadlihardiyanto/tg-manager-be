@@ -1,0 +1,363 @@
+# =============================================================================
+# TG-Manager .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Environment & Secrets
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+*.key
+*.pem
+*.cert
+*.crt
+secrets/
+credentials/
+
+# -----------------------------------------------------------------------------
+# Go
+# -----------------------------------------------------------------------------
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+build/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+*.cover
+*.coverprofile
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Go build cache
+.cache/
+
+# -----------------------------------------------------------------------------
+# IDE & Editors
+# -----------------------------------------------------------------------------
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# GoLand / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# -----------------------------------------------------------------------------
+# OS Files
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# -----------------------------------------------------------------------------
+# Logs & Temporary Files
+# -----------------------------------------------------------------------------
+logs/
+*.log
+log/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Application logs
+/var/log/
+*.log.*
+*.log.gz
+
+# PID files
+*.pid
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.sql.gz
+*.dump
+pgdata/
+postgres_data/
+
+# Database backups
+backups/
+*.backup
+
+# -----------------------------------------------------------------------------
+# Docker & Container
+# -----------------------------------------------------------------------------
+.dockerignore
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# Docker volumes (if accidentally created locally)
+volumes/
+
+# -----------------------------------------------------------------------------
+# Cloud & Infrastructure
+# -----------------------------------------------------------------------------
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Ansible
+*.retry
+
+# -----------------------------------------------------------------------------
+# Build & CI/CD
+# -----------------------------------------------------------------------------
+.build/
+.deploy/
+.ci/
+
+# Air (hot reload) tmp directory
+tmp/
+.air/
+
+# -----------------------------------------------------------------------------
+# Testing & Coverage
+# -----------------------------------------------------------------------------
+testdata/output/
+test-results/
+*.testcoverage
+mock_*.go
+*_mock.go
+
+# -----------------------------------------------------------------------------
+# Package Managers
+# -----------------------------------------------------------------------------
+# npm (if using for frontend tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# -----------------------------------------------------------------------------
+# Generated Files
+# -----------------------------------------------------------------------------
+# Swagger / OpenAPI
+swagger.json
+swagger.yaml
+api-docs/
+
+# Protocol Buffers
+*.pb.go
+
+# Wire (dependency injection)
+wire_gen.go
+
+# gRPC
+*.grpc.go
+
+# SQL generated code (sqlc, sqlboiler, etc.)
+# Uncomment if using code generators
+# internal/db/generated/
+# models/
+
+# -----------------------------------------------------------------------------
+# Security Scanning
+# -----------------------------------------------------------------------------
+.trivy/
+.snyk
+.nancy/
+
+# -----------------------------------------------------------------------------
+# Documentation (generated)
+# -----------------------------------------------------------------------------
+docs/build/
+site/
+
+# -----------------------------------------------------------------------------
+# Monitoring & Profiling
+# -----------------------------------------------------------------------------
+*.pprof
+*.prof
+cpu.prof
+mem.prof
+profile.out
+
+# Prometheus data
+prometheus_data/
+
+# Grafana data
+grafana_data/
+
+# -----------------------------------------------------------------------------
+# Storage & Uploads
+# -----------------------------------------------------------------------------
+uploads/
+storage/
+public/uploads/
+minio_data/
+
+# -----------------------------------------------------------------------------
+# Cache
+# -----------------------------------------------------------------------------
+.cache/
+*.cache
+redis_data/
+cache/
+
+# -----------------------------------------------------------------------------
+# Message Queue
+# -----------------------------------------------------------------------------
+rabbitmq_data/
+.rabbitmq/
+
+# -----------------------------------------------------------------------------
+# Migrations (optional - depends on workflow)
+# -----------------------------------------------------------------------------
+# Uncomment if you don't want to commit migration files
+# migrations/*.sql
+
+# But DO commit these
+!migrations/.gitkeep
+
+# -----------------------------------------------------------------------------
+# Development Tools
+# -----------------------------------------------------------------------------
+# Mockgen
+**/mock_*.go
+
+# Air config (if machine-specific)
+.air.toml.local
+
+# Delve debugger
+__debug_bin
+
+# -----------------------------------------------------------------------------
+# Project Specific
+# -----------------------------------------------------------------------------
+# Telegram bot tokens (if accidentally saved)
+*bot_token*
+*telegram_token*
+
+# Payment gateway credentials (if accidentally saved)
+*midtrans*
+*xendit*
+*payment_key*
+
+# Encryption keys (if accidentally saved)
+*encryption_key*
+*aes_key*
+
+# JWT secrets (if accidentally saved)
+*jwt_secret*
+
+# -----------------------------------------------------------------------------
+# Archives
+# -----------------------------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# -----------------------------------------------------------------------------
+# Miscellaneous
+# -----------------------------------------------------------------------------
+.envrc
+.tool-versions
+.nvmrc
+.ruby-version
+.python-version
+
+# Scratch files
+scratch/
+notes/
+TODO.md
+NOTES.md
+
+# =============================================================================
+# Important Files to ALWAYS Commit:
+# =============================================================================
+# !.env.example
+# !.gitignore
+# !.dockerignore
+# !Dockerfile
+# !docker-compose.yml
+# !Makefile
+# !README.md
+# !go.mod
+# !go.sum
+# !migrations/*.sql
+# =============================================================================
+
+# all file .md
+*.md

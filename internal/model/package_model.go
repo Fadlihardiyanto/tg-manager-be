@@ -1,0 +1,41 @@
+package model
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+)
+
+// Package Models
+type PackageCreateRequest struct {
+	Name         string          `json:"name" validate:"required,min=3"`
+	Price        decimal.Decimal `json:"price" validate:"required,min=0"`
+	DurationDays int             `json:"duration_days" validate:"required,min=1"`
+	IsAllAccess  bool            `json:"is_all_access" validate:"omitempty"`
+}
+
+type PackageResponse struct {
+	ID           uuid.UUID       `json:"id"`
+	ClientID     uuid.UUID       `json:"client_id"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Price        decimal.Decimal `json:"price"`
+	DurationDays int             `json:"duration_days"`
+	IsAllAccess  bool            `json:"is_all_access"`
+	IsActive     bool            `json:"is_active"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+type PackageUpdateRequest struct {
+	Name         string          `json:"name" validate:"omitempty,min=3"`
+	Price        decimal.Decimal `json:"price" validate:"omitempty,min=0"`
+	DurationDays int             `json:"duration_days" validate:"omitempty,min=1"`
+	IsAllAccess  *bool           `json:"is_all_access" validate:"omitempty"`
+}
+
+// Package-Group Association
+type PackageGroupAssociateRequest struct {
+	GroupIDs []uuid.UUID `json:"group_ids" validate:"required"`
+}

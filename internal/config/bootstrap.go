@@ -1,0 +1,402 @@
+package config
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/bot/handler"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/controller"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/route"
+	deliveryMsg "github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/messaging"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	gatewayMsg "github.com/Fadlihardiyanto/telegram-management-app/internal/gateway/messaging"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
+	pkg_jwt "github.com/Fadlihardiyanto/telegram-management-app/pkg/jwt"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/mailer"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/midtrans"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/otp"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rabbitmq"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
+	"github.com/go-playground/validator/v10"
+	"github.com/gofiber/fiber/v3"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+)
+
+// BootstrapConfig holds all initialized infrastructure dependencies.
+// This struct is passed to Bootstrap() for wiring repositories, usecases, and controllers.
+type BootstrapConfig struct {
+	Config             *Config
+	App                *fiber.App
+	Log                *zap.Logger
+	DB                 *entity.Database
+	Jwt                *pkg_jwt.JWTConfig
+	Redis              *redis.Client
+	RabbitMQ           *rabbitmq.Connection
+	Validate           *validator.Validate
+	TelegramFactory    telegram.BotFactory
+	Publisher          *gatewayMsg.RabbitMQPublisher
+	Consumer           *deliveryMsg.MessageConsumer
+	OtpService         *otp.EmailOTPService
+	Mailer             mailer.Sender
+	SMTPMailer         mailer.Sender
+	Midtrans           *midtrans.Client
+	OutboxWorker       *deliveryMsg.OutboxWorker
+	OrderCleanupWorker *deliveryMsg.OrderCleanupWorker
+	EnforcerWorker     *deliveryMsg.EnforcerWorker
+	GroupSyncWorker    *deliveryMsg.GroupSyncWorker
+}
+
+// BootstrapOption allows selective initialization of components.
+type BootstrapOption func(*bootstrapOptions)
+
+type bootstrapOptions struct {
+	withPublisher bool
+	withConsumer  bool
+	withFiber     bool
+}
+
+// WithPublisher enables Publisher initialization (used by cmd/web).
+func WithPublisher() BootstrapOption {
+	return func(o *bootstrapOptions) {
+		o.withPublisher = true
+	}
+}
+
+// WithConsumer enables Consumer initialization (used by cmd/worker).
+func WithConsumer() BootstrapOption {
+	return func(o *bootstrapOptions) {
+		o.withConsumer = true
+	}
+}
+
+// WithFiber enables Fiber app initialization (used by cmd/web).
+func WithFiber() BootstrapOption {
+	return func(o *bootstrapOptions) {
+		o.withFiber = true
+	}
+}
+
+// NewBootstrapConfig initializes infrastructure based on the provided options.
+//
+// Usage:
+//
+//	Web:    NewBootstrapConfig(cfg, WithFiber(), WithPublisher())
+//	Worker: NewBootstrapConfig(cfg, WithConsumer())
+func NewBootstrapConfig(cfg *Config, opts ...BootstrapOption) (*BootstrapConfig, error) {
+	// Parse options
+	options := &bootstrapOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	// 1. Setup Zap logger
+	logger, err := NewZapLogger(&cfg.App)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: failed to create logger: %w", err)
+	}
+
+	logger.Info("bootstrap: starting application",
+		zap.String("app", cfg.App.Name),
+		zap.String("env", cfg.App.Env),
+		zap.Int("port", cfg.App.Port),
+	)
+
+	// 2. Initialize Database
+	db, err := NewDatabase(&cfg.Database, logger)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: %w", err)
+	}
+
+	// 3. Initialize Redis (needed by both web and worker for rate limiting, distributed lock, session)
+	redisClient, err := NewRedisClient(&cfg.Redis, logger)
+	if err != nil {
+		CloseDatabase(db, logger)
+		return nil, fmt.Errorf("bootstrap: %w", err)
+	}
+
+	// 4. Initialize RabbitMQ connection (shared by publisher and consumer)
+	var rabbitConn *rabbitmq.Connection
+	if options.withPublisher || options.withConsumer {
+		rabbitConn, err = NewRabbitMQ(&cfg.RabbitMQ, logger)
+		if err != nil {
+			redisClient.Close()
+			CloseDatabase(db, logger)
+			return nil, fmt.Errorf("bootstrap: %w", err)
+		}
+	}
+
+	// 5. Create Publisher (Gateway - Outbound Adapter) — only for web
+	var publisher *gatewayMsg.RabbitMQPublisher
+	if options.withPublisher && rabbitConn != nil {
+		publisher, err = gatewayMsg.NewRabbitMQPublisher(rabbitConn, logger)
+		if err != nil {
+			rabbitConn.Close()
+			redisClient.Close()
+			CloseDatabase(db, logger)
+			return nil, fmt.Errorf("bootstrap: %w", err)
+		}
+		logger.Info("bootstrap: publisher initialized")
+	}
+
+	// 6. Create Consumer (Delivery - Inbound Adapter) — only for worker
+	var consumer *deliveryMsg.MessageConsumer
+	if options.withConsumer && rabbitConn != nil {
+		consumer = deliveryMsg.NewMessageConsumer(rabbitConn, cfg.Worker.PrefetchCount, logger)
+		logger.Info("bootstrap: consumer initialized")
+	}
+
+	// 7. Initialize Fiber — only for web
+	var fiberApp *fiber.App
+	if options.withFiber {
+		fiberApp = NewFiber(&cfg.App)
+		logger.Info("bootstrap: fiber initialized")
+	}
+
+	// 8. Initialize Validator
+	validate := NewValidator()
+
+	// 9. Initialize Telegram Bot Factory
+	telegramFactory := telegram.NewBotFactory(time.Duration(cfg.Telegram.APITimeout)*time.Second, logger)
+
+	jwtConfig := NewJWTConfig(cfg)
+
+	smtpMailer := mailer.New(mailer.Config{
+		Host:      cfg.SMTP.Host,
+		Port:      cfg.SMTP.Port,
+		Username:  cfg.SMTP.Username,
+		Password:  cfg.SMTP.Password,
+		FromEmail: cfg.SMTP.FromEmail,
+		FromName:  cfg.SMTP.FromName,
+	})
+
+	mailerSender := mailer.Sender(smtpMailer)
+	if options.withPublisher && publisher != nil {
+		mailerSender = gatewayMsg.NewQueueMailer(publisher)
+	}
+
+	otpService := otp.NewEmailOTPService(redisClient)
+
+	// Midtrans client (used by both web and worker for billing-related operations)
+	midtransClient := midtrans.NewClient(midtrans.Config{
+		ServerKey: cfg.Midtrans.ServerKey,
+		ClientKey: cfg.Midtrans.ClientKey,
+		BaseURL:   cfg.Midtrans.BaseURL,
+		SnapURL:   cfg.Midtrans.SnapURL,
+	})
+
+	logger.Info("bootstrap: all infrastructure initialized successfully")
+
+	return &BootstrapConfig{
+		Config:          cfg,
+		App:             fiberApp,
+		Log:             logger,
+		DB:              db,
+		Redis:           redisClient,
+		RabbitMQ:        rabbitConn,
+		Validate:        validate,
+		TelegramFactory: telegramFactory,
+		Publisher:       publisher,
+		Consumer:        consumer,
+		Jwt:             jwtConfig,
+		Mailer:          mailerSender,
+		SMTPMailer:      smtpMailer,
+		OtpService:      otpService,
+		Midtrans:        midtransClient,
+	}, nil
+}
+
+func BootstrapWeb(config *BootstrapConfig) {
+	clientRepo := repository.NewClientRepository(config.Log)
+	botRepo := repository.NewTelegramBotRepository()
+	groupRepo := repository.NewTelegramGroupRepository()
+	packageRepo := repository.NewPackageRepository()
+	subscriptionRepo := repository.NewSubscriptionRepository()
+	orderRepo := repository.NewOrderRepository()
+	auditLogRepo := repository.NewAuditLogRepository()
+	telegramUserRepo := repository.NewTelegramUserRepository()
+	discountRepo := repository.NewMemberDiscountRepository()
+	platformDiscountRepo := repository.NewPlatformDiscountRepository()
+	outboxRepo := repository.NewOutboxRepository()
+
+	adminUserRepo := repository.NewAdminUserRepository(config.Log)
+	adminPermissionRepo := repository.NewAdminPermissionRepository(config.Log)
+	adminRoleRepo := repository.NewAdminRoleRepository(config.Log)
+	userRepo := repository.NewUserRepository(config.Log)
+	clientUserRepo := repository.NewClientUserRepository(config.Log)
+	planRepo := repository.NewPlatformPlanRepository()
+	billingRepo := repository.NewClientBillingRepository()
+	tenantPermissionRepo := repository.NewTenantPermissionRepository(config.Log)
+
+	// Usecases
+	adminAuthUC := usecase.NewAdminAuthUseCase(config.DB, adminUserRepo, adminPermissionRepo, config.Log, config.Redis, config.OtpService, config.Mailer, outboxRepo, config.Jwt, config.Config.App.FrontendURL)
+	adminPermissionUC := usecase.NewAdminPermissionUseCase(config.DB, adminPermissionRepo, config.Log)
+	adminRoleUC := usecase.NewAdminRoleUseCase(config.DB, adminRoleRepo, adminPermissionRepo, config.Log)
+	adminUserMgmtUC := usecase.NewAdminUserManagementUseCase(config.DB, adminUserRepo, adminRoleRepo, config.Log)
+	adminTenantUC := usecase.NewAdminTenantUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log)
+	adminTenantUserUC := usecase.NewAdminTenantUserUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log)
+	planUC := usecase.NewPlatformPlanUseCase(config.DB, planRepo, billingRepo, config.Log)
+	platformDiscountUC := usecase.NewPlatformDiscountUseCase(config.DB, platformDiscountRepo, config.Log)
+	memberDiscountUC := usecase.NewMemberDiscountUseCase(config.DB, discountRepo, config.Log)
+	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, config.Midtrans, config.Redis, config.Log)
+	memberOrderUC := usecase.NewMemberOrderUseCase(config.DB, orderRepo, subscriptionRepo, packageRepo, telegramUserRepo, clientRepo, discountRepo, memberDiscountUC, outboxRepo, config.Redis, config.Log, config.Config.App.EncryptionKey, config.Config.Midtrans.BaseURL, config.Config.Midtrans.SnapURL)
+	tenantAuthUC := usecase.NewTenantAuthUseCase(config.DB, userRepo, clientRepo, clientUserRepo, tenantPermissionRepo, outboxRepo, config.Log, config.Redis, config.Jwt, config.Config.App.FrontendURL)
+	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, config.Log)
+	auditLogUC := usecase.NewAuditLogUseCase(config.DB.Gorm, auditLogRepo, config.Log)
+	botUC := usecase.NewTelegramBotUseCase(config.DB, botRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey, config.Config.Telegram.WebhookBaseURL)
+	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey)
+	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, config.Log)
+
+	// Bot Handlers & Registry
+	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	packagesHandler := handler.NewPackagesHandler(config.DB, packageRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+
+	cmdRegistry := handler.NewRegistry()
+	cmdRegistry.Register(startHandler)
+	cmdRegistry.Register(packagesHandler)
+
+	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, cmdRegistry, config.Log)
+
+	// Controllers
+	adminAuthCtrl := controller.NewAdminAuthController(adminAuthUC, config.Log, config.Validate)
+	adminRoleCtrl := controller.NewAdminRoleController(adminRoleUC, config.Log, config.Validate)
+	adminPermissionCtrl := controller.NewAdminPermissionController(adminPermissionUC, config.Log)
+	adminUserCtrl := controller.NewAdminUserController(adminRoleUC, adminUserMgmtUC, config.Log, config.Validate)
+	adminClientCtrl := controller.NewAdminClientController(adminTenantUC, config.Log, config.Validate)
+	adminClientUserCtrl := controller.NewAdminClientUserController(adminTenantUserUC, config.Log, config.Validate)
+	planCtrl := controller.NewPlatformPlanController(planUC, config.Log, config.Validate)
+	billingCtrl := controller.NewClientBillingController(billingUC, config.Log, config.Validate)
+	memberOrderCtrl := controller.NewMemberOrderController(memberOrderUC, config.Log, config.Validate)
+	tenantAuthCtrl := controller.NewTenantAuthController(tenantAuthUC, config.Log, config.Validate)
+	botCtrl := controller.NewTelegramBotController(botUC, config.Log, config.Validate)
+	groupCtrl := controller.NewTelegramGroupController(groupUC, config.Log, config.Validate)
+	packageCtrl := controller.NewPackageController(packageUC, config.Log, config.Validate)
+	webhookCtrl := controller.NewTelegramWebhookController(webhookUC, config.Log)
+	memberDiscountCtrl := controller.NewMemberDiscountController(memberDiscountUC, config.Log, config.Validate)
+	tenantAnalyticsCtrl := controller.NewTenantAnalyticsController(tenantAnalyticsUC, config.Log)
+	auditLogCtrl := controller.NewAuditLogController(auditLogUC, config.Log)
+	// Routes
+	adminRoute := &route.AdminRouteConfig{
+		App:                       config.App,
+		Log:                       config.Log,
+		AdminAuthController:       adminAuthCtrl,
+		AdminRoleController:       adminRoleCtrl,
+		AdminPermissionController: adminPermissionCtrl,
+		AdminUserController:       adminUserCtrl,
+		AdminClientController:     adminClientCtrl,
+		AdminClientUserController: adminClientUserCtrl,
+		PlatformPlanController:    planCtrl,
+		ClientBillingController:   billingCtrl,
+		AuditLogController:        auditLogCtrl,
+		AdminAuthMiddleware:       middleware.AdminAuth(config.Jwt),
+	}
+	adminRoute.Setup()
+
+	tenantRoute := &route.TenantRouteConfig{
+		App:                       config.App,
+		Log:                       config.Log,
+		TenantAuthController:      tenantAuthCtrl,
+		TelegramBotController:     botCtrl,
+		TelegramGroupController:   groupCtrl,
+		PackageController:         packageCtrl,
+		MemberDiscountController:  memberDiscountCtrl,
+		TenantAnalyticsController: tenantAnalyticsCtrl,
+		AuditLogController:        auditLogCtrl,
+		ClientBillingController:   billingCtrl,
+		TenantAuthMiddleware:      middleware.TenantAuth(config.Jwt),
+	}
+	tenantRoute.Setup()
+
+	publicRoute := &route.PublicRouteConfig{
+		App:                       config.App,
+		Log:                       config.Log,
+		TelegramWebhookController: webhookCtrl,
+		ClientBillingController:   billingCtrl,
+		MemberOrderController:     memberOrderCtrl,
+	}
+	publicRoute.Setup()
+}
+
+// BootstrapWorker wires dependencies for the background worker.
+// Flow: Repositories → UseCases → Consumer Handlers → Register to Consumer.
+func BootstrapWorker(config *BootstrapConfig) {
+	subscriptionRepo := repository.NewSubscriptionRepository()
+	orderRepo := repository.NewOrderRepository()
+	outboxRepo := repository.NewOutboxRepository()
+	packageRepo := repository.NewPackageRepository()
+	botRepo := repository.NewTelegramBotRepository()
+	groupRepo := repository.NewTelegramGroupRepository()
+
+	notificationHandler := deliveryMsg.NewNotificationHandler(config.SMTPMailer, config.Log)
+	telegramActionHandler := deliveryMsg.NewTelegramActionHandler(config.DB.Gorm, packageRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	gatekeepingHandler := deliveryMsg.NewGatekeepingHandler(config.DB.Gorm, subscriptionRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	enforcerHandler := deliveryMsg.NewEnforcerHandler(config.DB.Gorm, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+
+	config.Consumer.RegisterHandler(rabbitmq.QueueTelegramAction, telegramActionHandler.Handle)
+	config.Consumer.RegisterHandler(rabbitmq.QueueNotification, notificationHandler.Handle)
+	config.Consumer.RegisterHandler(rabbitmq.QueueGatekeeping, gatekeepingHandler.Handle)
+	config.Consumer.RegisterHandler(rabbitmq.QueueEnforcer, enforcerHandler.Handle)
+
+	// Instantiate OutboxWorker for background event polling/publishing in background worker
+	config.OutboxWorker = deliveryMsg.NewOutboxWorker(config.DB, outboxRepo, config.Publisher, config.Log)
+
+	// Instantiate OrderCleanupWorker
+	discountRepo := repository.NewMemberDiscountRepository()
+	memberDiscountUC := usecase.NewMemberDiscountUseCase(config.DB, discountRepo, config.Log)
+	config.OrderCleanupWorker = deliveryMsg.NewOrderCleanupWorker(config.DB.Gorm, orderRepo, memberDiscountUC, config.Log)
+
+	// Instantiate EnforcerWorker
+	config.EnforcerWorker = deliveryMsg.NewEnforcerWorker(config.DB.Gorm, subscriptionRepo, outboxRepo, config.Log)
+
+	// Instantiate GroupSyncWorker
+	config.GroupSyncWorker = deliveryMsg.NewGroupSyncWorker(config.DB.Gorm, groupRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+}
+
+// Shutdown gracefully closes all infrastructure connections.
+// Shutdown order is reverse of initialization to ensure in-flight work finishes first.
+func (b *BootstrapConfig) Shutdown() {
+	b.Log.Info("bootstrap: shutting down...")
+
+	// 1. Stop consumer first (stop receiving new messages)
+	if b.Consumer != nil {
+		b.Consumer.Stop()
+	}
+
+	// 2. Shutdown Fiber (stop receiving new HTTP requests)
+	if b.App != nil {
+		if err := b.App.Shutdown(); err != nil {
+			b.Log.Error("bootstrap: failed to shutdown fiber", zap.Error(err))
+		}
+	}
+
+	// 3. Close publisher
+	if b.Publisher != nil {
+		if err := b.Publisher.Close(); err != nil {
+			b.Log.Error("bootstrap: failed to close publisher", zap.Error(err))
+		}
+	}
+
+	// 4. Close RabbitMQ
+	if b.RabbitMQ != nil {
+		if err := b.RabbitMQ.Close(); err != nil {
+			b.Log.Error("bootstrap: failed to close rabbitmq", zap.Error(err))
+		}
+	}
+
+	// 5. Close Redis
+	if b.Redis != nil {
+		if err := b.Redis.Close(); err != nil {
+			b.Log.Error("bootstrap: failed to close redis", zap.Error(err))
+		}
+	}
+
+	// 6. Close Database (last — in-flight queries should finish first)
+	CloseDatabase(b.DB, b.Log)
+
+	b.Log.Info("bootstrap: shutdown complete")
+
+	// Flush any buffered log entries
+	_ = b.Log.Sync()
+}

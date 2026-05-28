@@ -1,0 +1,302 @@
+version: "3.9"
+
+# =============================================================================
+# TG-Manager — Telegram SaaS Management Application
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: tgmanager_app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      - APP_ENV=development
+      - APP_PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-tgmanager_db}
+      - DB_USER=${DB_USER:-tgmanager}
+      - DB_PASSWORD=${DB_PASSWORD:-tgmanager_secure_password}
+      - DB_SSLMODE=disable
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-tgmanager}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-tgmanager_rabbitmq_password}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
+      - GOTENBERG_URL=http://gotenberg:3000
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-tgmanager_minio_access}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-tgmanager_minio_secret_change_me}
+      - MINIO_BUCKET=${MINIO_BUCKET:-tg-manager-storage}
+      - MINIO_USE_SSL=false
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+      - TZ=Asia/Jakarta
+    volumes:
+      - ./:/app
+      - tgmanager_go_modules:/go/pkg/mod
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - tgmanager_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: tgmanager_worker
+    restart: unless-stopped
+    command: ["air", "-c", ".air.worker.toml"]
+    environment:
+      - APP_ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-tgmanager_db}
+      - DB_USER=${DB_USER:-tgmanager}
+      - DB_PASSWORD=${DB_PASSWORD:-tgmanager_secure_password}
+      - DB_SSLMODE=disable
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-tgmanager}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-tgmanager_rabbitmq_password}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
+      - GOTENBERG_URL=http://gotenberg:3000
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-tgmanager_minio_access}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-tgmanager_minio_secret_change_me}
+      - MINIO_BUCKET=${MINIO_BUCKET:-tg-manager-storage}
+      - MINIO_USE_SSL=false
+      - TZ=Asia/Jakarta
+    volumes:
+      - ./:/app
+      - tgmanager_go_modules:/go/pkg/mod
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - tgmanager_network
+
+  migrate:
+    image: migrate/migrate:v4.17.0
+    container_name: tgmanager_migrate
+    volumes:
+      - ./migrations:/migrations
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://${DB_USER:-tgmanager}:${DB_PASSWORD:-tgmanager_secure_password}@postgres:5432/${DB_NAME:-tgmanager_db}?sslmode=disable",
+        "up",
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tgmanager_network
+    restart: on-failure
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tgmanager_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${DB_NAME:-tgmanager_db}
+      - POSTGRES_USER=${DB_USER:-tgmanager}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-tgmanager_secure_password}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - TZ=Asia/Jakarta
+      - PGTZ=Asia/Jakarta
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tgmanager_network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-tgmanager} -d ${DB_NAME:-tgmanager_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: tgmanager_redis
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--requirepass",
+        "${REDIS_PASSWORD:-}",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--maxmemory",
+        "128mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tgmanager_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: tgmanager_rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-tgmanager}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-tgmanager_rabbitmq_password}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_VHOST:-/}
+      - TZ=Asia/Jakarta
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./configs/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./configs/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    networks:
+      - tgmanager_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: tgmanager_gotenberg
+    restart: unless-stopped
+    command:
+      [
+        "gotenberg",
+        "--chromium-disable-javascript=false",
+        "--chromium-allow-list=.*",
+        "--api-timeout=30s",
+        "--libreoffice-disable-routes=true",
+        "--log-level=info",
+      ]
+    ports:
+      - "3000:3000"
+    networks:
+      - tgmanager_network
+
+  minio:
+    image: minio/minio:latest
+    container_name: tgmanager_minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-tgmanager_minio_access}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-tgmanager_minio_secret_change_me}
+      - TZ=Asia/Jakarta
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - tgmanager_network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: tgmanager_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 ${MINIO_ACCESS_KEY:-tgmanager_minio_access} ${MINIO_SECRET_KEY:-tgmanager_minio_secret_change_me};
+      mc mb --ignore-existing myminio/${MINIO_BUCKET_NAME:-tg-manager-storage};
+      mc anonymous set download myminio/${MINIO_BUCKET_NAME:-tg-manager-storage};
+      echo 'MinIO bucket siap!';
+      exit 0;
+      "
+    networks:
+      - tgmanager_network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tgmanager_pgadmin
+    restart: unless-stopped
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin123}
+    ports:
+      - "8081:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - tgmanager_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    name: tgmanager_postgres_data
+  pgadmin_data:
+    name: tgmanager_pgadmin_data
+  redis_data:
+    name: tgmanager_redis_data
+  rabbitmq_data:
+    name: tgmanager_rabbitmq_data
+  minio_data:
+    name: tgmanager_minio_data
+  tgmanager_go_modules:
+    name: tgmanager_go_modules
+
+networks:
+  tgmanager_network:
+    driver: bridge
+    name: tgmanager_network

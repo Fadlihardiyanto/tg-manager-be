@@ -1,0 +1,84 @@
+package repository
+
+import (
+	"context"
+	"errors"
+
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+type ISubscriptionRepository interface {
+	IRepository[entity.Subscription]
+	HasActiveSubscriptionForGroup(ctx context.Context, tx *gorm.DB, telegramUserID int64, telegramChatID int64) (bool, error)
+	FindByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Subscription, error)
+	FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error)
+	Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
+	Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
+}
+
+type SubscriptionRepository struct {
+	Repository[entity.Subscription]
+}
+
+func NewSubscriptionRepository() ISubscriptionRepository {
+	return &SubscriptionRepository{}
+}
+
+func (r *SubscriptionRepository) FindByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Subscription, error) {
+	var subscription entity.Subscription
+	err := tx.WithContext(ctx).
+		Where("telegram_user_id = ? AND package_id = ? AND status = ? AND deleted_at IS NULL", userID, packageID, "active").
+		First(&subscription).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &subscription, nil
+}
+
+func (r *SubscriptionRepository) FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error) {
+	var subscriptions []entity.Subscription
+	query := tx.WithContext(ctx).
+		Preload("Package.Groups").
+		Preload("User").
+		Where("status = ? AND expired_at < ? AND deleted_at IS NULL", "active", gorm.Expr("CURRENT_TIMESTAMP")).
+		Order("expired_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&subscriptions).Error
+	return subscriptions, err
+}
+
+func (r *SubscriptionRepository) Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error {
+	return tx.WithContext(ctx).Create(subscription).Error
+}
+
+func (r *SubscriptionRepository) Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error {
+	return tx.WithContext(ctx).Save(subscription).Error
+}
+
+func (r *SubscriptionRepository) HasActiveSubscriptionForGroup(ctx context.Context, tx *gorm.DB, telegramUserID int64, telegramChatID int64) (bool, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Table("subscriptions s").
+		Joins("JOIN telegram_users tu ON s.telegram_user_id = tu.id").
+		Joins("JOIN packages p ON s.package_id = p.id").
+		Where("tu.telegram_user_id = ?", telegramUserID).
+		Where("s.status = ?", "active").
+		Where("s.deleted_at IS NULL").
+		Where(`
+			(p.is_all_access = true AND p.client_id = (SELECT client_id FROM groups WHERE telegram_chat_id = ? LIMIT 1))
+			OR EXISTS (
+				SELECT 1 FROM package_groups pg
+				JOIN groups g ON pg.group_id = g.id
+				WHERE pg.package_id = p.id AND g.telegram_chat_id = ? AND g.deleted_at IS NULL
+			)
+		`, telegramChatID, telegramChatID).
+		Count(&count).Error
+	return count > 0, err
+}
