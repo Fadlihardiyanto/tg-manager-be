@@ -43,6 +43,8 @@ type GroupResponse struct {
 	Name           string    `json:"name"`
 	Description    string    `json:"description"`
 	MemberCount    int       `json:"member_count"`
+	IsActive       bool      `json:"is_active"`
+	InactiveReason string    `json:"inactive_reason,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }

@@ -84,6 +84,11 @@ func (uc *TelegramWebhookUseCase) ProcessUpdate(ctx context.Context, botID uuid.
 		return uc.router.HandleCommand(ctx, bot, update.Message)
 	}
 
+	// 4. Handle Callback Queries via Central Routing Engine
+	if update.CallbackQuery != nil {
+		return uc.router.HandleCallback(ctx, bot, update.CallbackQuery)
+	}
+
 	log.Debug("telegram webhook ignored update type", zap.Int("update_id", update.UpdateID))
 	return nil
 }

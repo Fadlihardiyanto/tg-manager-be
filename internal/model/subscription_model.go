@@ -3,11 +3,17 @@ package model
 import (
 	"time"
 
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
 // Subscription Models
+type ActiveSubscriptionCheckResult struct {
+	SamePackage *entity.Subscription
+	AllAccess   *entity.Subscription
+}
+
 type SubscriptionResponse struct {
 	ID               uuid.UUID  `json:"id"`
 	TelegramUserID   uuid.UUID  `json:"telegram_user_id"`
@@ -42,11 +48,15 @@ type MemberCheckoutRequest struct {
 }
 
 type MemberCheckoutResponse struct {
-	OrderID    uuid.UUID       `json:"order_id"`
-	ExternalID string          `json:"external_id"`
-	PaymentURL string          `json:"payment_url"`
-	SnapToken  string          `json:"snap_token"`
-	Amount     decimal.Decimal `json:"amount"`
+	OrderID        uuid.UUID       `json:"order_id"`
+	ExternalID     string          `json:"external_id"`
+	PaymentURL     string          `json:"payment_url"`
+	SnapToken      string          `json:"snap_token"`
+	PackageName    string          `json:"package_name"`
+	DurationDays   int             `json:"duration_days"`
+	OriginalAmount decimal.Decimal `json:"original_amount"`
+	DiscountAmount decimal.Decimal `json:"discount_amount"`
+	Amount         decimal.Decimal `json:"amount"`
 }
 
 type OrderResponse struct {

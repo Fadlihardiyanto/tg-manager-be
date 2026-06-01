@@ -25,6 +25,7 @@ import (
 
 type IMemberOrderUseCase interface {
 	Checkout(ctx context.Context, req *model.MemberCheckoutRequest) (*model.MemberCheckoutResponse, error)
+	CheckActiveSubscriptions(ctx context.Context, tgUserID int64, packageID uuid.UUID) (*model.ActiveSubscriptionCheckResult, error)
 	HandleWebhook(ctx context.Context, req *model.MidtransWebhookRequest) error
 }
 
@@ -77,6 +78,50 @@ func NewMemberOrderUseCase(
 		midtransBaseURL:  midtransBaseURL,
 		midtransSnapURL:  midtransSnapURL,
 	}
+}
+
+func (uc *memberOrderUseCase) CheckActiveSubscriptions(ctx context.Context, tgUserID int64, packageID uuid.UUID) (*model.ActiveSubscriptionCheckResult, error) {
+	result := &model.ActiveSubscriptionCheckResult{}
+
+	// First, find the TelegramUser UUID from tgUserID
+	tgUser, err := uc.telegramUserRepo.FindByTelegramID(ctx, uc.db.Gorm, tgUserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return result, nil // User doesn't exist yet, so no active subscription
+		}
+		return nil, err
+	}
+
+	// Also find the target package to know its clientID and if it's all-access
+	pkg, err := uc.packageRepo.FindByID(ctx, uc.db.Gorm, packageID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 1. Check for active subscription for this exact package
+	samePackageSub, err := uc.subRepo.FindByUserAndPackage(ctx, uc.db.Gorm, tgUser.ID, packageID)
+	if err != nil {
+		return nil, err
+	}
+	if samePackageSub != nil {
+		if err := uc.db.Gorm.Unscoped().WithContext(ctx).Model(samePackageSub).Association("Package").Find(&samePackageSub.Package); err != nil {
+			uc.log.Warn("failed to preload package for subscription", zap.Error(err))
+		}
+		result.SamePackage = samePackageSub
+	}
+
+	// 2. Check for active ALL ACCESS subscription (only if the selected package is NOT all access)
+	if pkg != nil && !pkg.IsAllAccess {
+		allAccessSub, err := uc.subRepo.FindActiveAllAccessByUserAndClient(ctx, uc.db.Gorm, tgUser.ID, pkg.ClientID)
+		if err != nil {
+			return nil, err
+		}
+		if allAccessSub != nil {
+			result.AllAccess = allAccessSub
+		}
+	}
+
+	return result, nil
 }
 
 func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberCheckoutRequest) (*model.MemberCheckoutResponse, error) {
@@ -315,11 +360,15 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 
 	log.Info("member order checkout success", zap.String("order_id", order.ID.String()), zap.String("external_id", externalID))
 	return &model.MemberCheckoutResponse{
-		OrderID:    order.ID,
-		ExternalID: externalID,
-		PaymentURL: snapResp.RedirectURL,
-		SnapToken:  snapResp.Token,
-		Amount:     finalAmount,
+		OrderID:        order.ID,
+		ExternalID:     externalID,
+		PaymentURL:     snapResp.RedirectURL,
+		SnapToken:      snapResp.Token,
+		PackageName:    pkg.Name,
+		DurationDays:   pkg.DurationDays,
+		OriginalAmount: originalAmount,
+		DiscountAmount: discountAmount,
+		Amount:         finalAmount,
 	}, nil
 }
 
@@ -328,6 +377,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 	log.Info("member order webhook received", zap.String("order_id", req.OrderID), zap.String("status", req.TransactionStatus))
 
 	// 1. Fetch Order from DB to identify Client
+	log.Info("member order webhook fetching order", zap.String("order_id", req.OrderID))
 	order, err := uc.orderRepo.FindByExternalID(ctx, uc.db.Gorm, req.OrderID)
 	if err != nil {
 		log.Error("member order webhook fetch order failed", zap.Error(err))
@@ -337,19 +387,24 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 		log.Warn("member order webhook order not found", zap.String("order_id", req.OrderID))
 		return fmt.Errorf("order tidak ditemukan")
 	}
+	log.Info("member order webhook order found", zap.String("order_id", order.ID.String()), zap.String("client_id", order.ClientID.String()))
 
 	// 2. Fetch Client settings for signature validation keys
+	log.Info("member order webhook fetching client", zap.String("client_id", order.ClientID.String()))
 	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, order.ClientID)
 	if err != nil || client == nil {
 		log.Error("member order webhook client not found", zap.String("client_id", order.ClientID.String()))
 		return fmt.Errorf("client merchant tidak ditemukan")
 	}
+	log.Info("member order webhook client found", zap.String("client_id", client.ID.String()), zap.String("client_name", client.Name))
 
+	log.Info("member order webhook initializing midtrans client", zap.String("client_id", client.ID.String()))
 	midtransClient, err := uc.getMidtransClient(ctx, client)
 	if err != nil {
 		log.Error("member order webhook midtrans client init failed", zap.String("client_id", client.ID.String()), zap.Error(err))
 		return err
 	}
+	log.Info("member order webhook midtrans client initialized", zap.String("client_id", client.ID.String()))
 
 	notification := &midtrans.WebhookNotification{
 		TransactionTime:   req.TransactionTime,
@@ -362,8 +417,10 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 		StatusCode:        req.StatusCode,
 		FraudStatus:       req.FraudStatus,
 	}
+	log.Debug("member order webhook notification parsed", zap.String("order_id", req.OrderID), zap.String("transaction_status", req.TransactionStatus))
 
 	// 3. Verify Signature
+	log.Info("member order webhook verifying signature", zap.String("order_id", req.OrderID))
 	if !midtransClient.VerifySignature(notification) {
 		log.Warn("member order webhook invalid signature", zap.String("order_id", req.OrderID))
 		return fmt.Errorf("invalid signature key")
@@ -372,6 +429,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 	// 4. Acquire Webhook Lock to prevent concurrent updates
 	webhookLockKey := fmt.Sprintf("member:webhook:lock:%s", req.OrderID)
 	if uc.redis != nil {
+		log.Info("member order webhook acquiring lock", zap.String("order_id", req.OrderID))
 		ok, redisErr := uc.redis.SetNX(ctx, webhookLockKey, "1", 60*time.Second).Result()
 		if redisErr != nil {
 			log.Warn("member order webhook failed to acquire lock, fallback to DB lock", zap.Error(redisErr))
@@ -393,13 +451,17 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 	}
 
 	// 6. Translate Midtrans Status
+	log.Info("member order webhook translating status", zap.String("order_id", req.OrderID), zap.String("transaction_status", req.TransactionStatus))
 	var newStatus string
 	switch {
 	case notification.IsSuccess():
+		log.Info("member order webhook transaction successful", zap.String("order_id", req.OrderID))
 		newStatus = "paid"
 	case notification.IsExpired():
+		log.Info("member order webhook transaction expired", zap.String("order_id", req.OrderID))
 		newStatus = "expired"
 	case notification.IsFailed():
+		log.Info("member order webhook transaction failed", zap.String("order_id", req.OrderID))
 		newStatus = "failed"
 	default:
 		log.Info("member order webhook unhandled status, skipping", zap.String("order_id", req.OrderID), zap.String("transaction_status", req.TransactionStatus))
@@ -407,7 +469,9 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 	}
 
 	// 7. Process Order Update & Subscription activation in DB transaction
+	log.Info("member order webhook processing order update", zap.String("order_id", req.OrderID), zap.String("new_status", newStatus))
 	err = uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		log.Info("member order webhook fetching order for update", zap.String("order_id", req.OrderID))
 		now := time.Now()
 
 		// Update order atomically ONLY IF status is 'pending'
@@ -420,11 +484,20 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 			updates["payment_method"] = req.PaymentType
 		}
 
+		log.Info("member order webhook updating order status", zap.String("order_id", order.ID.String()), zap.String("new_status", newStatus))
 		result := tx.Model(&entity.Order{}).
 			Where("id = ? AND status = ?", order.ID, "pending").
 			Updates(updates)
 		if result.Error != nil {
+			log.Error("member order webhook failed to update order status", zap.String("order_id", order.ID.String()), zap.Error(result.Error))
 			return result.Error
+		}
+
+		order.Status = newStatus
+		order.UpdatedAt = now
+		if newStatus == "paid" {
+			order.PaidAt = &now
+			order.PaymentMethod = req.PaymentType
 		}
 
 		// Concurrent webhook processed it first
@@ -442,6 +515,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 		}
 
 		if newStatus == "paid" && order.DiscountID != nil {
+			log.Info("member order webhook recording discount usage", zap.String("order_id", req.OrderID), zap.String("discount_id", order.DiscountID.String()))
 			usage := &entity.MemberDiscountUsage{
 				ID:             uuid.New(),
 				DiscountID:     *order.DiscountID,
@@ -451,20 +525,25 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				UsedAt:         now,
 			}
 			if err := uc.discountRepo.CreateUsage(ctx, tx, usage); err != nil {
+				log.Error("member order webhook record discount usage failed", zap.Error(err))
 				return fmt.Errorf("gagal menyimpan usage diskon")
 			}
 			if err := uc.discountRepo.IncrementUsage(ctx, tx, *order.DiscountID); err != nil {
+				log.Error("member order webhook increment discount usage failed", zap.Error(err))
 				return err
 			}
 		}
 
 		// Retrieve package to get duration details
+		log.Info("member order webhook fetching package for subscription details", zap.String("package_id", order.PackageID.String()))
 		pkg, err := uc.packageRepo.FindByID(ctx, tx, order.PackageID)
 		if err != nil || pkg == nil {
 			return fmt.Errorf("paket tidak ditemukan")
 		}
 
+		log.Info("member order webhook processing subscription update", zap.String("order_id", req.OrderID), zap.String("package_id", pkg.ID.String()), zap.Int("duration_days", pkg.DurationDays))
 		if newStatus == "paid" {
+			log.Info("member order webhook activating subscription", zap.String("order_id", req.OrderID), zap.String("package_id", pkg.ID.String()))
 			// Find active subscription for user and package (for stacking perpanjangan)
 			existingSub, err := uc.subRepo.FindByUserAndPackage(ctx, tx, order.TelegramUserID, order.PackageID)
 			if err != nil {
@@ -476,6 +555,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 			var expiredAt time.Time
 
 			if existingSub != nil {
+				log.Info("member order webhook found existing subscription", zap.String("sub_id", existingSub.ID.String()))
 				// STACKING LOGIC: Extend expiration date of active subscription
 				subID = existingSub.ID
 				activatedAt = existingSub.ActivatedAt
@@ -491,6 +571,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				log.Info("member order webhook stacking subscription extended", zap.String("sub_id", subID.String()), zap.Time("new_expiry", expiredAt))
 			} else {
 				// ACTIVATION LOGIC: Create new subscription
+				log.Info("member order webhook no existing subscription, creating new one", zap.String("telegram_user_id", order.TelegramUserID.String()), zap.String("package_id", order.PackageID.String()))
 				subID = uuid.New()
 				activatedAt = now
 				expiredAt = now.AddDate(0, 0, pkg.DurationDays)
@@ -511,14 +592,16 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 					UpdatedAt:        now,
 				}
 
+				log.Info("member order webhook creating new subscription", zap.String("sub_id", subID.String()), zap.Time("expiry", expiredAt))
 				if err := uc.subRepo.Create(ctx, tx, newSub); err != nil {
 					return err
 				}
-				log.Info("member order webhook new subscription created", zap.String("sub_id", subID.String()), zap.Time("expiry", expiredAt))
+				log.Info("member order webhook subscription activated", zap.String("sub_id", subID.String()), zap.String("telegram_user_id", order.TelegramUserID.String()), zap.String("package_id", order.PackageID.String()))
 			}
 
 			// Link order to subscription
 			order.SubscriptionID = &subID
+			log.Info("member order webhook linking order to subscription", zap.String("order_id", order.ID.String()), zap.String("sub_id", subID.String()))
 			if err := uc.orderRepo.Update(ctx, tx, order); err != nil {
 				return err
 			}
@@ -562,6 +645,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				UpdatedAt:     now,
 			}
 
+			log.Info("member order webhook writing outbox event", zap.String("outbox_id", outbox.ID.String()), zap.String("event_type", outbox.EventType))
 			if err := uc.outboxRepo.Create(ctx, tx, outbox); err != nil {
 				return err
 			}

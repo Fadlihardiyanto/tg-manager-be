@@ -47,7 +47,12 @@ func GroupToResponse(group *entity.Group) *model.GroupResponse {
 		BotID:          group.BotID,
 		TelegramChatID: group.TelegramChatID,
 		Name:           group.Name,
+		Description:    group.Description,
+		MemberCount:    group.MemberCount,
+		IsActive:       group.IsActive,
+		InactiveReason: group.InactiveReason,
 		CreatedAt:      group.CreatedAt,
+		UpdatedAt:      group.UpdatedAt,
 	}
 }
 

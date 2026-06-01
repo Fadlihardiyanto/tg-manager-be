@@ -36,6 +36,18 @@ type ClientUpdateRequest struct {
 	IsActive         *bool  `json:"is_active" validate:"omitempty"`
 }
 
+type PaymentSettingsUpdateRequest struct {
+	MidtransServerKey string `json:"midtrans_server_key" validate:"required"`
+	MidtransClientKey string `json:"midtrans_client_key" validate:"required"`
+	MidtransIsSandbox *bool  `json:"midtrans_is_sandbox" validate:"required"`
+}
+
+type PaymentSettingsResponse struct {
+	MidtransClientKey string `json:"midtrans_client_key"`
+	MidtransIsSandbox bool   `json:"midtrans_is_sandbox"`
+	// We deliberately do not return MidtransServerKey for security reasons
+}
+
 // ClientUser Models
 type ClientUserInviteRequest struct {
 	Email string `json:"email" validate:"required,email"`

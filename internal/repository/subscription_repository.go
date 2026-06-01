@@ -13,6 +13,7 @@ type ISubscriptionRepository interface {
 	IRepository[entity.Subscription]
 	HasActiveSubscriptionForGroup(ctx context.Context, tx *gorm.DB, telegramUserID int64, telegramChatID int64) (bool, error)
 	FindByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Subscription, error)
+	FindActiveAllAccessByUserAndClient(ctx context.Context, tx *gorm.DB, userID uuid.UUID, clientID uuid.UUID) (*entity.Subscription, error)
 	FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error)
 	Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
@@ -40,9 +41,30 @@ func (r *SubscriptionRepository) FindByUserAndPackage(ctx context.Context, tx *g
 	return &subscription, nil
 }
 
+func (r *SubscriptionRepository) FindActiveAllAccessByUserAndClient(ctx context.Context, tx *gorm.DB, userID uuid.UUID, clientID uuid.UUID) (*entity.Subscription, error) {
+	var subscription entity.Subscription
+	err := tx.WithContext(ctx).
+		Joins("JOIN packages ON subscriptions.package_id = packages.id").
+		Where("subscriptions.telegram_user_id = ? AND packages.client_id = ? AND packages.is_all_access = true AND subscriptions.status = ? AND subscriptions.deleted_at IS NULL", userID, clientID, "active").
+		Preload("Package", func(db *gorm.DB) *gorm.DB {
+			return db.Unscoped()
+		}).
+		First(&subscription).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &subscription, nil
+}
+
 func (r *SubscriptionRepository) FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error) {
 	var subscriptions []entity.Subscription
 	query := tx.WithContext(ctx).
+		Preload("Package", func(db *gorm.DB) *gorm.DB {
+			return db.Unscoped()
+		}).
 		Preload("Package.Groups").
 		Preload("User").
 		Where("status = ? AND expired_at < ? AND deleted_at IS NULL", "active", gorm.Expr("CURRENT_TIMESTAMP")).
