@@ -248,14 +248,17 @@ func BootstrapWeb(config *BootstrapConfig) {
 	botUC := usecase.NewTelegramBotUseCase(config.DB, botRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey, config.Config.Telegram.WebhookBaseURL)
 	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey)
 	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, config.Log)
+	tenantProfileUC := usecase.NewTenantProfileUseCase(config.DB, clientRepo, config.Config.App.EncryptionKey, config.Log)
 
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	packagesHandler := handler.NewPackagesHandler(config.DB, packageRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	packageSelectHandler := handler.NewPackageSelectHandler(memberOrderUC, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 
 	cmdRegistry := handler.NewRegistry()
 	cmdRegistry.Register(startHandler)
 	cmdRegistry.Register(packagesHandler)
+	cmdRegistry.RegisterCallback(packageSelectHandler)
 
 	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, cmdRegistry, config.Log)
 
@@ -277,6 +280,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	memberDiscountCtrl := controller.NewMemberDiscountController(memberDiscountUC, config.Log, config.Validate)
 	tenantAnalyticsCtrl := controller.NewTenantAnalyticsController(tenantAnalyticsUC, config.Log)
 	auditLogCtrl := controller.NewAuditLogController(auditLogUC, config.Log)
+	tenantProfileCtrl := controller.NewTenantProfileController(tenantProfileUC, config.Log, config.Validate)
 	// Routes
 	adminRoute := &route.AdminRouteConfig{
 		App:                       config.App,
@@ -305,6 +309,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 		TenantAnalyticsController: tenantAnalyticsCtrl,
 		AuditLogController:        auditLogCtrl,
 		ClientBillingController:   billingCtrl,
+		TenantProfileController:   tenantProfileCtrl,
 		TenantAuthMiddleware:      middleware.TenantAuth(config.Jwt),
 	}
 	tenantRoute.Setup()
@@ -330,7 +335,7 @@ func BootstrapWorker(config *BootstrapConfig) {
 	groupRepo := repository.NewTelegramGroupRepository()
 
 	notificationHandler := deliveryMsg.NewNotificationHandler(config.SMTPMailer, config.Log)
-	telegramActionHandler := deliveryMsg.NewTelegramActionHandler(config.DB.Gorm, packageRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	telegramActionHandler := deliveryMsg.NewTelegramActionHandler(config.DB.Gorm, packageRepo, botRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	gatekeepingHandler := deliveryMsg.NewGatekeepingHandler(config.DB.Gorm, subscriptionRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	enforcerHandler := deliveryMsg.NewEnforcerHandler(config.DB.Gorm, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 
@@ -348,7 +353,7 @@ func BootstrapWorker(config *BootstrapConfig) {
 	config.OrderCleanupWorker = deliveryMsg.NewOrderCleanupWorker(config.DB.Gorm, orderRepo, memberDiscountUC, config.Log)
 
 	// Instantiate EnforcerWorker
-	config.EnforcerWorker = deliveryMsg.NewEnforcerWorker(config.DB.Gorm, subscriptionRepo, outboxRepo, config.Log)
+	config.EnforcerWorker = deliveryMsg.NewEnforcerWorker(config.DB.Gorm, subscriptionRepo, groupRepo, outboxRepo, config.Log)
 
 	// Instantiate GroupSyncWorker
 	config.GroupSyncWorker = deliveryMsg.NewGroupSyncWorker(config.DB.Gorm, groupRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)

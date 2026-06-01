@@ -33,6 +33,9 @@ type TenantRouteConfig struct {
 	TenantAnalyticsController *controller.TenantAnalyticsController
 	AuditLogController        *controller.AuditLogController
 
+	// Profile & Settings
+	TenantProfileController *controller.TenantProfileController
+
 	// Middleware
 	TenantAuthMiddleware fiber.Handler // JWT validation for tenant
 }
@@ -102,6 +105,10 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 
 	audit := protected.Group("/audit-logs")
 	audit.Get("/", c.AuditLogController.ListTenantLogs)
+
+	// ── Settings ─────────────────────────────────────────────────────────────
+	settings := protected.Group("/settings")
+	settings.Put("/payment", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.UpdatePaymentSettings)
 
 	// ── Billing (Self-Service) ────────────────────────────────────────────
 	billing := protected.Group("/billing")

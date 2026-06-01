@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	json "github.com/bytedance/sonic"
@@ -24,6 +25,7 @@ type EnforcerPayload struct {
 type EnforcerWorker struct {
 	db         *gorm.DB
 	subRepo    repository.ISubscriptionRepository
+	groupRepo  repository.ITelegramGroupRepository
 	outboxRepo repository.IOutboxRepository
 	log        *zap.Logger
 }
@@ -33,12 +35,14 @@ const expiredSubscriptionBatchSize = 200
 func NewEnforcerWorker(
 	db *gorm.DB,
 	subRepo repository.ISubscriptionRepository,
+	groupRepo repository.ITelegramGroupRepository,
 	outboxRepo repository.IOutboxRepository,
 	log *zap.Logger,
 ) *EnforcerWorker {
 	return &EnforcerWorker{
 		db:         db,
 		subRepo:    subRepo,
+		groupRepo:  groupRepo,
 		outboxRepo: outboxRepo,
 		log:        log,
 	}
@@ -82,9 +86,47 @@ func (w *EnforcerWorker) Process(ctx context.Context) {
 }
 
 func (w *EnforcerWorker) processExpiredSubscription(ctx context.Context, sub *entity.Subscription) {
+	// Resolve target groups BEFORE the transaction — groupRepo query runs outside tx
+	// to keep the transaction short and avoid lock contention.
+	if sub.Package.ID == uuid.Nil || sub.User.ID == uuid.Nil {
+		w.log.Warn("enforcer worker: subscription missing package or user relation, skipping",
+			zap.String("sub_id", sub.ID.String()),
+		)
+		return
+	}
+
+	var targetGroups []entity.Group
+	if sub.Package.IsAllAccess {
+		// IsAllAccess: kick from ALL active groups belonging to this client
+		groups, err := w.groupRepo.FindByClientID(ctx, w.db, sub.Package.ClientID)
+		if err != nil {
+			w.log.Error("enforcer worker: failed to fetch groups for all-access package",
+				zap.String("sub_id", sub.ID.String()),
+				zap.String("client_id", sub.Package.ClientID.String()),
+				zap.Error(err),
+			)
+			return
+		}
+		targetGroups = groups
+		w.log.Info("enforcer worker: all-access package — resolved groups from client",
+			zap.String("sub_id", sub.ID.String()),
+			zap.Int("group_count", len(targetGroups)),
+		)
+	} else {
+		// Regular package: use the groups directly associated via package_groups
+		targetGroups = sub.Package.Groups
+	}
+
+	if len(targetGroups) == 0 {
+		w.log.Warn("enforcer worker: no target groups found for subscription, marking expired anyway",
+			zap.String("sub_id", sub.ID.String()),
+		)
+	}
+
 	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-		// Update status to expired
+
+		// Update status to expired (optimistic lock: only if still 'active')
 		result := tx.Model(&entity.Subscription{}).
 			Where("id = ? AND status = ?", sub.ID, "active").
 			Updates(map[string]any{
@@ -96,42 +138,43 @@ func (w *EnforcerWorker) processExpiredSubscription(ctx context.Context, sub *en
 			return result.Error
 		}
 
-		// Jika tidak ada rows affected, berarti mungkin sudah diupdate process lain (race condition)
+		// RowsAffected == 0: another worker already processed this (race condition)
 		if result.RowsAffected == 0 {
+			w.log.Debug("enforcer worker: subscription already processed by another worker, skipping",
+				zap.String("sub_id", sub.ID.String()),
+			)
 			return nil
 		}
 
-		// Publish eviction tasks for each group in the package
-		if sub.Package.ID != uuid.Nil && sub.User.ID != uuid.Nil {
-			for _, group := range sub.Package.Groups {
-				payload := EnforcerPayload{
-					BotID:          group.BotID,
-					TelegramUserID: sub.User.TelegramUserID,
-					TelegramChatID: group.TelegramChatID,
-				}
+		// Publish eviction task for each target group
+		for _, group := range targetGroups {
+			payload := EnforcerPayload{
+				BotID:          group.BotID,
+				TelegramUserID: sub.User.TelegramUserID,
+				TelegramChatID: group.TelegramChatID,
+			}
 
-				payloadBytes, err := json.Marshal(payload)
-				if err != nil {
-					return err
-				}
+			payloadBytes, err := json.Marshal(payload)
+			if err != nil {
+				return fmt.Errorf("enforcer worker: failed to marshal payload for group %s: %w", group.ID, err)
+			}
 
-				outbox := &entity.Outbox{
-					ID:            uuid.New(),
-					AggregateType: "subscription",
-					AggregateID:   sub.ID,
-					EventType:     "enforcer.kick",
-					Payload:       datatypes.JSON(payloadBytes),
-					Status:        "pending",
-					RetryCount:    0,
-					MaxRetries:    3,
-					ProcessAfter:  now,
-					CreatedAt:     now,
-					UpdatedAt:     now,
-				}
+			outbox := &entity.Outbox{
+				ID:            uuid.New(),
+				AggregateType: "subscription",
+				AggregateID:   sub.ID,
+				EventType:     "enforcer.kick",
+				Payload:       datatypes.JSON(payloadBytes),
+				Status:        "pending",
+				RetryCount:    0,
+				MaxRetries:    3,
+				ProcessAfter:  now,
+				CreatedAt:     now,
+				UpdatedAt:     now,
+			}
 
-				if err := w.outboxRepo.Create(ctx, tx, outbox); err != nil {
-					return err
-				}
+			if err := w.outboxRepo.Create(ctx, tx, outbox); err != nil {
+				return fmt.Errorf("enforcer worker: failed to create outbox for group %s: %w", group.ID, err)
 			}
 		}
 
@@ -139,8 +182,14 @@ func (w *EnforcerWorker) processExpiredSubscription(ctx context.Context, sub *en
 	})
 
 	if err != nil {
-		w.log.Error("enforcer worker: failed to process expired subscription", zap.String("sub_id", sub.ID.String()), zap.Error(err))
+		w.log.Error("enforcer worker: failed to process expired subscription",
+			zap.String("sub_id", sub.ID.String()),
+			zap.Error(err),
+		)
 		return
 	}
-	w.log.Info("enforcer worker: successfully marked subscription as expired", zap.String("sub_id", sub.ID.String()))
+	w.log.Info("enforcer worker: successfully marked subscription as expired and queued evictions",
+		zap.String("sub_id", sub.ID.String()),
+		zap.Int("groups_evicted", len(targetGroups)),
+	)
 }

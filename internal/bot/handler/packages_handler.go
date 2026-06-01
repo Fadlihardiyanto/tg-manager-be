@@ -60,13 +60,15 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 		responseText.WriteString("📦 <b>Daftar Paket Langganan Tersedia:</b>\n\n")
 
 		printer := message.NewPrinter(language.Indonesian)
+		var keyboardRows [][]tgbotapi.InlineKeyboardButton
 
 		for i, pkg := range packages {
 			if !pkg.IsActive {
 				continue
 			}
 
-			priceStr := printer.Sprintf("Rp %.0f", pkg.Price)
+			price, _ := pkg.Price.Float64()
+			priceStr := printer.Sprintf("Rp %.0f", price)
 
 			// Misal: 1. Paket VIP - Rp 100.000 / 30 Hari
 			responseText.WriteString(fmt.Sprintf("%d. <b>%s</b> — %s / %d Hari\n", i+1, pkg.Name, priceStr, pkg.DurationDays))
@@ -75,25 +77,54 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 				responseText.WriteString(fmt.Sprintf("   <i>%s</i>\n", pkg.Description))
 			}
 			responseText.WriteString("\n")
+
+			// Add button for this package
+			callbackData := fmt.Sprintf("pkg_sel:%s", pkg.ID.String())
+			btnText := fmt.Sprintf("Pilih %s", pkg.Name)
+			row := tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(btnText, callbackData))
+			keyboardRows = append(keyboardRows, row)
 		}
 
-		responseText.WriteString("Silakan balas pesan ini atau klik menu di bawah untuk melanjutkan pembayaran (Fitur ini sedang dalam pengembangan 🛠️).")
+		responseText.WriteString("Silakan klik menu di bawah untuk memilih paket dan melanjutkan pembayaran.")
+
+		// Initialize Telegram Client
+		token, err := crypto.Decrypt(bot.Token, h.encryptionKey)
+		if err != nil {
+			h.log.Error("failed to decrypt token", zap.Error(err))
+			return err
+		}
+
+		botClient, err := h.telegramFactory.NewClient(token)
+		if err != nil {
+			h.log.Error("failed to init bot client", zap.Error(err))
+			return err
+		}
+
+		// Send HTML formatted message with keyboard
+		replyMsg := tgbotapi.NewMessage(msg.Chat.ID, responseText.String())
+		replyMsg.ParseMode = tgbotapi.ModeHTML
+		if len(keyboardRows) > 0 {
+			replyMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
+		}
+
+		if _, err := botClient.GetBot().Send(replyMsg); err != nil {
+			h.log.Error("failed to send packages reply", zap.Error(err))
+			return err
+		}
+
+		h.log.Info("successfully replied to /packages command")
+		return nil
 	}
 
-	// Initialize Telegram Client
+	// This path is for when len(packages) == 0
 	token, err := crypto.Decrypt(bot.Token, h.encryptionKey)
 	if err != nil {
-		h.log.Error("failed to decrypt token", zap.Error(err))
 		return err
 	}
-
 	botClient, err := h.telegramFactory.NewClient(token)
 	if err != nil {
-		h.log.Error("failed to init bot client", zap.Error(err))
 		return err
 	}
-
-	// Send HTML formatted message
 	replyMsg := tgbotapi.NewMessage(msg.Chat.ID, responseText.String())
 	replyMsg.ParseMode = tgbotapi.ModeHTML
 

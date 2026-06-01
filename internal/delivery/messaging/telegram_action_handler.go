@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	json "github.com/bytedance/sonic"
 
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
@@ -20,6 +22,7 @@ type TelegramActionHandler struct {
 	db              *gorm.DB
 	packageRepo     repository.IPackageRepository
 	botRepo         repository.ITelegramBotRepository
+	groupRepo       repository.ITelegramGroupRepository
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
 	logger          *zap.Logger
@@ -29,6 +32,7 @@ func NewTelegramActionHandler(
 	db *gorm.DB,
 	packageRepo repository.IPackageRepository,
 	botRepo repository.ITelegramBotRepository,
+	groupRepo repository.ITelegramGroupRepository,
 	telegramFactory telegram.BotFactory,
 	encryptionKey string,
 	logger *zap.Logger,
@@ -37,6 +41,7 @@ func NewTelegramActionHandler(
 		db:              db,
 		packageRepo:     packageRepo,
 		botRepo:         botRepo,
+		groupRepo:       groupRepo,
 		telegramFactory: telegramFactory,
 		encryptionKey:   encryptionKey,
 		logger:          logger,
@@ -83,8 +88,19 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		return nil
 	}
 
-	if len(pkg.Groups) == 0 {
-		h.logger.Info("telegram action handler: no groups associated with package, skipping", append(logFields, zap.String("package_id", payload.PackageID))...)
+	var targetGroups []entity.Group
+	if pkg.IsAllAccess {
+		groups, err := h.groupRepo.FindByClientID(ctx, h.db, pkg.ClientID)
+		if err != nil {
+			return fmt.Errorf("group lookup failed: %w", err)
+		}
+		targetGroups = groups
+	} else {
+		targetGroups = pkg.Groups
+	}
+
+	if len(targetGroups) == 0 {
+		h.logger.Info("telegram action handler: no groups to invite, skipping", append(logFields, zap.String("package_id", payload.PackageID))...)
 		return nil
 	}
 
@@ -116,7 +132,7 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	// 4. Generate Invite Links for each group
 	var inviteLinks []string
 	var failedGroups []string
-	for _, group := range pkg.Groups {
+	for _, group := range targetGroups {
 		// Limit to 1 use, so it can't be shared
 		subIDPrefix := payload.SubscriptionID
 		if len(subIDPrefix) > 8 {
@@ -142,8 +158,24 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		return nil
 	}
 
-	// 5. Send DM to User
-	message := fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\n\nBerikut adalah link khusus untuk masuk ke grup:\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, strings.Join(inviteLinks, "\n"))
+	// 5. Fetch Subscription for Expiration Date
+	subID, err := uuid.Parse(payload.SubscriptionID)
+	if err != nil {
+		h.logger.Error("telegram action handler: invalid subscription id", append(logFields, zap.String("subscription_id", payload.SubscriptionID))...)
+		return nil
+	}
+
+	var sub entity.Subscription
+	if err := h.db.WithContext(ctx).First(&sub, "id = ?", subID).Error; err != nil {
+		h.logger.Error("telegram action handler: failed to fetch subscription", append(logFields, zap.Error(err))...)
+		return fmt.Errorf("failed to fetch subscription: %w", err)
+	}
+
+	loc, _ := time.LoadLocation("Asia/Jakarta")
+	expiredStr := sub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
+
+	// 6. Send DM to User
+	message := fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\nBerikut adalah link khusus untuk masuk ke grup:\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, expiredStr, strings.Join(inviteLinks, "\n"))
 	if len(failedGroups) > 0 {
 		message = fmt.Sprintf("%s\n\n⚠️ Gagal membuat link untuk: %s. Silakan hubungi admin.", message, strings.Join(failedGroups, ", "))
 	}
