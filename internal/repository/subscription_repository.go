@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ type ISubscriptionRepository interface {
 	FindByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Subscription, error)
 	FindActiveAllAccessByUserAndClient(ctx context.Context, tx *gorm.DB, userID uuid.UUID, clientID uuid.UUID) (*entity.Subscription, error)
 	FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error)
+	FindExpiringSoon(ctx context.Context, tx *gorm.DB, withinHours int, limit int) ([]entity.Subscription, error)
 	Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 }
@@ -72,6 +74,42 @@ func (r *SubscriptionRepository) FindExpiredSubscriptions(ctx context.Context, t
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
+	err := query.Find(&subscriptions).Error
+	return subscriptions, err
+}
+
+// FindExpiringSoon returns active subscriptions expiring within the next `withinHours` hours
+// that have NOT yet had a reminder outbox event published for that exact window.
+// Deduplication is handled by checking the outbox table for an existing
+// (aggregate_id, event_type) pair, so the same reminder is never sent twice.
+func (r *SubscriptionRepository) FindExpiringSoon(ctx context.Context, tx *gorm.DB, withinHours int, limit int) ([]entity.Subscription, error) {
+	var subscriptions []entity.Subscription
+
+	eventType := fmt.Sprintf("expiry.reminder_%dh", withinHours)
+
+	query := tx.WithContext(ctx).
+		Preload("Package", func(db *gorm.DB) *gorm.DB {
+			return db.Unscoped()
+		}).
+		Preload("Package.Groups").
+		Preload("User").
+		Where(
+			`status = 'active'
+			AND deleted_at IS NULL
+			AND expired_at > CURRENT_TIMESTAMP
+			AND expired_at <= CURRENT_TIMESTAMP + INTERVAL '? hours'
+			AND id NOT IN (
+				SELECT aggregate_id FROM outbox
+				WHERE event_type = ? AND status != 'failed'
+			)`,
+			withinHours, eventType,
+		).
+		Order("expired_at ASC")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
 	err := query.Find(&subscriptions).Error
 	return subscriptions, err
 }

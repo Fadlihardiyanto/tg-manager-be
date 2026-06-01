@@ -110,6 +110,14 @@ func DefaultTopology() TopologyConfig {
 					"x-dead-letter-routing-key": RoutingKeyEnforcer,
 				},
 			},
+			{
+				Name:    QueueExpiryReminder,
+				Durable: true,
+				Args: amqp.Table{
+					"x-dead-letter-exchange":    ExchangeDLX,
+					"x-dead-letter-routing-key": RoutingKeyExpiryReminder,
+				},
+			},
 			// DLQ queues with TTL → auto-retry back to original exchange
 			{
 				Name:    QueueTelegramActionDLQ,
@@ -147,6 +155,15 @@ func DefaultTopology() TopologyConfig {
 					"x-dead-letter-routing-key": RoutingKeyEnforcer,
 				},
 			},
+			{
+				Name:    QueueExpiryReminderDLQ,
+				Durable: true,
+				Args: amqp.Table{
+					"x-message-ttl":             int32(60000),
+					"x-dead-letter-exchange":    ExchangeTelegram,
+					"x-dead-letter-routing-key": RoutingKeyExpiryReminder,
+				},
+			},
 		},
 		Bindings: []BindingConfig{
 			// Main queue bindings
@@ -155,11 +172,13 @@ func DefaultTopology() TopologyConfig {
 			{QueueName: QueueNotification, RoutingKey: RoutingKeyNotification, ExchangeName: ExchangeNotification},
 			{QueueName: QueueGatekeeping, RoutingKey: RoutingKeyGatekeeping, ExchangeName: ExchangeTelegram},
 			{QueueName: QueueEnforcer, RoutingKey: RoutingKeyEnforcer, ExchangeName: ExchangeTelegram},
+			{QueueName: QueueExpiryReminder, RoutingKey: RoutingKeyExpiryReminder, ExchangeName: ExchangeTelegram},
 			// DLQ bindings
 			{QueueName: QueueTelegramActionDLQ, RoutingKey: RoutingKeyTelegramAction, ExchangeName: ExchangeDLX},
 			{QueueName: QueuePaymentWebhookDLQ, RoutingKey: RoutingKeyPaymentWebhook, ExchangeName: ExchangeDLX},
 			{QueueName: QueueGatekeepingDLQ, RoutingKey: RoutingKeyGatekeeping, ExchangeName: ExchangeDLX},
 			{QueueName: QueueEnforcerDLQ, RoutingKey: RoutingKeyEnforcer, ExchangeName: ExchangeDLX},
+			{QueueName: QueueExpiryReminderDLQ, RoutingKey: RoutingKeyExpiryReminder, ExchangeName: ExchangeDLX},
 		},
 	}
 }

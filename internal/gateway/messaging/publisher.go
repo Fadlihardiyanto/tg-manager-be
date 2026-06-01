@@ -156,6 +156,15 @@ func (p *RabbitMQPublisher) PublishEnforcer(ctx context.Context, payload interfa
 	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyEnforcer, body)
 }
 
+// PublishExpiryReminder publishes an expiry reminder task (DM member before subscription expires).
+func (p *RabbitMQPublisher) PublishExpiryReminder(ctx context.Context, payload interface{}) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("publisher: failed to marshal expiry reminder payload: %w", err)
+	}
+	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyExpiryReminder, body)
+}
+
 // Close closes the publisher's dedicated channel.
 func (p *RabbitMQPublisher) Close() error {
 	p.mu.Lock()

@@ -43,10 +43,11 @@ type BootstrapConfig struct {
 	Mailer             mailer.Sender
 	SMTPMailer         mailer.Sender
 	Midtrans           *midtrans.Client
-	OutboxWorker       *deliveryMsg.OutboxWorker
-	OrderCleanupWorker *deliveryMsg.OrderCleanupWorker
-	EnforcerWorker     *deliveryMsg.EnforcerWorker
-	GroupSyncWorker    *deliveryMsg.GroupSyncWorker
+	OutboxWorker          *deliveryMsg.OutboxWorker
+	OrderCleanupWorker    *deliveryMsg.OrderCleanupWorker
+	EnforcerWorker        *deliveryMsg.EnforcerWorker
+	GroupSyncWorker       *deliveryMsg.GroupSyncWorker
+	ExpiryReminderWorker  *deliveryMsg.ExpiryReminderWorker
 }
 
 // BootstrapOption allows selective initialization of components.
@@ -357,6 +358,13 @@ func BootstrapWorker(config *BootstrapConfig) {
 
 	// Instantiate GroupSyncWorker
 	config.GroupSyncWorker = deliveryMsg.NewGroupSyncWorker(config.DB.Gorm, groupRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+
+	// Instantiate ExpiryReminderWorker
+	config.ExpiryReminderWorker = deliveryMsg.NewExpiryReminderWorker(config.DB.Gorm, subscriptionRepo, outboxRepo, config.Log)
+
+	// Register ExpiryReminderHandler as consumer
+	expiryReminderHandler := deliveryMsg.NewExpiryReminderHandler(config.DB.Gorm, packageRepo, botRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	config.Consumer.RegisterHandler(rabbitmq.QueueExpiryReminder, expiryReminderHandler.Handle)
 }
 
 // Shutdown gracefully closes all infrastructure connections.

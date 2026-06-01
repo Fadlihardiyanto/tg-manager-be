@@ -16,15 +16,17 @@ const (
 
 // Queue names
 const (
-	QueueTelegramAction    = "task.telegram_action"
-	QueueTelegramActionDLQ = "task.telegram_action.dlq"
-	QueueNotification      = "task.notification"
-	QueuePaymentWebhook    = "task.payment_webhook"
-	QueuePaymentWebhookDLQ = "task.payment_webhook.dlq"
-	QueueGatekeeping       = "task.telegram_gatekeeping"
-	QueueGatekeepingDLQ    = "task.telegram_gatekeeping.dlq"
-	QueueEnforcer          = "task.telegram_enforcer"
-	QueueEnforcerDLQ       = "task.telegram_enforcer.dlq"
+	QueueTelegramAction      = "task.telegram_action"
+	QueueTelegramActionDLQ   = "task.telegram_action.dlq"
+	QueueNotification        = "task.notification"
+	QueuePaymentWebhook      = "task.payment_webhook"
+	QueuePaymentWebhookDLQ   = "task.payment_webhook.dlq"
+	QueueGatekeeping         = "task.telegram_gatekeeping"
+	QueueGatekeepingDLQ      = "task.telegram_gatekeeping.dlq"
+	QueueEnforcer            = "task.telegram_enforcer"
+	QueueEnforcerDLQ         = "task.telegram_enforcer.dlq"
+	QueueExpiryReminder      = "task.telegram_expiry_reminder"
+	QueueExpiryReminderDLQ   = "task.telegram_expiry_reminder.dlq"
 )
 
 // Routing keys
@@ -34,6 +36,7 @@ const (
 	RoutingKeyNotification   = "notification.send"
 	RoutingKeyGatekeeping    = "telegram.gatekeeping"
 	RoutingKeyEnforcer       = "telegram.enforcer"
+	RoutingKeyExpiryReminder = "telegram.expiry_reminder"
 )
 
 // ExchangeConfig holds the configuration for declaring an exchange.

@@ -92,6 +92,8 @@ func (w *OutboxWorker) processEvent(ctx context.Context, event *entity.Outbox) {
 		pubErr = w.publisher.PublishNotification(ctx, payloadMap)
 	case "enforcer.kick":
 		pubErr = w.publisher.PublishEnforcer(ctx, payloadMap)
+	case "expiry.reminder_72h", "expiry.reminder_24h":
+		pubErr = w.publisher.PublishExpiryReminder(ctx, payloadMap)
 	default:
 		// Default to telegram action for compatibility
 		pubErr = w.publisher.PublishTelegramAction(ctx, payloadMap)

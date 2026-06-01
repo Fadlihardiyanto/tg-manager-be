@@ -59,6 +59,13 @@ func main() {
 		go bootstrapConfig.GroupSyncWorker.Start(groupSyncCtx, 24*time.Hour)
 	}
 
+	// 8. Start Expiry Reminder Worker (polls every hour)
+	expiryReminderCtx, expiryReminderCancel := context.WithCancel(context.Background())
+	defer expiryReminderCancel()
+	if bootstrapConfig.ExpiryReminderWorker != nil {
+		go bootstrapConfig.ExpiryReminderWorker.Start(expiryReminderCtx, 1*time.Hour)
+	}
+
 	bootstrapConfig.Log.Info("worker: starting consumer...")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -75,10 +82,11 @@ func main() {
 	<-quit
 
 	bootstrapConfig.Log.Info("worker: received shutdown signal")
-	enforcerCancel() // Stop the enforcer worker loop
-	cleanupCancel()  // Stop the cleanup worker loop first
-	outboxCancel()   // Stop the outbox worker loop
-	cancel()         // Stop consumer
+	expiryReminderCancel() // Stop expiry reminder worker
+	enforcerCancel()       // Stop the enforcer worker loop
+	cleanupCancel()        // Stop the cleanup worker loop first
+	outboxCancel()         // Stop the outbox worker loop
+	cancel()               // Stop consumer
 
 	shutdownTimeout := 30 * time.Second
 	select {
