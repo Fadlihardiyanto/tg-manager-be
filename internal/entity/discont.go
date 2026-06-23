@@ -11,7 +11,7 @@ import (
 type PlatformDiscount struct {
 	ID   uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid();column:id"`
 	Name string    `gorm:"type:varchar(255);not null;column:name"`
-	Code *string   `gorm:"type:varchar(100);uniqueIndex;column:code"`
+	Code *string   `gorm:"type:varchar(100);column:code"`
 	// NULL = otomatis tanpa kode
 
 	Type string `gorm:"type:varchar(20);not null;column:type"`

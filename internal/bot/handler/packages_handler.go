@@ -46,7 +46,7 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 	h.log.Info("executing /packages command", zap.Int64("user_id", msg.From.ID), zap.String("bot_id", bot.ID.String()))
 
 	// Fetch active packages for this client
-	packages, err := h.packageRepo.FindByClientID(ctx, h.db.Gorm, bot.ClientID)
+	packages, err := h.packageRepo.FindByClientID(ctx, h.db.Gorm, bot.ClientID, 1, 10000000000000000)
 	if err != nil {
 		h.log.Error("failed to fetch packages", zap.Error(err))
 		return err
@@ -62,16 +62,18 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 		printer := message.NewPrinter(language.Indonesian)
 		var keyboardRows [][]tgbotapi.InlineKeyboardButton
 
-		for i, pkg := range packages {
+		activeIdx := 0
+		for _, pkg := range packages {
 			if !pkg.IsActive {
 				continue
 			}
+			activeIdx++
 
 			price, _ := pkg.Price.Float64()
 			priceStr := printer.Sprintf("Rp %.0f", price)
 
 			// Misal: 1. Paket VIP - Rp 100.000 / 30 Hari
-			responseText.WriteString(fmt.Sprintf("%d. <b>%s</b> — %s / %d Hari\n", i+1, pkg.Name, priceStr, pkg.DurationDays))
+			responseText.WriteString(fmt.Sprintf("%d. <b>%s</b> — %s / %d Hari\n", activeIdx, pkg.Name, priceStr, pkg.DurationDays))
 
 			if pkg.Description != "" {
 				responseText.WriteString(fmt.Sprintf("   <i>%s</i>\n", pkg.Description))
@@ -107,7 +109,7 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 			replyMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
 		}
 
-		if _, err := botClient.GetBot().Send(replyMsg); err != nil {
+		if _, err := botClient.Send(ctx, replyMsg); err != nil {
 			h.log.Error("failed to send packages reply", zap.Error(err))
 			return err
 		}
@@ -128,7 +130,7 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 	replyMsg := tgbotapi.NewMessage(msg.Chat.ID, responseText.String())
 	replyMsg.ParseMode = tgbotapi.ModeHTML
 
-	if _, err := botClient.GetBot().Send(replyMsg); err != nil {
+	if _, err := botClient.Send(ctx, replyMsg); err != nil {
 		h.log.Error("failed to send packages reply", zap.Error(err))
 		return err
 	}

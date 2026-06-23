@@ -18,6 +18,7 @@ type Config struct {
 	JWT      JWTAppConfig
 	SMTP     SMTPConfig
 	Midtrans MidtransConfig
+	S3       S3Config
 }
 
 // AppConfig holds general application settings.
@@ -118,6 +119,17 @@ type MidtransConfig struct {
 	SnapURL   string `mapstructure:"snap_url"`
 }
 
+// S3Config holds S3-compatible storage settings (Cloudflare R2, MinIO, AWS S3, etc.).
+type S3Config struct {
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	BucketName      string
+	Region          string
+	UsePathStyle    bool   // true for MinIO, false for R2/AWS
+	PublicURL       string // custom public CDN/domain for serving files (e.g. https://cdn.example.com)
+}
+
 // LoadConfig reads configuration from .env file and environment variables.
 func LoadConfig() (*Config, error) {
 	viper.SetConfigFile(".env")
@@ -204,6 +216,15 @@ func LoadConfig() (*Config, error) {
 			BaseURL:   viper.GetString("MIDTRANS_BASE_URL"),
 			SnapURL:   viper.GetString("MIDTRANS_SNAP_URL"),
 		},
+		S3: S3Config{
+			Endpoint:        viper.GetString("S3_ENDPOINT"),
+			AccessKeyID:     viper.GetString("S3_ACCESS_KEY_ID"),
+			SecretAccessKey: viper.GetString("S3_SECRET_ACCESS_KEY"),
+			BucketName:      viper.GetString("S3_BUCKET_NAME"),
+			Region:          viper.GetString("S3_REGION"),
+			UsePathStyle:    viper.GetBool("S3_USE_PATH_STYLE"),
+			PublicURL:       viper.GetString("S3_PUBLIC_URL"),
+		},
 	}
 
 	// Set defaults
@@ -289,6 +310,14 @@ func LoadConfig() (*Config, error) {
 		} else {
 			cfg.Midtrans.SnapURL = "https://app.sandbox.midtrans.com/snap/v1"
 		}
+	}
+
+	// S3 Defaults
+	if cfg.S3.Region == "" {
+		cfg.S3.Region = "auto" // Cloudflare R2 uses "auto"
+	}
+	if cfg.S3.BucketName == "" {
+		cfg.S3.BucketName = "tg-manager-storage"
 	}
 
 	return cfg, nil

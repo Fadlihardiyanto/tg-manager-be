@@ -34,6 +34,10 @@ type IAdminAuthUseCase interface {
 	// Verify2FA validates the OTP code against the TempToken to finalize login.
 	Verify2FA(ctx context.Context, req *model.AdminVerify2FARequest) (*model.AdminLoginResponse, error)
 
+	// ResendOTP generates and sends a new OTP code for an existing temp_token session.
+	// Respects the OTP cooldown period to prevent abuse.
+	ResendOTP(ctx context.Context, req *model.AdminResendOTPRequest) error
+
 	// Setup2FA initiates the 2FA setup process by sending an OTP to the admin's email.
 	Setup2FA(ctx context.Context, req *model.AdminSetup2FARequest) (*model.Admin2FASetupResponse, error)
 
@@ -198,6 +202,50 @@ func (uc *AdminAuthUseCase) Verify2FA(ctx context.Context, req *model.AdminVerif
 	return uc.finalizeLogin(ctx, adminID, req.ClientIP)
 }
 
+func (uc *AdminAuthUseCase) ResendOTP(ctx context.Context, req *model.AdminResendOTPRequest) error {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("admin auth resend otp start")
+
+	// 1. Validate TempToken — ensure the login session is still alive
+	redisKey := fmt.Sprintf("auth:temp_token:%s", req.TempToken)
+	adminIDStr, err := uc.redis.Get(ctx, redisKey).Result()
+	if err == redis.Nil {
+		log.Warn("admin auth resend otp temp token expired")
+		return helper.NewUnauthorized("sesi login sudah kedaluwarsa, silakan login ulang")
+	} else if err != nil {
+		log.Error("admin auth resend otp redis lookup failed", zap.Error(err))
+		return err
+	}
+
+	adminID, err := uuid.Parse(adminIDStr)
+	if err != nil {
+		return err
+	}
+
+	// 2. Fetch admin email
+	admin, err := uc.adminRepo.FindByIDWithRoles(ctx, uc.db.Gorm, adminID)
+	if err != nil {
+		log.Error("admin auth resend otp load admin failed", zap.Error(err))
+		return err
+	}
+
+	// 3. Generate new OTP (respects cooldown internally)
+	code, err := uc.otpService.GenerateOTP(ctx, "admin_login_2fa", adminID.String())
+	if err != nil {
+		log.Warn("admin auth resend otp cooldown active or generation failed", zap.Error(err))
+		return err
+	}
+
+	// 4. Send email
+	if err := uc.mailer.SendOTP(admin.Email, code, "admin_login_2fa"); err != nil {
+		log.Error("admin auth resend otp email failed", zap.Error(err))
+		return fmt.Errorf("gagal mengirim ulang kode OTP: %w", err)
+	}
+
+	log.Info("admin auth resend otp success", zap.String("admin_id", adminID.String()))
+	return nil
+}
+
 func (uc *AdminAuthUseCase) Setup2FA(ctx context.Context, req *model.AdminSetup2FARequest) (*model.Admin2FASetupResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin auth 2fa setup start", zap.String("admin_id", req.AdminID.String()))
@@ -231,7 +279,7 @@ func (uc *AdminAuthUseCase) Setup2FA(ctx context.Context, req *model.AdminSetup2
 	log.Info("admin auth 2fa setup otp sent", zap.String("admin_id", adminID.String()))
 
 	return &model.Admin2FASetupResponse{
-		Message: "OTP code sent to your email",
+		Message: "Kode OTP telah dikirim ke email Anda",
 	}, nil
 }
 
@@ -259,7 +307,7 @@ func (uc *AdminAuthUseCase) RefreshToken(ctx context.Context, req *model.AdminRe
 	log.Info("admin auth refresh token start")
 
 	// Parse refresh token
-	claims, err := token.ParseAdminToken(req.RefreshToken, uc.jwtConfig.SecretKey)
+	claims, err := token.ParseAdminToken(req.RefreshToken, uc.jwtConfig.AdminSecretKey)
 	if err != nil {
 		log.Warn("admin auth refresh token invalid")
 		return nil, helper.NewUnauthorized("invalid refresh token")
@@ -293,7 +341,7 @@ func (uc *AdminAuthUseCase) Logout(ctx context.Context, req *model.AdminLogoutRe
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin auth logout start")
 
-	claims, err := token.ParseAdminToken(req.AccessToken, uc.jwtConfig.SecretKey)
+	claims, err := token.ParseAdminToken(req.AccessToken, uc.jwtConfig.AdminSecretKey)
 	if err != nil {
 		log.Warn("admin auth logout parse token failed", zap.Error(err))
 		return err
@@ -346,7 +394,7 @@ func (uc *AdminAuthUseCase) finalizeLogin(ctx context.Context, adminID uuid.UUID
 	}
 
 	// Build enriched response including user and its roles via converter
-	resp := converter.ToAdminLoginResponse(admin, accessToken, refreshToken, int64(uc.jwtConfig.AccessExpiry.Seconds()))
+	resp := converter.ToAdminLoginResponse(admin, accessToken, refreshToken, int64(uc.jwtConfig.AdminAccessExpiry.Seconds()))
 	log.Info("admin auth finalize login success", zap.String("admin_id", adminID.String()))
 	return &resp, nil
 }

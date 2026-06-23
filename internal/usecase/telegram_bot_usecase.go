@@ -21,7 +21,7 @@ import (
 
 type ITelegramBotUseCase interface {
 	Create(ctx context.Context, clientID uuid.UUID, req *model.TelegramBotCreateRequest) (*model.TelegramBotResponse, error)
-	FindAllByClient(ctx context.Context, clientID uuid.UUID) ([]model.TelegramBotResponse, error)
+	FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.TelegramBotResponse, int64, error)
 	FindByID(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (*model.TelegramBotResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, req *model.TelegramBotUpdateRequest) (*model.TelegramBotResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) error
@@ -30,33 +30,59 @@ type ITelegramBotUseCase interface {
 type TelegramBotUseCase struct {
 	db              *entity.Database
 	botRepo         repository.ITelegramBotRepository
+	billingRepo     repository.IClientBillingRepository
 	telegramFactory telegram.BotFactory
 	log             *zap.Logger
 	encryptionKey   string
 	webhookBaseURL  string
+	webhookSecret   string
 }
 
 func NewTelegramBotUseCase(
 	db *entity.Database,
 	botRepo repository.ITelegramBotRepository,
+	billingRepo repository.IClientBillingRepository,
 	telegramFactory telegram.BotFactory,
 	log *zap.Logger,
 	encryptionKey string,
 	webhookBaseURL string,
+	webhookSecret string,
 ) ITelegramBotUseCase {
 	return &TelegramBotUseCase{
 		db:              db,
 		botRepo:         botRepo,
+		billingRepo:     billingRepo,
 		telegramFactory: telegramFactory,
 		log:             log,
 		encryptionKey:   encryptionKey,
 		webhookBaseURL:  webhookBaseURL,
+		webhookSecret:   webhookSecret,
 	}
 }
 
 func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, req *model.TelegramBotCreateRequest) (*model.TelegramBotResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("bot usecase create start", zap.String("client_id", clientID.String()))
+
+	// 0. Check quota: ambil active billing plan milik client
+	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		log.Error("bot usecase create find billing failed", zap.Error(err))
+		return nil, fmt.Errorf("Gagal memeriksa status billing")
+	}
+	if billing != nil && billing.Plan.MaxBots != -1 {
+		currentCount, err := uc.botRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+		if err != nil {
+			log.Error("bot usecase create count bots failed", zap.Error(err))
+			return nil, fmt.Errorf("Gagal menghitung jumlah bot")
+		}
+		if currentCount >= int64(billing.Plan.MaxBots) {
+			return nil, helper.NewBadRequest(fmt.Sprintf(
+				"Kuota bot Anda sudah penuh (%d/%d). Silakan upgrade paket platform untuk menambah lebih banyak bot.",
+				currentCount, billing.Plan.MaxBots,
+			))
+		}
+	}
 
 	// 1. Verify token via Telegram API
 	tgClient, err := uc.telegramFactory.NewClient(req.Token)
@@ -70,8 +96,6 @@ func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, re
 		log.Error("bot usecase create tg getme failed")
 		return nil, helper.NewBadRequest("Gagal memvalidasi token bot dengan Telegram API")
 	}
-
-	fmt.Println("Bot Info:", botInfo)
 
 	// 1.5 Cek apakah bot ini sudah pernah didaftarkan
 	existingBot, err := uc.botRepo.FindByBotID(ctx, uc.db.Gorm, botInfo.Self.ID)
@@ -108,44 +132,49 @@ func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, re
 		UpdatedAt: time.Now(),
 	}
 
-	// 3. Begin Transaction
+	// 3. Persist bot in DB first (transaction only for DB write).
 	err = uc.db.Gorm.Transaction(func(tx *gorm.DB) error {
 		if err := uc.botRepo.Create(ctx, tx, bot); err != nil {
 			return fmt.Errorf("create bot in db: %w", err)
 		}
-
-		// 4. Set Webhook
-		webhookURL := fmt.Sprintf("%s/webhooks/telegram/%s", uc.webhookBaseURL, bot.ID.String())
-		// Webhook secret could be derived or just simple string for validation
-		secretToken := "my_webhook_secret_here" // Optionally generate dynamically
-
-		if err := tgClient.SetWebhook(ctx, webhookURL, secretToken); err != nil {
-			return fmt.Errorf("set webhook: %w", err)
-		}
-
 		return nil
 	})
-
 	if err != nil {
 		log.Error("bot usecase create transaction failed", zap.Error(err))
 		return nil, fmt.Errorf("create bot in db: %w", err)
+	}
+
+	// 4. Configure webhook outside DB transaction to avoid external I/O inside tx.
+	webhookURL := fmt.Sprintf("%s/webhooks/telegram/%s", uc.webhookBaseURL, bot.ID.String())
+	if err := tgClient.SetWebhook(ctx, webhookURL, uc.webhookSecret); err != nil {
+		log.Error("bot usecase create set webhook failed, rolling back bot record", zap.Error(err), zap.String("bot_id", bot.ID.String()))
+		if delErr := uc.botRepo.Delete(ctx, uc.db.Gorm, bot); delErr != nil {
+			log.Error("bot usecase create rollback delete failed", zap.Error(delErr), zap.String("bot_id", bot.ID.String()))
+		}
+		return nil, fmt.Errorf("set webhook: %w", err)
 	}
 
 	log.Info("bot usecase create success", zap.String("bot_id", bot.ID.String()))
 	return converter.TelegramBotToResponse(bot), nil
 }
 
-func (uc *TelegramBotUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID) ([]model.TelegramBotResponse, error) {
+func (uc *TelegramBotUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.TelegramBotResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("bot usecase find all start", zap.String("client_id", clientID.String()))
 
-	bots, err := uc.botRepo.FindByClientID(ctx, uc.db.Gorm, clientID)
+	bots, err := uc.botRepo.FindByClientID(ctx, uc.db.Gorm, clientID, page, limit)
 	if err != nil {
 		log.Error("bot usecase find all failed", zap.Error(err))
-		return nil, err
+		return nil, 0, err
 	}
 
-	return converter.TelegramBotsToResponse(bots), nil
+	total, err := uc.botRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		log.Error("bot usecase count failed", zap.Error(err))
+		return nil, 0, err
+	}
+
+	return converter.TelegramBotsToResponse(bots), total, nil
 }
 
 func (uc *TelegramBotUseCase) FindByID(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (*model.TelegramBotResponse, error) {
@@ -185,7 +214,9 @@ func (uc *TelegramBotUseCase) Update(ctx context.Context, clientID uuid.UUID, bo
 		return nil, helper.NewNotFound("Bot tidak ditemukan")
 	}
 
+	isActiveChanged := false
 	if req.IsActive != nil {
+		isActiveChanged = bot.IsActive != *req.IsActive
 		bot.IsActive = *req.IsActive
 	}
 	if req.BotRole != nil {
@@ -196,6 +227,29 @@ func (uc *TelegramBotUseCase) Update(ctx context.Context, clientID uuid.UUID, bo
 	if err := uc.botRepo.Update(ctx, uc.db.Gorm, bot); err != nil {
 		log.Error("bot usecase update failed", zap.Error(err))
 		return nil, err
+	}
+
+	if isActiveChanged {
+		token, decErr := crypto.Decrypt(bot.Token, uc.encryptionKey)
+		if decErr != nil {
+			log.Warn("bot usecase update failed to decrypt token for webhook sync", zap.Error(decErr), zap.String("bot_id", botID.String()))
+		} else {
+			tgClient, tgErr := uc.telegramFactory.NewClient(token)
+			if tgErr != nil {
+				log.Warn("bot usecase update failed to init telegram client for webhook sync", zap.Error(tgErr), zap.String("bot_id", botID.String()))
+			} else {
+				if bot.IsActive {
+					webhookURL := fmt.Sprintf("%s/webhooks/telegram/%s", uc.webhookBaseURL, bot.ID.String())
+					if err := tgClient.SetWebhook(ctx, webhookURL, uc.webhookSecret); err != nil {
+						log.Warn("bot usecase update failed to set webhook on activation", zap.Error(err), zap.String("bot_id", botID.String()))
+					}
+				} else {
+					if err := tgClient.DeleteWebhook(ctx); err != nil {
+						log.Warn("bot usecase update failed to delete webhook on deactivation", zap.Error(err), zap.String("bot_id", botID.String()))
+					}
+				}
+			}
+		}
 	}
 
 	log.Info("bot usecase update success", zap.String("bot_id", botID.String()))

@@ -16,10 +16,17 @@ import (
 // JWTConfig holds JWT signing and expiry configuration.
 // Admin and Tenant use SEPARATE secrets for security isolation.
 type JWTConfig struct {
-	SecretKey     string
-	AccessExpiry  time.Duration
-	RefreshExpiry time.Duration
-	Issuer        string
+	// Admin JWT (Superadmin panel)
+	AdminSecretKey     string
+	AdminAccessExpiry  time.Duration
+	AdminRefreshExpiry time.Duration
+
+	// Tenant JWT (Client dashboard)
+	TenantSecretKey     string
+	TenantAccessExpiry  time.Duration
+	TenantRefreshExpiry time.Duration
+
+	Issuer string
 }
 
 // TokenType distinguishes between admin and tenant JWTs at parse time.
@@ -59,7 +66,7 @@ func GenerateAdminTokens(ctx context.Context, adminID uuid.UUID, email string, r
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        accessJTI,
 			Subject:   adminID.String(),
-			ExpiresAt: jwt.NewNumericDate(now.Add(config.AccessExpiry)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(config.AdminAccessExpiry)),
 			Issuer:    config.Issuer,
 			IssuedAt:  jwt.NewNumericDate(now),
 			Audience:  []string{"admin"},
@@ -67,7 +74,7 @@ func GenerateAdminTokens(ctx context.Context, adminID uuid.UUID, email string, r
 	}
 
 	at := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, err = at.SignedString([]byte(config.SecretKey))
+	accessToken, err = at.SignedString([]byte(config.AdminSecretKey))
 	if err != nil {
 		return "", "", "", fmt.Errorf("sign admin access token: %w", err)
 	}
@@ -77,7 +84,7 @@ func GenerateAdminTokens(ctx context.Context, adminID uuid.UUID, email string, r
 	refreshClaims := jwt.RegisteredClaims{
 		ID:        refreshJTI,
 		Subject:   adminID.String(),
-		ExpiresAt: jwt.NewNumericDate(now.Add(config.RefreshExpiry)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(config.AdminRefreshExpiry)),
 		Issuer:    config.Issuer,
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
@@ -85,7 +92,7 @@ func GenerateAdminTokens(ctx context.Context, adminID uuid.UUID, email string, r
 	}
 
 	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err = rt.SignedString([]byte(config.SecretKey))
+	refreshToken, err = rt.SignedString([]byte(config.AdminSecretKey))
 	if err != nil {
 		return "", "", "", fmt.Errorf("sign admin refresh token: %w", err)
 	}
@@ -145,7 +152,7 @@ func GenerateTenantTokens(ctx context.Context, userID, clientID uuid.UUID, role 
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        accessJTI,
 			Subject:   userID.String(),
-			ExpiresAt: jwt.NewNumericDate(now.Add(config.AccessExpiry)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(config.TenantAccessExpiry)),
 			Issuer:    config.Issuer,
 			IssuedAt:  jwt.NewNumericDate(now),
 			Audience:  []string{"tenant"},
@@ -153,7 +160,7 @@ func GenerateTenantTokens(ctx context.Context, userID, clientID uuid.UUID, role 
 	}
 
 	at := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, err = at.SignedString([]byte(config.SecretKey))
+	accessToken, err = at.SignedString([]byte(config.TenantSecretKey))
 	if err != nil {
 		return "", "", "", fmt.Errorf("sign tenant access token: %w", err)
 	}
@@ -162,7 +169,7 @@ func GenerateTenantTokens(ctx context.Context, userID, clientID uuid.UUID, role 
 	refreshClaims := jwt.RegisteredClaims{
 		ID:        refreshJTI,
 		Subject:   userID.String(),
-		ExpiresAt: jwt.NewNumericDate(now.Add(config.RefreshExpiry)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(config.TenantRefreshExpiry)),
 		Issuer:    config.Issuer,
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
@@ -170,7 +177,7 @@ func GenerateTenantTokens(ctx context.Context, userID, clientID uuid.UUID, role 
 	}
 
 	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err = rt.SignedString([]byte(config.SecretKey))
+	refreshToken, err = rt.SignedString([]byte(config.TenantSecretKey))
 	if err != nil {
 		return "", "", "", fmt.Errorf("sign tenant refresh token: %w", err)
 	}
@@ -225,7 +232,7 @@ type ImpersonationClaims struct {
 func GenerateImpersonationToken(ctx context.Context, adminID, clientID, targetUserID uuid.UUID, config *JWTConfig) (string, error) {
 	now := time.Now()
 	// Impersonation tokens are short-lived (max 1 hour regardless of config)
-	expiry := config.AccessExpiry
+	expiry := config.TenantAccessExpiry
 	if expiry > 1*time.Hour {
 		expiry = 1 * time.Hour
 	}
@@ -248,7 +255,7 @@ func GenerateImpersonationToken(ctx context.Context, adminID, clientID, targetUs
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(config.SecretKey))
+	tokenString, err := token.SignedString([]byte(config.TenantSecretKey))
 	if err != nil {
 		return "", fmt.Errorf("sign impersonation token: %w", err)
 	}

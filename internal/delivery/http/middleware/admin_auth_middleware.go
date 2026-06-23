@@ -28,7 +28,7 @@ func AdminAuth(jwtConfig *pkg_jwt.JWTConfig) fiber.Handler {
 
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-		claims, err := pkg_jwt.ParseAdminToken(tokenStr, jwtConfig.SecretKey)
+		claims, err := pkg_jwt.ParseAdminToken(tokenStr, jwtConfig.AdminSecretKey)
 		if err != nil {
 			return fiber.NewError(fiber.StatusUnauthorized, "invalid or expired token")
 		}

@@ -11,11 +11,17 @@ func PlatformPlanToResponse(p *entity.PlatformPlan) *model.PlatformPlanResponse 
 		return nil
 	}
 
-	var features map[string]interface{}
+	var features []model.PlatformPlanFeature
 	if len(p.Features) > 0 {
-		features = p.Features
+		features = make([]model.PlatformPlanFeature, len(p.Features))
+		for i, f := range p.Features {
+			features[i] = model.PlatformPlanFeature{
+				Name:     f.Name,
+				Included: f.Included,
+			}
+		}
 	} else {
-		features = map[string]interface{}{}
+		features = []model.PlatformPlanFeature{}
 	}
 
 	return &model.PlatformPlanResponse{
@@ -27,9 +33,11 @@ func PlatformPlanToResponse(p *entity.PlatformPlan) *model.PlatformPlanResponse 
 		MaxBots:      p.MaxBots,
 		MaxGroups:    p.MaxGroups,
 		MaxPackages:  p.MaxPackages,
-		MaxMembers:   p.MaxMembers,
-		Features:     features,
+		MaxMembers:        p.MaxMembers,
+		MaxCustomCommands: p.MaxCustomCommands,
+		Features:          features,
 		IsActive:     p.IsActive,
+		IsLandingPage: p.IsLandingPage,
 		CreatedAt:    p.CreatedAt,
 		UpdatedAt:    p.UpdatedAt,
 	}

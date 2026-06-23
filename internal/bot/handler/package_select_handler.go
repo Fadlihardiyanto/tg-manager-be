@@ -74,7 +74,7 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 
 	// 1. Answer Callback Query to stop loading animation
 	callbackCfg := tgbotapi.NewCallback(query.ID, "")
-	if _, err := botClient.GetBot().Request(callbackCfg); err != nil {
+	if _, err := botClient.Request(ctx, callbackCfg); err != nil {
 		h.log.Warn("failed to answer callback query", zap.Error(err))
 	}
 
@@ -82,7 +82,7 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 	if query.Data == h.Prefix()+"cancel" {
 		if query.Message != nil {
 			delMsg := tgbotapi.NewDeleteMessage(query.Message.Chat.ID, query.Message.MessageID)
-			if _, err := botClient.GetBot().Request(delMsg); err != nil {
+			if _, err := botClient.Request(ctx, delMsg); err != nil {
 				h.log.Warn("failed to delete message on cancel", zap.Error(err))
 			}
 		}
@@ -161,7 +161,7 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 			)
 			replyMsg.ReplyMarkup = keyboard
 
-			if _, err := botClient.GetBot().Send(replyMsg); err != nil {
+			if _, err := botClient.Send(ctx, replyMsg); err != nil {
 				h.log.Error("failed to send confirmation message", zap.Error(err))
 				return err
 			}
@@ -202,7 +202,7 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 	replyMsg := tgbotapi.NewMessage(chatID, replyText)
 	replyMsg.ParseMode = tgbotapi.ModeHTML
 
-	if _, err := botClient.GetBot().Send(replyMsg); err != nil {
+	if _, err := botClient.Send(ctx, replyMsg); err != nil {
 		h.log.Error("failed to send payment reply", zap.Error(err))
 		return err
 	}

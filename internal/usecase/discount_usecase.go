@@ -212,7 +212,7 @@ func (uc *platformDiscountUseCase) applyDiscount(d *entity.PlatformDiscount, pla
 // ── Member Discount Usecase ───────────────────────────────────
 
 type IMemberDiscountUseCase interface {
-	ListByClient(ctx context.Context, clientID uuid.UUID, onlyActive bool) ([]model.MemberDiscountResponse, error)
+	ListByClient(ctx context.Context, clientID uuid.UUID, onlyActive bool, page, limit int) ([]model.MemberDiscountResponse, int64, error)
 	Create(ctx context.Context, req *model.CreateMemberDiscountRequest) (*model.MemberDiscountResponse, error)
 	Update(ctx context.Context, req *model.UpdateMemberDiscountRequest) (*model.MemberDiscountResponse, error)
 	Delete(ctx context.Context, id, clientID uuid.UUID) error
@@ -240,16 +240,20 @@ func NewMemberDiscountUseCase(
 	return &memberDiscountUseCase{db: db, discountRepo: discountRepo, log: log}
 }
 
-func (uc *memberDiscountUseCase) ListByClient(ctx context.Context, clientID uuid.UUID, onlyActive bool) ([]model.MemberDiscountResponse, error) {
-	discounts, err := uc.discountRepo.FindAllByClient(ctx, uc.db.Gorm, clientID, onlyActive)
+func (uc *memberDiscountUseCase) ListByClient(ctx context.Context, clientID uuid.UUID, onlyActive bool, page, limit int) ([]model.MemberDiscountResponse, int64, error) {
+	discounts, err := uc.discountRepo.FindAllByClient(ctx, uc.db.Gorm, clientID, onlyActive, page, limit)
 	if err != nil {
-		return nil, fmt.Errorf("gagal mengambil data diskon")
+		return nil, 0, fmt.Errorf("gagal mengambil data diskon")
+	}
+	total, err := uc.discountRepo.CountAllByClient(ctx, uc.db.Gorm, clientID, onlyActive)
+	if err != nil {
+		return nil, 0, fmt.Errorf("gagal menghitung jumlah diskon")
 	}
 	result := make([]model.MemberDiscountResponse, len(discounts))
 	for i, d := range discounts {
 		result[i] = toMemberDiscountResponse(&d)
 	}
-	return result, nil
+	return result, total, nil
 }
 
 func (uc *memberDiscountUseCase) Create(ctx context.Context, req *model.CreateMemberDiscountRequest) (*model.MemberDiscountResponse, error) {

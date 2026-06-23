@@ -112,7 +112,7 @@ func TestClientBillingUseCase_CancelBilling_Forbidden(t *testing.T) {
 
 	err := uc.CancelBilling(ctx, req)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "forbidden")
+	assert.Contains(t, err.Error(), "izin")
 }
 
 func TestClientBillingUseCase_Checkout_Success(t *testing.T) {

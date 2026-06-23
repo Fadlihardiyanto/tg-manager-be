@@ -10,12 +10,13 @@ import (
 
 type ITelegramGroupRepository interface {
 	IRepository[entity.Group]
-	FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) ([]entity.Group, error)
+	FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.Group, error)
 	FindByBotID(ctx context.Context, tx *gorm.DB, botID uuid.UUID) ([]entity.Group, error)
 	FindByTelegramID(ctx context.Context, tx *gorm.DB, telegramID int64) (*entity.Group, error)
 	FindAllActive(ctx context.Context, tx *gorm.DB) ([]entity.Group, error)
 	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Group, error)
 	Delete(ctx context.Context, tx *gorm.DB, group *entity.Group) error
+	CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
 }
 
 type TelegramGroupRepository struct {
@@ -47,9 +48,14 @@ func (r *TelegramGroupRepository) FindAllActive(ctx context.Context, tx *gorm.DB
 	return groups, err
 }
 
-func (r *TelegramGroupRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) ([]entity.Group, error) {
+func (r *TelegramGroupRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.Group, error) {
 	var groups []entity.Group
-	err := tx.WithContext(ctx).Where("client_id = ? AND deleted_at IS NULL", clientID).Find(&groups).Error
+	offset := (page - 1) * limit
+	err := tx.WithContext(ctx).
+		Where("client_id = ? AND deleted_at IS NULL", clientID).
+		Offset(offset).
+		Limit(limit).
+		Find(&groups).Error
 	return groups, err
 }
 
@@ -61,4 +67,13 @@ func (r *TelegramGroupRepository) FindByID(ctx context.Context, tx *gorm.DB, id 
 
 func (r *TelegramGroupRepository) Delete(ctx context.Context, tx *gorm.DB, group *entity.Group) error {
 	return tx.WithContext(ctx).Delete(group).Error
+}
+
+func (r *TelegramGroupRepository) CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Model(&entity.Group{}).
+		Where("client_id = ? AND deleted_at IS NULL", clientID).
+		Count(&count).Error
+	return count, err
 }

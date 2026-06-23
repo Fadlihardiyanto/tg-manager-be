@@ -21,7 +21,7 @@ import (
 
 type ITelegramGroupUseCase interface {
 	Create(ctx context.Context, clientID uuid.UUID, req *model.GroupCreateRequest) (*model.GroupResponse, error)
-	FindAllByClient(ctx context.Context, clientID uuid.UUID) ([]model.GroupResponse, error)
+	FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.GroupResponse, int64, error)
 	FindByID(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) (*model.GroupResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID, req *model.GroupUpdateRequest) (*model.GroupResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
@@ -31,6 +31,7 @@ type TelegramGroupUseCase struct {
 	db              *entity.Database
 	groupRepo       repository.ITelegramGroupRepository
 	botRepo         repository.ITelegramBotRepository
+	billingRepo     repository.IClientBillingRepository
 	telegramFactory telegram.BotFactory
 	log             *zap.Logger
 	encryptionKey   string
@@ -40,6 +41,7 @@ func NewTelegramGroupUseCase(
 	db *entity.Database,
 	groupRepo repository.ITelegramGroupRepository,
 	botRepo repository.ITelegramBotRepository,
+	billingRepo repository.IClientBillingRepository,
 	telegramFactory telegram.BotFactory,
 	log *zap.Logger,
 	encryptionKey string,
@@ -48,6 +50,7 @@ func NewTelegramGroupUseCase(
 		db:              db,
 		groupRepo:       groupRepo,
 		botRepo:         botRepo,
+		billingRepo:     billingRepo,
 		telegramFactory: telegramFactory,
 		log:             log,
 		encryptionKey:   encryptionKey,
@@ -58,7 +61,27 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("group usecase create start", zap.String("client_id", clientID.String()))
 
-	// 1. Verify Bot belongs to client
+	// 1. Check quota: ambil active billing plan milik client
+	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		log.Error("group usecase create find billing failed", zap.Error(err))
+		return nil, fmt.Errorf("Gagal memeriksa status billing")
+	}
+	if billing != nil && billing.Plan.MaxGroups != -1 {
+		currentCount, err := uc.groupRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+		if err != nil {
+			log.Error("group usecase create count groups failed", zap.Error(err))
+			return nil, fmt.Errorf("Gagal menghitung jumlah grup")
+		}
+		if currentCount >= int64(billing.Plan.MaxGroups) {
+			return nil, helper.NewBadRequest(fmt.Sprintf(
+				"Kuota grup Anda sudah penuh (%d/%d). Silakan upgrade paket untuk menambah lebih banyak grup.",
+				currentCount, billing.Plan.MaxGroups,
+			))
+		}
+	}
+
+	// 2. Verify Bot belongs to client
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, req.BotID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -126,17 +149,23 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	return converter.GroupToResponse(group), nil
 }
 
-func (uc *TelegramGroupUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID) ([]model.GroupResponse, error) {
+func (uc *TelegramGroupUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.GroupResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("group usecase find all start", zap.String("client_id", clientID.String()))
 
-	groups, err := uc.groupRepo.FindByClientID(ctx, uc.db.Gorm, clientID)
+	groups, err := uc.groupRepo.FindByClientID(ctx, uc.db.Gorm, clientID, page, limit)
 	if err != nil {
 		log.Error("group usecase find all failed", zap.Error(err))
-		return nil, err
+		return nil, 0, err
 	}
 
-	return converter.GroupsToResponse(groups), nil
+	total, err := uc.groupRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		log.Error("group usecase count failed", zap.Error(err))
+		return nil, 0, err
+	}
+
+	return converter.GroupsToResponse(groups), total, nil
 }
 
 func (uc *TelegramGroupUseCase) FindByID(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) (*model.GroupResponse, error) {

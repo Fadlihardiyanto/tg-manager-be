@@ -36,6 +36,7 @@ type memberOrderUseCase struct {
 	packageRepo      repository.IPackageRepository
 	telegramUserRepo repository.ITelegramUserRepository
 	clientRepo       repository.IClientRepository
+	billingRepo      repository.IClientBillingRepository
 	discountRepo     repository.IMemberDiscountRepository
 	discountUC       IMemberDiscountUseCase
 	outboxRepo       repository.IOutboxRepository
@@ -53,6 +54,7 @@ func NewMemberOrderUseCase(
 	packageRepo repository.IPackageRepository,
 	telegramUserRepo repository.ITelegramUserRepository,
 	clientRepo repository.IClientRepository,
+	billingRepo repository.IClientBillingRepository,
 	discountRepo repository.IMemberDiscountRepository,
 	discountUC IMemberDiscountUseCase,
 	outboxRepo repository.IOutboxRepository,
@@ -69,6 +71,7 @@ func NewMemberOrderUseCase(
 		packageRepo:      packageRepo,
 		telegramUserRepo: telegramUserRepo,
 		clientRepo:       clientRepo,
+		billingRepo:      billingRepo,
 		discountRepo:     discountRepo,
 		discountUC:       discountUC,
 		outboxRepo:       outboxRepo,
@@ -142,6 +145,30 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 	}
 	if !pkg.IsActive {
 		return nil, helper.NewBadRequest("Paket ini sedang tidak aktif")
+	}
+
+	// 2.5. Check Client Quota (Max Members)
+	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, pkg.ClientID)
+	if err != nil {
+		log.Error("member order checkout find client billing failed", zap.Error(err))
+		return nil, fmt.Errorf("merchant sedang bermasalah dengan paket billing")
+	}
+	if billing != nil && billing.Plan.MaxMembers != -1 {
+		currentCount, err := uc.subRepo.CountActiveUniqueUsersByClientID(ctx, uc.db.Gorm, pkg.ClientID)
+		if err != nil {
+			log.Error("member order checkout count members failed", zap.Error(err))
+			return nil, fmt.Errorf("gagal menghitung batas member")
+		}
+		// Allow checkout IF the user already has an active sub for this client (not a new member, just upgrading/extending)
+		// We'll check this below during user fetch. If they are a new member and count >= max, we block it.
+		if currentCount >= int64(billing.Plan.MaxMembers) {
+			// Needs to verify if this specific user already has an active sub to this client.
+			// If they don't, it means they are adding a NEW member to the count, which is blocked.
+			activeSubs, _ := uc.subRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, req.TelegramUserID, pkg.ClientID)
+			if len(activeSubs) == 0 {
+				return nil, helper.NewBadRequest(fmt.Sprintf("Mohon maaf, grup ini telah mencapai batas maksimum pendaftaran member (%d/%d).", currentCount, billing.Plan.MaxMembers))
+			}
+		}
 	}
 
 	// 3. Fetch/Create Telegram User
@@ -665,26 +692,37 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 // ── Private Helpers ──────────────────────────────────────────
 
 func (uc *memberOrderUseCase) getMidtransClient(ctx context.Context, client *entity.Client) (*midtrans.Client, error) {
-	if client.MidtransServerKey == nil || *client.MidtransServerKey == "" ||
-		client.MidtransClientKey == nil || *client.MidtransClientKey == "" {
+	var serverKeyEnc, clientKeyEnc *string
+	if client.MidtransIsSandbox {
+		serverKeyEnc = client.MidtransSandboxServerKey
+		clientKeyEnc = client.MidtransSandboxClientKey
+	} else {
+		serverKeyEnc = client.MidtransProductionServerKey
+		clientKeyEnc = client.MidtransProductionClientKey
+	}
+
+	if serverKeyEnc == nil || *serverKeyEnc == "" ||
+		clientKeyEnc == nil || *clientKeyEnc == "" {
 		return nil, fmt.Errorf("merchant ini belum mengaktifkan pembayaran Midtrans")
 	}
 
-	serverKey, err := crypto.Decrypt(*client.MidtransServerKey, uc.encryptionKey)
+	serverKey, err := crypto.Decrypt(*serverKeyEnc, uc.encryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membaca server key Midtrans client: %v", err)
 	}
 
-	clientKey, err := crypto.Decrypt(*client.MidtransClientKey, uc.encryptionKey)
+	clientKey, err := crypto.Decrypt(*clientKeyEnc, uc.encryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membaca client key Midtrans client")
 	}
 
+	baseURL, snapURL := midtrans.EnvironmentURLs(client.MidtransIsSandbox)
+
 	return midtrans.NewClient(midtrans.Config{
 		ServerKey: serverKey,
 		ClientKey: clientKey,
-		BaseURL:   uc.midtransBaseURL,
-		SnapURL:   uc.midtransSnapURL,
+		BaseURL:   baseURL,
+		SnapURL:   snapURL,
 	}), nil
 }
 

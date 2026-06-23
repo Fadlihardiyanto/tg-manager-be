@@ -72,5 +72,22 @@ func NewValidator() *validator.Validate {
 		return fl.Field().Int() >= 1
 	})
 
+	// slug: URL-safe slug (lowercase alphanumeric and hyphens, no leading/trailing hyphens)
+	v.RegisterValidation("slug", func(fl validator.FieldLevel) bool {
+		val := fl.Field().String()
+		if len(val) == 0 {
+			return false
+		}
+		if val[0] == '-' || val[len(val)-1] == '-' {
+			return false
+		}
+		for _, c := range val {
+			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+				return false
+			}
+		}
+		return true
+	})
+
 	return v
 }

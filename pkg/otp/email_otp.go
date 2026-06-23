@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -100,7 +101,7 @@ func (s *EmailOTPService) GenerateOTP(ctx context.Context, purpose, identifier s
 	}
 	if exists > 0 {
 		ttl, _ := s.redis.TTL(ctx, cooldownKey).Result()
-		return "", fmt.Errorf("otp: please wait %d seconds before requesting a new code", int(ttl.Seconds()))
+		return "", helper.NewTooManyRequestsError(fmt.Sprintf("silakan tunggu %d detik sebelum meminta kode baru", int(ttl.Seconds())))
 	}
 
 	// Generate cryptographically secure 6-digit code
@@ -135,7 +136,7 @@ func (s *EmailOTPService) VerifyOTP(ctx context.Context, purpose, identifier, co
 	// Get stored code
 	storedCode, err := s.redis.Get(ctx, codeKey).Result()
 	if err == redis.Nil {
-		return fmt.Errorf("otp: code expired or not found")
+		return helper.NewBadRequest("Kode OTP tidak ditemukan atau sudah kedaluwarsa")
 	}
 	if err != nil {
 		return fmt.Errorf("otp: get code: %w", err)
@@ -151,13 +152,13 @@ func (s *EmailOTPService) VerifyOTP(ctx context.Context, purpose, identifier, co
 	if int(attempts) > s.maxAttempts {
 		// Invalidate the OTP — too many wrong attempts
 		s.redis.Del(ctx, codeKey, attemptsKey)
-		return fmt.Errorf("otp: max attempts exceeded, code invalidated")
+		return helper.NewTooManyRequestsError("Terlalu banyak percobaan, kode OTP telah dibatalkan. Silakan minta kode baru")
 	}
 
 	// Constant-time comparison to prevent timing attacks
 	if !secureCompare(code, storedCode) {
 		remaining := s.maxAttempts - int(attempts)
-		return fmt.Errorf("otp: invalid code, %d attempts remaining", remaining)
+		return helper.NewBadRequest(fmt.Sprintf("Kode OTP salah, sisa %d percobaan", remaining))
 	}
 
 	// Success — clean up

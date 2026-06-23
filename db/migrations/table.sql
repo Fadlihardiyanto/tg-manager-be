@@ -247,6 +247,9 @@ ALTER TABLE subscriptions
     ADD CONSTRAINT fk_subscriptions_order
     FOREIGN KEY (order_id) REFERENCES orders(id);
 
+-- Receipt PDF URL (generated after payment)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS receipt_url VARCHAR(500);
+
 -- ==========================================
 -- 12. OUTBOX (Atomic Event Publishing)
 -- ==========================================
@@ -796,6 +799,7 @@ CREATE TABLE platform_plans (
     -- {"white_label": true, "api_access": false, "custom_domain": true}
 
     is_active           BOOLEAN DEFAULT true,
+    is_landing_page     BOOLEAN DEFAULT true,
     created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at          TIMESTAMP

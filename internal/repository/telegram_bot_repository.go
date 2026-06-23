@@ -11,11 +11,12 @@ import (
 
 type ITelegramBotRepository interface {
 	IRepository[entity.TelegramBot]
-	FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) ([]entity.TelegramBot, error)
+	FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.TelegramBot, error)
 	FindFirstByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (*entity.TelegramBot, error)
 	FindByBotID(ctx context.Context, tx *gorm.DB, botID int64) (*entity.TelegramBot, error)
 	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.TelegramBot, error)
 	Delete(ctx context.Context, tx *gorm.DB, bot *entity.TelegramBot) error
+	CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
 }
 
 type TelegramBotRepository struct {
@@ -26,9 +27,14 @@ func NewTelegramBotRepository() ITelegramBotRepository {
 	return &TelegramBotRepository{}
 }
 
-func (r *TelegramBotRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) ([]entity.TelegramBot, error) {
+func (r *TelegramBotRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.TelegramBot, error) {
 	var bots []entity.TelegramBot
-	err := tx.WithContext(ctx).Where("client_id = ? AND deleted_at IS NULL", clientID).Find(&bots).Error
+	offset := (page - 1) * limit
+	err := tx.WithContext(ctx).
+		Where("client_id = ? AND deleted_at IS NULL", clientID).
+		Offset(offset).
+		Limit(limit).
+		Find(&bots).Error
 	return bots, err
 }
 
@@ -73,4 +79,13 @@ func (r *TelegramBotRepository) FindByID(ctx context.Context, tx *gorm.DB, id uu
 
 func (r *TelegramBotRepository) Delete(ctx context.Context, tx *gorm.DB, bot *entity.TelegramBot) error {
 	return tx.WithContext(ctx).Delete(bot).Error
+}
+
+func (r *TelegramBotRepository) CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Model(&entity.TelegramBot{}).
+		Where("client_id = ? AND deleted_at IS NULL", clientID).
+		Count(&count).Error
+	return count, err
 }

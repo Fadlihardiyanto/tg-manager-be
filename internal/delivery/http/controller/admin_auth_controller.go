@@ -94,6 +94,32 @@ func (c *AdminAuthController) VerifyOTP(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Verifikasi OTP berhasil", result)
 }
 
+// ResendOTP godoc
+// POST /admin/v1/auth/otp/resend
+func (c *AdminAuthController) ResendOTP(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("admin auth otp resend request")
+
+	var req model.AdminResendOTPRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("admin auth otp resend bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("admin auth otp resend validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	if err := c.adminAuthUC.ResendOTP(ctx.Context(), &req); err != nil {
+		log.Error("admin auth otp resend failed", zap.Error(err))
+		return err
+	}
+	log.Info("admin auth otp resend succeeded")
+
+	return helper.Success(ctx, "Kode OTP baru telah dikirimkan ke email Anda", nil)
+}
+
 // RefreshToken godoc
 // POST /admin/v1/auth/refresh
 func (c *AdminAuthController) RefreshToken(ctx fiber.Ctx) error {

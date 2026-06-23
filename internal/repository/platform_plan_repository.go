@@ -11,7 +11,8 @@ import (
 )
 
 type IPlatformPlanRepository interface {
-	FindAll(ctx context.Context, db *gorm.DB, onlyActive bool) ([]entity.PlatformPlan, error)
+	FindAll(ctx context.Context, db *gorm.DB, onlyActive bool, isLandingPage *bool, page int, limit int) ([]entity.PlatformPlan, error)
+	CountAll(ctx context.Context, db *gorm.DB, onlyActive bool, isLandingPage *bool) (int64, error)
 	FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.PlatformPlan, error)
 	FindByName(ctx context.Context, db *gorm.DB, name string) (*entity.PlatformPlan, error)
 	Create(ctx context.Context, db *gorm.DB, plan *entity.PlatformPlan) error
@@ -37,14 +38,34 @@ func NewPlatformPlanRepository() IPlatformPlanRepository {
 	return &platformPlanRepository{}
 }
 
-func (r *platformPlanRepository) FindAll(ctx context.Context, db *gorm.DB, onlyActive bool) ([]entity.PlatformPlan, error) {
+func (r *platformPlanRepository) FindAll(ctx context.Context, db *gorm.DB, onlyActive bool, isLandingPage *bool, page int, limit int) ([]entity.PlatformPlan, error) {
 	var plans []entity.PlatformPlan
 	q := db.WithContext(ctx).Where("deleted_at IS NULL").Order("price_monthly ASC")
 	if onlyActive {
 		q = q.Where("is_active = true")
 	}
+	if isLandingPage != nil {
+		q = q.Where("is_landing_page = ?", *isLandingPage)
+	}
+	if page > 0 && limit > 0 {
+		offset := (page - 1) * limit
+		q = q.Offset(offset).Limit(limit)
+	}
 	err := q.Find(&plans).Error
 	return plans, err
+}
+
+func (r *platformPlanRepository) CountAll(ctx context.Context, db *gorm.DB, onlyActive bool, isLandingPage *bool) (int64, error) {
+	var count int64
+	q := db.WithContext(ctx).Model(&entity.PlatformPlan{}).Where("deleted_at IS NULL")
+	if onlyActive {
+		q = q.Where("is_active = true")
+	}
+	if isLandingPage != nil {
+		q = q.Where("is_landing_page = ?", *isLandingPage)
+	}
+	err := q.Count(&count).Error
+	return count, err
 }
 
 func (r *platformPlanRepository) FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.PlatformPlan, error) {

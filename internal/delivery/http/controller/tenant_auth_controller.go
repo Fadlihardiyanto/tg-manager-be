@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
@@ -50,7 +51,7 @@ func (c *TenantAuthController) Register(ctx fiber.Ctx) error {
 	}
 	log.Info("tenant registration succeeded")
 
-	return helper.Created(ctx, "Registrasi tenant bisnis berhasil", result)
+	return helper.Created(ctx, "Registrasi akun berhasil, silakan cek email untuk verifikasi", result)
 }
 
 // Login godoc
@@ -82,6 +83,7 @@ func (c *TenantAuthController) Login(ctx fiber.Ctx) error {
 
 // VerifyEmail godoc
 // GET /api/v1/auth/verify-email?token=...
+// After successful verification, auto-logs the user in and returns JWT tokens.
 func (c *TenantAuthController) VerifyEmail(ctx fiber.Ctx) error {
 	log := logger.FromContext(ctx.Context(), c.log)
 	log.Info("tenant auth verify email request")
@@ -100,11 +102,71 @@ func (c *TenantAuthController) VerifyEmail(ctx fiber.Ctx) error {
 		return helper.UnprocessableEntity(ctx, errs)
 	}
 
-	if err := c.tenantAuthUC.VerifyEmail(ctx.Context(), &req); err != nil {
+	result, err := c.tenantAuthUC.VerifyEmail(ctx.Context(), &req)
+	if err != nil {
 		log.Error("tenant auth verify email failed", zap.Error(err))
 		return err
 	}
 	log.Info("tenant auth verify email succeeded")
 
-	return helper.Success(ctx, "Email berhasil diverifikasi", nil)
+	return helper.Success(ctx, "Email berhasil diverifikasi", result)
+}
+
+// ResendVerification godoc
+// POST /api/v1/auth/resend-verification
+// Resends the email verification link to the user's email address.
+func (c *TenantAuthController) ResendVerification(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("tenant auth resend verification request")
+
+	var req model.TenantResendVerificationRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("tenant auth resend verification bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("tenant auth resend verification validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	err := c.tenantAuthUC.ResendVerification(ctx.Context(), &req)
+	if err != nil {
+		log.Error("tenant auth resend verification failed", zap.Error(err))
+		return err
+	}
+	log.Info("tenant auth resend verification succeeded")
+
+	return helper.Success(ctx, "Link verifikasi telah dikirim ulang ke email Anda", nil)
+}
+
+// Onboarding godoc
+// POST /api/v1/clients/onboarding
+// Creates a new business (client) for the authenticated user.
+// Requires TenantAuth middleware — user must be logged in.
+func (c *TenantAuthController) Onboarding(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("tenant onboarding request")
+
+	userID := middleware.GetTenantUserID(ctx)
+
+	var req model.TenantOnboardingRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("tenant onboarding bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("tenant onboarding validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result, err := c.tenantAuthUC.Onboarding(ctx.Context(), userID, &req)
+	if err != nil {
+		log.Error("tenant onboarding failed", zap.Error(err))
+		return err
+	}
+	log.Info("tenant onboarding succeeded")
+
+	return helper.Created(ctx, "Bisnis berhasil dibuat", result)
 }

@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strconv"
+
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
@@ -26,9 +28,16 @@ func NewPlatformPlanController(uc usecase.IPlatformPlanUseCase, log *zap.Logger,
 func (c *PlatformPlanController) List(ctx fiber.Ctx) error {
 	var req model.PlatformPlanFilterRequest
 
-	// Default pagination
-	req.Page = 1
-	req.Limit = 20
+	page, _ := strconv.Atoi(ctx.Query("page", "1"))
+	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	req.Page = page
+	req.Limit = limit
 
 	if isActiveStr := ctx.Query("is_active"); isActiveStr != "" {
 		isActive := isActiveStr == "true"
@@ -37,12 +46,24 @@ func (c *PlatformPlanController) List(ctx fiber.Ctx) error {
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
 
-	result, err := c.planUC.List(ctx.Context(), &req, callerPermissions)
+	result, total, err := c.planUC.List(ctx.Context(), &req, callerPermissions)
 	if err != nil {
 		return err
 	}
 
-	return helper.Success(ctx, "Daftar plan berhasil diambil", result)
+	meta := helper.NewMeta(page, limit, total)
+	return helper.SuccessWithMeta(ctx, "Daftar plan berhasil diambil", result, meta)
+}
+
+// ListPublic godoc
+// GET /api/v1/public/plans
+func (c *PlatformPlanController) ListPublic(ctx fiber.Ctx) error {
+	result, err := c.planUC.ListPublic(ctx.Context())
+	if err != nil {
+		return err
+	}
+
+	return helper.Success(ctx, "Daftar plan publik berhasil diambil", result)
 }
 
 // GetByID godoc

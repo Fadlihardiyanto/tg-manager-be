@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"fmt"
+
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
@@ -28,16 +30,16 @@ func NewTenantProfileController(uc usecase.ITenantProfileUseCase, log *zap.Logge
 func (c *TenantProfileController) UpdatePaymentSettings(ctx fiber.Ctx) error {
 	clientID := middleware.GetTenantClientID(ctx)
 	if clientID == uuid.Nil {
-		return helper.BadRequest(ctx, "Unauthorized: Tenant ID not found in context")
+		return helper.BadRequest(ctx, "ID tenant tidak ditemukan di konteks")
 	}
 
 	var req model.PaymentSettingsUpdateRequest
 	if err := ctx.Bind().Body(&req); err != nil {
-		return helper.BadRequest(ctx, "Invalid request body")
+		return helper.BadRequest(ctx, "Isi request tidak valid")
 	}
 
 	if err := c.validate.Struct(&req); err != nil {
-		return helper.BadRequest(ctx, "Validation failed: " + err.Error())
+		return helper.BadRequest(ctx, "Validasi gagal: "+err.Error())
 	}
 
 	res, err := c.uc.UpdatePaymentSettings(ctx.Context(), clientID, &req)
@@ -46,4 +48,29 @@ func (c *TenantProfileController) UpdatePaymentSettings(ctx fiber.Ctx) error {
 	}
 
 	return helper.Success(ctx, "Pengaturan pembayaran berhasil diperbarui", res)
+}
+
+func (c *TenantProfileController) UpdateProfile(ctx fiber.Ctx) error {
+	clientID := middleware.GetTenantClientID(ctx)
+	if clientID == uuid.Nil {
+		return helper.BadRequest(ctx, "ID tenant tidak ditemukan di konteks")
+	}
+
+	var req model.ClientUpdateRequest
+	if err := ctx.Bind().Body(&req); err != nil {
+		return helper.BadRequest(ctx, "Isi request tidak valid")
+	}
+
+	if err := c.validate.Struct(&req); err != nil {
+		return helper.BadRequest(ctx, "Validasi gagal: "+err.Error())
+	}
+
+	fmt.Println("UpdateProfile request: ", req)
+
+	res, err := c.uc.UpdateProfile(ctx.Context(), clientID, &req)
+	if err != nil {
+		return err
+	}
+
+	return helper.Success(ctx, "Profil bisnis berhasil diperbarui", res)
 }

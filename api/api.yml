@@ -1,0 +1,2410 @@
+openapi: 3.0.3
+info:
+  title: Telegram Management API
+  description: API documentation for Telegram Management Application (Admin, Tenant, and Public API)
+  version: 1.0.0
+  contact:
+    name: Backend Team
+servers:
+  - url: http://localhost:8080
+    description: Local Development Server
+  - url: https://api.yourdomain.com
+    description: Production Server
+
+tags:
+  - name: Public API
+    description: Endpoints for public access and webhooks
+  - name: Admin - Auth
+    description: Admin authentication endpoints
+  - name: Admin - Roles & Permissions
+    description: Role-Based Access Control for Admin
+  - name: Admin - Users
+    description: Admin user management
+  - name: Admin - Clients
+    description: Client (Tenant) management by Admin
+  - name: Admin - Billing & Plans
+    description: Platform subscription plans and billing management
+  - name: Tenant - Auth
+    description: Tenant authentication and onboarding
+  - name: Tenant - Bots
+    description: Telegram bot management
+  - name: Tenant - Groups
+    description: Telegram group management
+  - name: Tenant - Packages & Discounts
+    description: Subscription packages for group members
+  - name: Tenant - Billing
+    description: Self-service billing for tenants
+
+paths:
+  # ==========================================
+  # PUBLIC ROUTES
+  # ==========================================
+  /api/v1/public/plans:
+    get:
+      tags:
+        - Public API
+      summary: Get Public Plans
+      description: Returns a list of active platform plans intended for the public landing page. No authentication required.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PlatformPlanResponse"
+
+  /api/v1/member/checkout:
+    post:
+      tags:
+        - Public API
+      summary: Member Checkout
+      description: Public endpoint for member checkout process
+      responses:
+        "200":
+          description: Successful checkout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /webhooks/telegram/{bot_id}:
+    post:
+      tags:
+        - Public API
+      summary: Telegram Webhook
+      description: Receives updates from Telegram Bot API
+      parameters:
+        - name: bot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+
+  /webhooks/midtrans/billing:
+    post:
+      tags:
+        - Public API
+      summary: Midtrans Billing Webhook
+      description: Webhook for tenant billing payment status updates
+      responses:
+        "200":
+          description: OK
+
+  /webhooks/midtrans/member:
+    post:
+      tags:
+        - Public API
+      summary: Midtrans Member Webhook
+      description: Webhook for member payment status updates
+      responses:
+        "200":
+          description: OK
+
+  # ==========================================
+  # ADMIN ROUTES
+  # ==========================================
+  /admin/v1/auth/login:
+    post:
+      tags:
+        - Admin - Auth
+      summary: Admin Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+
+  /admin/v1/roles:
+    get:
+      tags:
+        - Admin - Roles & Permissions
+      summary: List Admin Roles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of roles
+    post:
+      tags:
+        - Admin - Roles & Permissions
+      summary: Create Admin Role
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Role created
+
+  /admin/v1/admins:
+    get:
+      tags:
+        - Admin - Users
+      summary: List Admins
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of admins
+    post:
+      tags:
+        - Admin - Users
+      summary: Create Admin
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Admin created
+
+  /admin/v1/clients:
+    get:
+      tags:
+        - Admin - Clients
+      summary: List Clients (Tenants)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of clients
+    post:
+      tags:
+        - Admin - Clients
+      summary: Create Client (Tenant)
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Client created
+
+  /admin/v1/billing/plans:
+    get:
+      tags:
+        - Admin - Billing & Plans
+      summary: List Platform Plans
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of platform plans
+    post:
+      tags:
+        - Admin - Billing & Plans
+      summary: Create Platform Plan
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlatformPlanRequest"
+      responses:
+        "201":
+          description: Platform plan created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PlatformPlanResponse"
+
+  /admin/v1/billing/plans/{id}:
+    get:
+      tags:
+        - Admin - Billing & Plans
+      summary: Get Platform Plan by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Platform plan details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PlatformPlanResponse"
+    put:
+      tags:
+        - Admin - Billing & Plans
+      summary: Update Platform Plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlatformPlanRequest"
+      responses:
+        "200":
+          description: Platform plan updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PlatformPlanResponse"
+    delete:
+      tags:
+        - Admin - Billing & Plans
+      summary: Delete Platform Plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Platform plan deleted
+
+  # ==========================================
+  # TENANT ROUTES
+  # ==========================================
+  /api/v1/auth/register:
+    post:
+      tags:
+        - Tenant - Auth
+      summary: Tenant Registration
+      description: Register a new user account. Business setup is done via onboarding.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantRegisterRequest"
+      responses:
+        "201":
+          description: Registration successful, please check email for verification
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantRegisterResponse"
+        "400":
+          description: Invalid request format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict - Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                message: "Email sudah terdaftar"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/login:
+    post:
+      tags:
+        - Tenant - Auth
+      summary: Tenant Login
+      description: Authenticate a user and return tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantLoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantLoginResponse"
+        "400":
+          description: Invalid request format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/verify-email:
+    get:
+      tags:
+        - Tenant - Auth
+      summary: Verify Email
+      description: Verify email using the token sent to user's email. After successful verification, auto-logs the user in and returns JWT tokens.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The verification token
+      responses:
+        "200":
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantLoginResponse"
+        "400":
+          description: Token missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/resend-verification:
+    post:
+      tags:
+        - Tenant - Auth
+      summary: Resend Verification Email
+      description: Resends the email verification link to the user's email address. Returns success even if email is not found (to prevent enumeration).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantResendVerificationRequest"
+      responses:
+        "200":
+          description: Verification email sent (or email not found - returns same response)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Link verifikasi telah dikirim ulang ke email Anda"
+        "400":
+          description: Email already verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                message: "Email sudah diverifikasi"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/clients/onboarding:
+    post:
+      tags:
+        - Tenant - Auth
+      summary: Tenant Onboarding
+      security:
+        - bearerAuth: []
+      description: Create a client profile after registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantOnboardingRequest"
+      responses:
+        "200":
+          description: Onboarding complete, returns new tokens
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOnboardingResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tenant/bots:
+    get:
+      tags:
+        - Tenant - Bots
+      summary: List Bots
+      description: Retrieve a list of all Telegram bots associated with the tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of bots
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TelegramBotResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.read permission
+
+    post:
+      tags:
+        - Tenant - Bots
+      summary: Create Bot
+      description: Register a new Telegram bot using its token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramBotCreateRequest"
+      responses:
+        "201":
+          description: Bot created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TelegramBotResponse"
+        "400":
+          description: Invalid request or bot token
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.create permission
+
+  /api/v1/tenant/bots/{id}:
+    get:
+      tags:
+        - Tenant - Bots
+      summary: Get Bot Details
+      description: Retrieve details of a specific bot.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bot details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TelegramBotResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.read permission
+        "404":
+          description: Bot not found
+
+    put:
+      tags:
+        - Tenant - Bots
+      summary: Update Bot
+      description: Update an existing bot's details.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramBotUpdateRequest"
+      responses:
+        "200":
+          description: Bot updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TelegramBotResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.update permission
+        "404":
+          description: Bot not found
+
+    delete:
+      tags:
+        - Tenant - Bots
+      summary: Delete Bot
+      description: Remove a bot from the tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bot deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.delete permission
+        "404":
+          description: Bot not found
+
+  /api/v1/tenant/commands:
+    get:
+      tags:
+        - Tenant - Custom Commands
+      summary: List Custom Commands
+      description: Retrieve a list of all custom commands with optional filtering.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bot_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: is_active
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: List of custom commands
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/CustomCommandResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.read permission
+
+    post:
+      tags:
+        - Tenant - Custom Commands
+      summary: Create Custom Command
+      description: Create a new custom command trigger for a bot.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomCommandRequest"
+      responses:
+        "201":
+          description: Command created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomCommandResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.create permission
+
+  /api/v1/tenant/commands/{id}:
+    get:
+      tags:
+        - Tenant - Custom Commands
+      summary: Get Custom Command Details
+      description: Retrieve details of a specific custom command.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Custom command details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomCommandResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.read permission
+        "404":
+          description: Command not found
+
+    put:
+      tags:
+        - Tenant - Custom Commands
+      summary: Update Custom Command
+      description: Update an existing custom command's details.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCustomCommandRequest"
+      responses:
+        "200":
+          description: Command updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomCommandResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.update permission
+        "404":
+          description: Command not found
+
+    delete:
+      tags:
+        - Tenant - Custom Commands
+      summary: Delete Custom Command
+      description: Remove a custom command from the bot.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Command deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires bots.delete permission
+        "404":
+          description: Command not found
+
+  /api/v1/tenant/groups:
+    get:
+      tags:
+        - Tenant - Groups
+      summary: List Groups
+      description: Retrieve a list of all Telegram groups managed by the tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of groups
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/GroupResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires groups.read permission
+
+    post:
+      tags:
+        - Tenant - Groups
+      summary: Create Group
+      description: Register a new Telegram group manually by its Chat ID.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupCreateRequest"
+      responses:
+        "201":
+          description: Group created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/GroupResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires groups.create permission
+
+  /api/v1/tenant/groups/{id}:
+    get:
+      tags:
+        - Tenant - Groups
+      summary: Get Group Details
+      description: Retrieve details of a specific Telegram group.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Group details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/GroupResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires groups.read permission
+        "404":
+          description: Group not found
+
+    put:
+      tags:
+        - Tenant - Groups
+      summary: Update Group
+      description: Update an existing group's details.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupUpdateRequest"
+      responses:
+        "200":
+          description: Group updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/GroupResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires groups.update permission
+        "404":
+          description: Group not found
+
+    delete:
+      tags:
+        - Tenant - Groups
+      summary: Delete Group
+      description: Remove a group from the tenant's management.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Group deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires groups.delete permission
+        "404":
+          description: Group not found
+
+  /api/v1/tenant/packages:
+    get:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: List Packages
+      description: Retrieve a list of all subscription packages created by the tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of packages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PackageResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.read permission
+
+    post:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Create Package
+      description: Create a new subscription package for group access.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageCreateRequest"
+      responses:
+        "201":
+          description: Package created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PackageResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.create permission
+
+  /api/v1/tenant/packages/{id}:
+    get:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Get Package Details
+      description: Retrieve details of a specific package.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Package details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PackageResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.read permission
+        "404":
+          description: Package not found
+
+    put:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Update Package
+      description: Update an existing package's details.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageUpdateRequest"
+      responses:
+        "200":
+          description: Package updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PackageResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.update permission
+        "404":
+          description: Package not found
+
+    delete:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Delete Package
+      description: Remove a package.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Package deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.delete permission
+        "404":
+          description: Package not found
+
+  /api/v1/tenant/packages/{id}/groups:
+    post:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Associate Groups to Package
+      description: Link a package to one or more Telegram groups.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageGroupAssociateRequest"
+      responses:
+        "200":
+          description: Groups associated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.update permission
+        "404":
+          description: Package not found
+
+  /api/v1/tenant/discounts:
+    get:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: List Discounts
+      description: Retrieve a list of all member discounts created by the tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of discounts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/MemberDiscountResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.read permission
+
+    post:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Create Discount
+      description: Create a new discount promo code for packages.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberDiscountRequest"
+      responses:
+        "201":
+          description: Discount created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MemberDiscountResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.create permission
+
+  /api/v1/tenant/discounts/{id}:
+    put:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Update Discount
+      description: Update an existing discount's details.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberDiscountRequest"
+      responses:
+        "200":
+          description: Discount updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MemberDiscountResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.update permission
+        "404":
+          description: Discount not found
+
+    delete:
+      tags:
+        - Tenant - Packages & Discounts
+      summary: Delete Discount
+      description: Remove a discount.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Discount deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires packages.delete permission
+        "404":
+          description: Discount not found
+
+  /api/v1/tenant/settings/profile:
+    put:
+      tags:
+        - Tenant - Settings
+      summary: Update Business Profile
+      description: Update the tenant's business profile information.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientUpdateRequest"
+      responses:
+        "200":
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ClientResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires owner/admin role
+
+  /api/v1/tenant/settings/payment:
+    put:
+      tags:
+        - Tenant - Settings
+      summary: Update Payment Settings
+      description: Configure Midtrans payment gateway credentials for the tenant.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentSettingsUpdateRequest"
+      responses:
+        "200":
+          description: Payment settings updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PaymentSettingsResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires owner/admin role
+
+  /api/v1/tenant/billing/active:
+    get:
+      tags:
+        - Tenant - Billing
+      summary: Get Active Billing
+      description: Retrieve the active platform subscription billing for the tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active billing information
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ClientBillingResponse"
+        "401":
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Include 'Bearer {token}' in the Authorization header
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: Request successful
+        data:
+          type: object
+        request_id:
+          type: string
+          example: "req-12345"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        code:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: Error message details
+        errors:
+          type: object
+          description: Detailed validation errors if any
+        request_id:
+          type: string
+          example: "req-12345"
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+
+    TenantRegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+        - confirm_password
+      properties:
+        name:
+          type: string
+          example: "John Doe"
+          minLength: 3
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          format: password
+          example: "SecretPassword123"
+          minLength: 8
+        confirm_password:
+          type: string
+          format: password
+          example: "SecretPassword123"
+
+    TenantRegisterResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          description: Basic user information
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            email:
+              type: string
+            phone:
+              type: string
+
+    TenantLoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          format: password
+          example: "SecretPassword123"
+
+    TenantResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+
+    TenantLoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: "eyJhbGci..."
+        refresh_token:
+          type: string
+          example: "eyJhbGci..."
+        expires_in:
+          type: integer
+          example: 3600
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            email:
+              type: string
+            phone:
+              type: string
+        client:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+            business_name:
+              type: string
+            business_slug:
+              type: string
+        role:
+          type: string
+          example: "owner"
+        needs_onboarding:
+          type: boolean
+          example: false
+
+    TenantOnboardingRequest:
+      type: object
+      required:
+        - business_name
+        - business_slug
+        - category
+      properties:
+        business_name:
+          type: string
+          example: "My Telegram Store"
+        business_slug:
+          type: string
+          example: "my-store"
+        category:
+          type: string
+          example: "Retail"
+
+    TenantOnboardingResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+        client:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            business_name:
+              type: string
+            business_slug:
+              type: string
+        role:
+          type: string
+          example: "owner"
+
+
+
+    TelegramBotCreateRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: "Telegram Bot Token from BotFather"
+          example: "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+        bot_role:
+          type: string
+          enum: [sales_only, gatekeeper_only, all_in_one]
+          example: "all_in_one"
+
+    TelegramBotUpdateRequest:
+      type: object
+      properties:
+        bot_role:
+          type: string
+          enum: [sales_only, gatekeeper_only, all_in_one]
+          example: "sales_only"
+        is_active:
+          type: boolean
+          example: true
+
+    TelegramBotResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        telegram_bot_id:
+          type: integer
+          example: 123456789
+        username:
+          type: string
+          example: "MySuperBot"
+        bot_role:
+          type: string
+          example: "all_in_one"
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateCustomCommandRequest:
+      type: object
+      required:
+        - bot_id
+        - command_trigger
+        - response_type
+        - response_text
+      properties:
+        bot_id:
+          type: string
+          format: uuid
+        command_trigger:
+          type: string
+          example: "/hello"
+          minLength: 2
+          maxLength: 50
+        response_type:
+          type: string
+          enum: [text, photo]
+          example: "text"
+        response_text:
+          type: string
+          example: "Hello there! How can I help you?"
+        file_url:
+          type: string
+          format: url
+          example: "https://example.com/image.jpg"
+
+    UpdateCustomCommandRequest:
+      type: object
+      properties:
+        command_trigger:
+          type: string
+          example: "/hello"
+          minLength: 2
+          maxLength: 50
+        response_type:
+          type: string
+          enum: [text, photo]
+          example: "text"
+        response_text:
+          type: string
+          example: "Hello there! How can I help you?"
+        file_url:
+          type: string
+          format: url
+          example: "https://example.com/image.jpg"
+        is_active:
+          type: boolean
+          example: true
+
+    CustomCommandResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bot_id:
+          type: string
+          format: uuid
+        command_trigger:
+          type: string
+          example: "/hello"
+        response_type:
+          type: string
+          example: "text"
+        response_text:
+          type: string
+          example: "Hello there! How can I help you?"
+        file_url:
+          type: string
+          nullable: true
+          format: url
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    GroupCreateRequest:
+      type: object
+      required:
+        - bot_id
+        - telegram_chat_id
+        - name
+      properties:
+        bot_id:
+          type: string
+          format: uuid
+        telegram_chat_id:
+          type: integer
+          example: -1001234567890
+        name:
+          type: string
+          example: "VIP Trading Group"
+          minLength: 3
+
+    GroupUpdateRequest:
+      type: object
+      properties:
+        bot_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "VIP Trading Group Updated"
+          minLength: 3
+
+    GroupResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        bot_id:
+          type: string
+          format: uuid
+        telegram_chat_id:
+          type: integer
+          example: -1001234567890
+        name:
+          type: string
+          example: "VIP Trading Group"
+        description:
+          type: string
+          example: "Exclusive group for premium members"
+        member_count:
+          type: integer
+          example: 150
+        is_active:
+          type: boolean
+          example: true
+        inactive_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PackageCreateRequest:
+      type: object
+      required:
+        - name
+        - price
+        - duration_days
+      properties:
+        name:
+          type: string
+          example: "1 Month VIP"
+          minLength: 3
+        price:
+          type: number
+          format: double
+          example: 150000
+        duration_days:
+          type: integer
+          example: 30
+          minimum: 1
+        is_all_access:
+          type: boolean
+          example: false
+
+    PackageUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "1 Month VIP"
+          minLength: 3
+        price:
+          type: number
+          format: double
+          example: 150000
+        duration_days:
+          type: integer
+          example: 30
+          minimum: 1
+        is_all_access:
+          type: boolean
+          example: false
+
+    PackageGroupAssociateRequest:
+      type: object
+      required:
+        - group_ids
+      properties:
+        group_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          example: ["123e4567-e89b-12d3-a456-426614174000", "987e6543-e21b-12d3-a456-426614174000"]
+
+    PackageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "1 Month VIP"
+        description:
+          type: string
+          example: ""
+        price:
+          type: number
+          format: double
+          example: 150000
+        duration_days:
+          type: integer
+          example: 30
+        is_all_access:
+          type: boolean
+          example: false
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateMemberDiscountRequest:
+      type: object
+      required:
+        - name
+        - type
+        - value
+      properties:
+        name:
+          type: string
+          example: "Promo Akhir Tahun"
+          maxLength: 255
+        code:
+          type: string
+          example: "PROMO2026"
+          maxLength: 100
+        type:
+          type: string
+          enum: [percentage, fixed]
+          example: "percentage"
+        value:
+          type: number
+          format: double
+          example: 20
+        max_discount:
+          type: number
+          format: double
+          example: 50000
+        min_purchase:
+          type: number
+          format: double
+          example: 100000
+        max_usage:
+          type: integer
+          example: 100
+          description: "-1 for unlimited"
+        max_usage_per_user:
+          type: integer
+          example: 1
+        applicable_package_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+
+    UpdateMemberDiscountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Promo Akhir Tahun Updated"
+          maxLength: 255
+        value:
+          type: number
+          format: double
+          example: 25
+        max_discount:
+          type: number
+          format: double
+          example: 50000
+        min_purchase:
+          type: number
+          format: double
+          example: 100000
+        max_usage:
+          type: integer
+          example: 100
+        max_usage_per_user:
+          type: integer
+          example: 1
+        valid_until:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+          example: true
+
+    MemberDiscountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Promo Akhir Tahun"
+        code:
+          type: string
+          example: "PROMO2026"
+        type:
+          type: string
+          example: "percentage"
+        value:
+          type: number
+          format: double
+          example: 20
+        max_discount:
+          type: number
+          format: double
+          example: 50000
+        min_purchase:
+          type: number
+          format: double
+          example: 100000
+        max_usage:
+          type: integer
+          example: 100
+        used_count:
+          type: integer
+          example: 5
+        max_usage_per_user:
+          type: integer
+          example: 1
+        applicable_package_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+
+    ClientUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "My Business Updated"
+          minLength: 3
+        slug:
+          type: string
+          example: "my-business-updated"
+          minLength: 3
+          maxLength: 50
+        category:
+          type: string
+          example: "E-Commerce"
+          minLength: 3
+          maxLength: 100
+        description:
+          type: string
+          example: "We sell amazing stuff"
+        logo_url:
+          type: string
+          format: url
+          example: "https://example.com/logo.png"
+
+    ClientResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "My Business"
+        slug:
+          type: string
+          example: "my-business"
+        category:
+          type: string
+          example: "E-Commerce"
+        description:
+          type: string
+          example: "We sell amazing stuff"
+        logo_url:
+          type: string
+          format: url
+        owner_user_id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+          example: true
+        subscription_tier:
+          type: string
+          example: "pro"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaymentSettingsUpdateRequest:
+      type: object
+      required:
+        - is_sandbox
+      properties:
+        sandbox_server_key:
+          type: string
+        sandbox_client_key:
+          type: string
+        sandbox_merchant_id:
+          type: string
+        production_server_key:
+          type: string
+        production_client_key:
+          type: string
+        production_merchant_id:
+          type: string
+        is_sandbox:
+          type: boolean
+          example: true
+
+    PaymentSettingsResponse:
+      type: object
+      properties:
+        has_sandbox_server_key:
+          type: boolean
+        has_sandbox_client_key:
+          type: boolean
+        has_sandbox_merchant_id:
+          type: boolean
+        has_production_server_key:
+          type: boolean
+        has_production_client_key:
+          type: boolean
+        has_production_merchant_id:
+          type: boolean
+        is_sandbox:
+          type: boolean
+          example: true
+
+    ClientBriefResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "My Business"
+        slug:
+          type: string
+          example: "my-business"
+
+    AdminBriefResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Admin User"
+
+    PlatformPlanResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "pro_plan"
+        display_name:
+          type: string
+          example: "Pro Plan"
+        price_monthly:
+          type: number
+          format: double
+          example: 150000
+        price_yearly:
+          type: number
+          format: double
+          example: 1500000
+        max_bots:
+          type: integer
+          example: 5
+        max_groups:
+          type: integer
+          example: 20
+        max_packages:
+          type: integer
+          example: 10
+        max_members:
+          type: integer
+          example: 1000
+        max_custom_commands:
+          type: integer
+          example: 50
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              included:
+                type: boolean
+        is_active:
+          type: boolean
+          example: true
+        is_landing_page:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatePlatformPlanRequest:
+      type: object
+      required:
+        - name
+        - display_name
+      properties:
+        name:
+          type: string
+          example: "growth"
+        display_name:
+          type: string
+          example: "Growth Plan"
+        price_monthly:
+          type: number
+          format: double
+          example: 129000
+        price_yearly:
+          type: number
+          format: double
+          example: 1548000
+        max_bots:
+          type: integer
+          example: 3
+        max_groups:
+          type: integer
+          example: 5
+        max_packages:
+          type: integer
+          example: 10
+        max_members:
+          type: integer
+          example: 1000
+        max_custom_commands:
+          type: integer
+          example: 20
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              included:
+                type: boolean
+        is_active:
+          type: boolean
+          example: true
+        is_landing_page:
+          type: boolean
+          example: true
+
+    UpdatePlatformPlanRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+          example: "Growth Plan Updated"
+        price_monthly:
+          type: number
+          format: double
+        price_yearly:
+          type: number
+          format: double
+        max_bots:
+          type: integer
+        max_groups:
+          type: integer
+        max_packages:
+          type: integer
+        max_members:
+          type: integer
+        max_custom_commands:
+          type: integer
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              included:
+                type: boolean
+        is_active:
+          type: boolean
+        is_landing_page:
+          type: boolean
+
+    ClientBillingResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client:
+          $ref: "#/components/schemas/ClientBriefResponse"
+        plan:
+          $ref: "#/components/schemas/PlatformPlanResponse"
+        status:
+          type: string
+          example: "active"
+        billing_cycle:
+          type: string
+          example: "monthly"
+        original_amount:
+          type: number
+          format: double
+          example: 150000
+        discount_amount:
+          type: number
+          format: double
+          example: 0
+        amount:
+          type: number
+          format: double
+          example: 150000
+        started_at:
+          type: string
+          format: date-time
+        expired_at:
+          type: string
+          format: date-time
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancelled_by:
+          $ref: "#/components/schemas/AdminBriefResponse"
+        updated_by:
+          $ref: "#/components/schemas/AdminBriefResponse"
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        payment_url:
+          type: string
+          format: url
+        is_manual:
+          type: boolean
+          example: false
+        note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time

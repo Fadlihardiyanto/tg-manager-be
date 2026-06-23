@@ -10,7 +10,7 @@ import (
 // Table: admin_users (separated from tenant users for security isolation).
 type AdminUser struct {
 	ID               uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid();column:id"`
-	Email            string     `gorm:"type:varchar(255);uniqueIndex;not null;column:email"`
+	Email            string     `gorm:"type:varchar(255);not null;column:email"`
 	Name             string     `gorm:"type:varchar(255);not null;column:name"`
 	PasswordHash     string     `gorm:"type:varchar(255);not null;column:password_hash"`
 	IsActive         bool       `gorm:"default:true;column:is_active"`

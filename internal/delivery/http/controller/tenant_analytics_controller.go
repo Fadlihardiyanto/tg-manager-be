@@ -1,11 +1,11 @@
 package controller
 
 import (
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/gofiber/fiber/v3"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -24,8 +24,7 @@ func NewTenantAnalyticsController(analyticsUC usecase.ITenantAnalyticsUseCase, l
 func (c *TenantAnalyticsController) GetOverview(ctx fiber.Ctx) error {
 	logger.FromContext(ctx, c.log).Info("get tenant analytics overview request received")
 
-	clientIDStr := ctx.Locals("ClientID").(string)
-	clientID, _ := uuid.Parse(clientIDStr)
+	clientID := middleware.GetTenantClientID(ctx)
 
 	overview, err := c.analyticsUC.GetOverview(ctx.Context(), clientID)
 	if err != nil {

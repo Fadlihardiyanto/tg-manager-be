@@ -133,7 +133,8 @@ func (r *platformDiscountRepository) SoftDelete(ctx context.Context, db *gorm.DB
 type IMemberDiscountRepository interface {
 	FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.MemberDiscount, error)
 	FindByCode(ctx context.Context, db *gorm.DB, clientID uuid.UUID, code string) (*entity.MemberDiscount, error)
-	FindAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, onlyActive bool) ([]entity.MemberDiscount, error)
+	FindAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, onlyActive bool, page, limit int) ([]entity.MemberDiscount, error)
+	CountAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, onlyActive bool) (int64, error)
 	FindAutoApplicable(ctx context.Context, db *gorm.DB, clientID, packageID uuid.UUID, amount decimal.Decimal) (*entity.MemberDiscount, error)
 	Create(ctx context.Context, db *gorm.DB, d *entity.MemberDiscount) error
 	Update(ctx context.Context, db *gorm.DB, d *entity.MemberDiscount) error
@@ -181,7 +182,7 @@ func (r *memberDiscountRepository) FindByCode(ctx context.Context, db *gorm.DB, 
 	return &d, nil
 }
 
-func (r *memberDiscountRepository) FindAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, onlyActive bool) ([]entity.MemberDiscount, error) {
+func (r *memberDiscountRepository) FindAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, onlyActive bool, page, limit int) ([]entity.MemberDiscount, error) {
 	var discounts []entity.MemberDiscount
 	q := db.WithContext(ctx).
 		Where("client_id = ? AND deleted_at IS NULL", clientID).
@@ -190,8 +191,24 @@ func (r *memberDiscountRepository) FindAllByClient(ctx context.Context, db *gorm
 		now := time.Now()
 		q = q.Where("is_active = true AND valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)", now, now)
 	}
+	if page > 0 && limit > 0 {
+		offset := (page - 1) * limit
+		q = q.Offset(offset).Limit(limit)
+	}
 	err := q.Find(&discounts).Error
 	return discounts, err
+}
+
+func (r *memberDiscountRepository) CountAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, onlyActive bool) (int64, error) {
+	var count int64
+	q := db.WithContext(ctx).Model(&entity.MemberDiscount{}).
+		Where("client_id = ? AND deleted_at IS NULL", clientID)
+	if onlyActive {
+		now := time.Now()
+		q = q.Where("is_active = true AND valid_from <= ? AND (valid_until IS NULL OR valid_until >= ?)", now, now)
+	}
+	err := q.Count(&count).Error
+	return count, err
 }
 
 func (r *memberDiscountRepository) FindAutoApplicable(ctx context.Context, db *gorm.DB, clientID, packageID uuid.UUID, amount decimal.Decimal) (*entity.MemberDiscount, error) {

@@ -17,7 +17,8 @@ type TenantRouteConfig struct {
 	TenantAuthController *controller.TenantAuthController
 
 	// Bot Management
-	TelegramBotController *controller.TelegramBotController
+	TelegramBotController   *controller.TelegramBotController
+	CustomCommandController *controller.CustomCommandController
 
 	// Group Management
 	TelegramGroupController *controller.TelegramGroupController
@@ -50,6 +51,7 @@ func (c *TenantRouteConfig) Setup() {
 	api.Use(middleware.RequestContext())
 
 	c.setupPublicRoutes(api)
+	c.setupOnboardingRoutes(api)
 	c.setupProtectedRoutes(api)
 }
 
@@ -58,6 +60,15 @@ func (c *TenantRouteConfig) setupPublicRoutes(api fiber.Router) {
 	auth.Post("/register", c.TenantAuthController.Register)
 	auth.Post("/login", c.TenantAuthController.Login)
 	auth.Get("/verify-email", c.TenantAuthController.VerifyEmail)
+	auth.Post("/resend-verification", c.TenantAuthController.ResendVerification)
+}
+
+// setupOnboardingRoutes registers the onboarding endpoint.
+// This is separate from the main protected routes because users accessing
+// onboarding have a valid JWT but no client_id yet.
+func (c *TenantRouteConfig) setupOnboardingRoutes(api fiber.Router) {
+	clients := api.Group("/clients", c.TenantAuthMiddleware)
+	clients.Post("/onboarding", c.TenantAuthController.Onboarding)
 }
 
 func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
@@ -74,6 +85,14 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	bots.Post("/", middleware.TenantRequirePermission("bots.create"), c.TelegramBotController.Create)
 	bots.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.TelegramBotController.Update)
 	bots.Delete("/:id", middleware.TenantRequirePermission("bots.delete"), c.TelegramBotController.Delete)
+
+	// ── Custom Commands ──────────────────────────────────────────────
+	commands := protected.Group("/commands")
+	commands.Get("/", middleware.TenantRequirePermission("bots.read"), c.CustomCommandController.List)
+	commands.Get("/:id", middleware.TenantRequirePermission("bots.read"), c.CustomCommandController.Get)
+	commands.Post("/", middleware.TenantRequirePermission("bots.create"), c.CustomCommandController.Create)
+	commands.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.CustomCommandController.Update)
+	commands.Delete("/:id", middleware.TenantRequirePermission("bots.delete"), c.CustomCommandController.Delete)
 
 	// ── Groups ───────────────────────────────────────────────────────
 	groups := protected.Group("/groups")
@@ -109,6 +128,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Settings ─────────────────────────────────────────────────────────────
 	settings := protected.Group("/settings")
 	settings.Put("/payment", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.UpdatePaymentSettings)
+	settings.Put("/profile", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.UpdateProfile)
 
 	// ── Billing (Self-Service) ────────────────────────────────────────────
 	billing := protected.Group("/billing")

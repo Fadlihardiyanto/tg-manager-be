@@ -104,10 +104,10 @@ func TestMemberOrderUseCase_Checkout_Success(t *testing.T) {
 		panic(err2)
 	}
 	mockClient := entity.Client{
-		ID:                clientID,
-		MidtransServerKey: &serverKey,
-		MidtransClientKey: &clientKey,
-		MidtransIsSandbox: true,
+		ID:                       clientID,
+		MidtransSandboxServerKey: &serverKey,
+		MidtransSandboxClientKey: &clientKey,
+		MidtransIsSandbox:        true,
 	}
 	clientRepo.On("FindByID", mock.Anything, mock.Anything, clientID).
 		Return(&mockClient, nil)

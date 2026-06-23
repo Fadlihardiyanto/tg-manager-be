@@ -29,16 +29,16 @@ func (r *Registry) Register(cmd CommandHandler) {
 	r.commands[cmd.Name()] = cmd
 }
 
-func (r *Registry) HandleCommand(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message) error {
+func (r *Registry) HandleCommand(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message) (bool, error) {
 	if !msg.IsCommand() {
-		return nil
+		return false, nil
 	}
 
 	cmdName := msg.Command()
 	handler, exists := r.commands[cmdName]
 	if !exists {
-		// Abaikan jika command tidak dikenal
-		return nil
+		// Abaikan jika command tidak dikenal oleh registry, kembalikan false agar bisa dilanjut ke custom command
+		return false, nil
 	}
 
 	// Validasi Bot Role (Multi-Tenant RBAC)
@@ -57,10 +57,10 @@ func (r *Registry) HandleCommand(ctx context.Context, bot *entity.TelegramBot, m
 
 	if !isAllowed {
 		// Abaikan karena role bot saat ini tidak diizinkan mengakses command ini
-		return nil
+		return true, nil
 	}
 
-	return handler.Execute(ctx, bot, msg)
+	return true, handler.Execute(ctx, bot, msg)
 }
 
 func (r *Registry) RegisterCallback(handler CallbackHandler) {

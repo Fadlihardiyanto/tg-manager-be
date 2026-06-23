@@ -3,11 +3,11 @@ package controller
 import (
 	"strconv"
 
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/gofiber/fiber/v3"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -26,8 +26,7 @@ func NewAuditLogController(auditUC usecase.IAuditLogUseCase, log *zap.Logger) *A
 func (c *AuditLogController) ListTenantLogs(ctx fiber.Ctx) error {
 	logger.FromContext(ctx, c.log).Info("get tenant audit logs request received")
 
-	clientIDStr := ctx.Locals("ClientID").(string)
-	clientID, _ := uuid.Parse(clientIDStr)
+	clientID := middleware.GetTenantClientID(ctx)
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))

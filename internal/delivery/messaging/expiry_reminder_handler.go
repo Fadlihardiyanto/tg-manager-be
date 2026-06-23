@@ -93,7 +93,7 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 			h.logger.Error("expiry reminder handler: invalid client_id", append(logFields, zap.String("client_id", payload.ClientID))...)
 			return nil
 		}
-		groups, err := h.groupRepo.FindByClientID(ctx, h.db, clientID)
+		groups, err := h.groupRepo.FindByClientID(ctx, h.db, clientID, 1, 10000000000000000)
 		if err != nil {
 			return fmt.Errorf("expiry reminder handler: failed to fetch groups for all-access: %w", err)
 		}

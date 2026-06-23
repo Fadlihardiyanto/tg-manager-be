@@ -26,6 +26,7 @@ func main() {
 	if baseURL == "" {
 		log.Fatal("TELEGRAM_WEBHOOK_BASE_URL is empty in .env")
 	}
+	webhookSecret := os.Getenv("TELEGRAM_WEBHOOK_SECRET")
 
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		os.Getenv("DB_HOST"),
@@ -81,13 +82,13 @@ func main() {
 		}
 
 		webhookURL := fmt.Sprintf("%s/webhooks/telegram/%s", baseURL, bot.ID)
-		wh, err := tgbotapi.NewWebhookWithCert(webhookURL, nil)
-		if err != nil {
-			log.Printf("[❌] Bot %s: Failed to build webhook config\n", bot.ID)
-			continue
+		params := make(tgbotapi.Params)
+		params.AddNonEmpty("url", webhookURL)
+		if webhookSecret != "" {
+			params.AddNonEmpty("secret_token", webhookSecret)
 		}
 
-		resp, err := botAPI.Request(wh)
+		resp, err := botAPI.MakeRequest("setWebhook", params)
 		if err != nil || !resp.Ok {
 			log.Printf("[❌] Bot %s: Telegram API Error: %v (Response: %s)\n", bot.ID, err, string(resp.Result))
 			continue

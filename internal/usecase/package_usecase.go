@@ -19,7 +19,7 @@ import (
 
 type IPackageUseCase interface {
 	Create(ctx context.Context, clientID uuid.UUID, req *model.PackageCreateRequest) (*model.PackageResponse, error)
-	FindAllByClient(ctx context.Context, clientID uuid.UUID) ([]model.PackageResponse, error)
+	FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.PackageResponse, int64, error)
 	FindByID(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) (*model.PackageResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID, req *model.PackageUpdateRequest) (*model.PackageResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) error
@@ -30,6 +30,7 @@ type PackageUseCase struct {
 	db          *entity.Database
 	packageRepo repository.IPackageRepository
 	groupRepo   repository.ITelegramGroupRepository
+	billingRepo repository.IClientBillingRepository
 	log         *zap.Logger
 }
 
@@ -37,12 +38,14 @@ func NewPackageUseCase(
 	db *entity.Database,
 	packageRepo repository.IPackageRepository,
 	groupRepo repository.ITelegramGroupRepository,
+	billingRepo repository.IClientBillingRepository,
 	log *zap.Logger,
 ) IPackageUseCase {
 	return &PackageUseCase{
 		db:          db,
 		packageRepo: packageRepo,
 		groupRepo:   groupRepo,
+		billingRepo: billingRepo,
 		log:         log,
 	}
 }
@@ -50,6 +53,26 @@ func NewPackageUseCase(
 func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *model.PackageCreateRequest) (*model.PackageResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("package usecase create start", zap.String("client_id", clientID.String()))
+
+	// 1. Check quota: ambil active billing plan milik client
+	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		log.Error("package usecase create find billing failed", zap.Error(err))
+		return nil, fmt.Errorf("Gagal memeriksa status billing")
+	}
+	if billing != nil && billing.Plan.MaxPackages != -1 {
+		currentCount, err := uc.packageRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+		if err != nil {
+			log.Error("package usecase create count packages failed", zap.Error(err))
+			return nil, fmt.Errorf("Gagal menghitung jumlah paket")
+		}
+		if currentCount >= int64(billing.Plan.MaxPackages) {
+			return nil, helper.NewBadRequest(fmt.Sprintf(
+				"Kuota paket Anda sudah penuh (%d/%d). Silakan upgrade paket platform untuk menambah lebih banyak paket.",
+				currentCount, billing.Plan.MaxPackages,
+			))
+		}
+	}
 
 	pkg := &entity.Package{
 		ID:           uuid.New(),
@@ -72,17 +95,23 @@ func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *m
 	return converter.PackageToResponse(pkg), nil
 }
 
-func (uc *PackageUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID) ([]model.PackageResponse, error) {
+func (uc *PackageUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.PackageResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("package usecase find all start", zap.String("client_id", clientID.String()))
 
-	packages, err := uc.packageRepo.FindByClientID(ctx, uc.db.Gorm, clientID)
+	packages, err := uc.packageRepo.FindByClientID(ctx, uc.db.Gorm, clientID, page, limit)
 	if err != nil {
 		log.Error("package usecase find all failed", zap.Error(err))
-		return nil, err
+		return nil, 0, err
 	}
 
-	return converter.PackagesToResponse(packages), nil
+	total, err := uc.packageRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		log.Error("package usecase count failed", zap.Error(err))
+		return nil, 0, err
+	}
+
+	return converter.PackagesToResponse(packages), total, nil
 }
 
 func (uc *PackageUseCase) FindByID(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) (*model.PackageResponse, error) {

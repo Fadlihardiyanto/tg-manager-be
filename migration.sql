@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ==========================================
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(255) UNIQUE NOT NULL,
+    email           VARCHAR(255) NOT NULL,
     name            VARCHAR(255) NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     phone           VARCHAR(50),
@@ -19,6 +19,7 @@ CREATE TABLE users (
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at      TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_users_email_active ON users(email) WHERE deleted_at IS NULL;
 
 -- ==========================================
 -- 2. CLIENTS (Pemilik Bisnis / Tenant)
@@ -26,20 +27,26 @@ CREATE TABLE users (
 CREATE TABLE clients (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name                VARCHAR(255) NOT NULL,
-    slug                VARCHAR(255) UNIQUE NOT NULL,
+    slug                VARCHAR(255) NOT NULL,
+    category            VARCHAR(255) NOT NULL,
     description         TEXT,
     logo_url            VARCHAR(500),
     is_active           BOOLEAN DEFAULT true,
     owner_user_id       UUID NOT NULL REFERENCES users(id),
     subscription_tier   VARCHAR(50) NOT NULL DEFAULT 'free',
     -- 'free', 'basic', 'pro', 'enterprise'
-    midtrans_server_key TEXT,
-    midtrans_client_key TEXT,
-    midtrans_is_sandbox BOOLEAN DEFAULT TRUE,
+    midtrans_sandbox_server_key      TEXT,
+    midtrans_sandbox_client_key      TEXT,
+    midtrans_sandbox_merchant_id     VARCHAR(255),
+    midtrans_production_server_key   TEXT,
+    midtrans_production_client_key   TEXT,
+    midtrans_production_merchant_id  VARCHAR(255),
+    midtrans_is_sandbox              BOOLEAN DEFAULT TRUE,
     created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at          TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_clients_slug_active ON clients(slug) WHERE deleted_at IS NULL;
 
 -- ==========================================
 -- 3. CLIENT USERS (Multi-user per Tenant)
@@ -56,26 +63,26 @@ CREATE TABLE client_users (
     accepted_at TIMESTAMP,
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
-    deleted_at  TIMESTAMP,
-
-    UNIQUE(client_id, user_id)
+    deleted_at  TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_client_users_client_user_active ON client_users(client_id, user_id) WHERE deleted_at IS NULL;
 
 -- ==========================================
 -- 4. RBAC: ROLES & PERMISSIONS
 -- ==========================================
 CREATE TABLE roles (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         VARCHAR(50) UNIQUE NOT NULL,
+    name         VARCHAR(50) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     description  TEXT,
     created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at   TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_roles_name_active ON roles(name) WHERE deleted_at IS NULL;
 
 CREATE TABLE permissions (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name        VARCHAR(100) UNIQUE NOT NULL,
+    name        VARCHAR(100) NOT NULL,
     -- e.g. 'packages.create'
     module      VARCHAR(50) NOT NULL,
     -- e.g. 'packages', 'groups', 'bots'
@@ -85,6 +92,7 @@ CREATE TABLE permissions (
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_permissions_name_active ON permissions(name) WHERE deleted_at IS NULL;
 
 CREATE TABLE role_permissions (
     role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
@@ -128,11 +136,10 @@ CREATE TABLE groups (
     -- Di-update periodik, bukan realtime
     created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMP NOT NULL DEFAULT NOW(),
-    deleted_at       TIMESTAMP,
-
-    -- Satu chat ID unik per client (bisa satu grup dikelola banyak client? Tidak.)
-    UNIQUE(telegram_chat_id)
+    deleted_at       TIMESTAMP
 );
+-- Satu chat ID unik (hanya untuk row yang belum di-soft-delete)
+CREATE UNIQUE INDEX uq_groups_telegram_chat_id_active ON groups(telegram_chat_id) WHERE deleted_at IS NULL;
 
 -- ==========================================
 -- 7. PACKAGES (Paket Langganan)
@@ -167,7 +174,7 @@ CREATE TABLE package_groups (
 -- ==========================================
 CREATE TABLE telegram_users (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    telegram_user_id BIGINT UNIQUE NOT NULL,
+    telegram_user_id BIGINT NOT NULL,
     username         VARCHAR(255),
     first_name       VARCHAR(255),
     last_name        VARCHAR(255),
@@ -177,6 +184,7 @@ CREATE TABLE telegram_users (
     updated_at       TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at       TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_telegram_users_tg_id_active ON telegram_users(telegram_user_id) WHERE deleted_at IS NULL;
 
 -- ==========================================
 -- 10. SUBSCRIPTIONS
@@ -230,7 +238,7 @@ CREATE TABLE orders (
     -- NULL saat pending, diisi setelah payment sukses
     
     -- Payment Gateway
-    external_id     VARCHAR(255) UNIQUE NOT NULL,
+    external_id     VARCHAR(255) NOT NULL,
     -- ID dari Midtrans/Xendit, untuk idempotency
     payment_url     VARCHAR(500),
     -- URL redirect ke payment page
@@ -248,11 +256,15 @@ CREATE TABLE orders (
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at      TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_orders_external_id_active ON orders(external_id) WHERE deleted_at IS NULL;
 
 -- Sekarang bisa tambah FK dari subscriptions ke orders
 ALTER TABLE subscriptions
     ADD CONSTRAINT fk_subscriptions_order
     FOREIGN KEY (order_id) REFERENCES orders(id);
+
+-- Receipt PDF URL (generated after payment)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS receipt_url VARCHAR(500);
 
 -- ==========================================
 -- 12. OUTBOX (Atomic Event Publishing)
@@ -344,8 +356,7 @@ CREATE INDEX idx_subscriptions_client
     WHERE deleted_at IS NULL;
 
 -- [Orders]
-CREATE INDEX idx_orders_external_id ON orders(external_id);
--- Sudah UNIQUE, tapi eksplisit untuk clarity
+-- external_id uniqueness already enforced by uq_orders_external_id_active
 CREATE INDEX idx_orders_client_status ON orders(client_id, status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_orders_telegram_user ON orders(telegram_user_id) WHERE deleted_at IS NULL;
 
@@ -367,7 +378,7 @@ CREATE INDEX idx_audit_logs_client ON audit_logs(client_id, created_at DESC);
 -- Tabel ini TERPISAH dari users (tenant dashboard users)
 CREATE TABLE admin_users (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email               VARCHAR(255) UNIQUE NOT NULL,
+    email               VARCHAR(255) NOT NULL,
     name                VARCHAR(255) NOT NULL,
     password_hash       VARCHAR(255) NOT NULL,
     
@@ -386,24 +397,26 @@ CREATE TABLE admin_users (
     updated_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at          TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_admin_users_email_active ON admin_users(email) WHERE deleted_at IS NULL;
 
 -- Role untuk Admin (berbeda dari tenant roles)
 -- Contoh: 'superadmin', 'support', 'finance', 'ops'
 CREATE TABLE admin_roles (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         VARCHAR(50) UNIQUE NOT NULL,
+    name         VARCHAR(50) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     description  TEXT,
     created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at   TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_admin_roles_name_active ON admin_roles(name) WHERE deleted_at IS NULL;
 
 -- Permission granular untuk admin
 -- Contoh: 'clients.suspend', 'clients.impersonate', 
 --         'platform.analytics', 'billing.manage'
 CREATE TABLE admin_permissions (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name        VARCHAR(100) UNIQUE NOT NULL,
+    name        VARCHAR(100) NOT NULL,
     module      VARCHAR(50) NOT NULL,
     -- 'clients', 'billing', 'platform', 'support'
     action      VARCHAR(50) NOT NULL,
@@ -411,6 +424,7 @@ CREATE TABLE admin_permissions (
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_admin_permissions_name_active ON admin_permissions(name) WHERE deleted_at IS NULL;
 
 CREATE TABLE admin_role_permissions (
     admin_role_id       UUID NOT NULL REFERENCES admin_roles(id) ON DELETE CASCADE,
@@ -434,7 +448,7 @@ CREATE TABLE admin_user_roles (
 -- Definisi tier yang bisa diatur superadmin
 CREATE TABLE platform_plans (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name                VARCHAR(50) UNIQUE NOT NULL,
+    name                VARCHAR(50) NOT NULL,
     -- 'free', 'basic', 'pro', 'enterprise'
     display_name        VARCHAR(100) NOT NULL,
     price_monthly       DECIMAL(12, 2) NOT NULL DEFAULT 0,
@@ -445,6 +459,7 @@ CREATE TABLE platform_plans (
     max_groups          INT NOT NULL DEFAULT 1,
     max_packages        INT NOT NULL DEFAULT 3,
     max_members         INT NOT NULL DEFAULT 100,
+    max_custom_commands INT NOT NULL DEFAULT 5,
     -- -1 = unlimited
 
     -- Feature flags
@@ -456,6 +471,7 @@ CREATE TABLE platform_plans (
     updated_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at          TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_platform_plans_name_active ON platform_plans(name) WHERE deleted_at IS NULL;
 
 -- Riwayat billing client ke platform (B2B)
 CREATE TABLE client_billings (
@@ -512,7 +528,7 @@ CREATE TABLE admin_impersonation_logs (
 -- ==========================================
 
 -- Admin Users
-CREATE INDEX idx_admin_users_email ON admin_users(email) WHERE deleted_at IS NULL;
+-- email uniqueness already enforced by uq_admin_users_email_active
 
 -- Client Billings
 CREATE INDEX idx_client_billings_client 
@@ -545,7 +561,7 @@ CREATE INDEX idx_impersonation_client
 CREATE TABLE platform_discounts (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name                  VARCHAR(255) NOT NULL,
-    code                  VARCHAR(100) UNIQUE,          -- NULL = otomatis (tanpa kode)
+    code                  VARCHAR(100),                 -- NULL = otomatis (tanpa kode)
     type                  VARCHAR(20) NOT NULL,          -- 'percentage' | 'fixed'
     value                 DECIMAL(12,2) NOT NULL,        -- 20 = 20% atau 50000 = Rp50.000
     max_discount          DECIMAL(12,2),                 -- Cap nominal, khusus type=percentage
@@ -566,6 +582,7 @@ CREATE TABLE platform_discounts (
     updated_at            TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at            TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_platform_discounts_code_active ON platform_discounts(code) WHERE deleted_at IS NULL;
 
 -- Relasi billing ke discount yang dipakai
 ALTER TABLE client_billings
@@ -598,11 +615,10 @@ CREATE TABLE member_discounts (
 
     created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMP NOT NULL DEFAULT NOW(),
-    deleted_at              TIMESTAMP,
-
-    -- Satu client tidak boleh punya kode yang sama
-    UNIQUE(client_id, code)
+    deleted_at              TIMESTAMP
 );
+-- Satu client tidak boleh punya kode yang sama (hanya row aktif)
+CREATE UNIQUE INDEX uq_member_discounts_client_code_active ON member_discounts(client_id, code) WHERE deleted_at IS NULL;
 
 -- Track usage per user untuk max_usage_per_user enforcement
 CREATE TABLE member_discount_usages (
@@ -639,3 +655,77 @@ CREATE INDEX idx_member_discounts_code
 
 CREATE INDEX idx_member_discount_usages_user
     ON member_discount_usages(discount_id, telegram_user_id);
+
+-- ==========================================
+-- MIGRATION: Multi-Environment Midtrans Keys
+-- ==========================================
+-- Add new environment-specific columns (idempotent)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS midtrans_sandbox_server_key TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS midtrans_sandbox_client_key TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS midtrans_production_server_key TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS midtrans_production_client_key TEXT;
+
+-- Migrate existing data: copy old keys to the appropriate environment columns
+UPDATE clients SET midtrans_sandbox_server_key = midtrans_server_key
+    WHERE midtrans_is_sandbox = true AND midtrans_server_key IS NOT NULL;
+UPDATE clients SET midtrans_sandbox_client_key = midtrans_client_key
+    WHERE midtrans_is_sandbox = true AND midtrans_client_key IS NOT NULL;
+UPDATE clients SET midtrans_production_server_key = midtrans_server_key
+    WHERE midtrans_is_sandbox = false AND midtrans_server_key IS NOT NULL;
+UPDATE clients SET midtrans_production_client_key = midtrans_client_key
+    WHERE midtrans_is_sandbox = false AND midtrans_client_key IS NOT NULL;
+
+-- Drop old columns after migration
+ALTER TABLE clients DROP COLUMN IF EXISTS midtrans_server_key;
+ALTER TABLE clients DROP COLUMN IF EXISTS midtrans_client_key;
+
+-- ==========================================
+-- MIGRATION: Add Merchant ID for Midtrans
+-- ==========================================
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS midtrans_sandbox_merchant_id VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS midtrans_production_merchant_id VARCHAR(255);
+
+-- ==========================================
+-- 14. CUSTOM COMMANDS (Fitur Respon Otomatis Bot)
+-- ==========================================
+CREATE TABLE custom_commands (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id        UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    bot_id           UUID NOT NULL REFERENCES telegram_bots(id) ON DELETE CASCADE,
+    
+    -- Pemicu perintah, di-force lowercase saat insert (e.g. '/rules', '/rekomendasi')
+    command_trigger  VARCHAR(50) NOT NULL, 
+    
+    -- Jenis respon: 'text' (hanya tulisan) atau 'photo' (gambar + caption)
+    response_type    VARCHAR(20) NOT NULL DEFAULT 'text', 
+    
+    -- Isi pesan teks utama atau teks caption jika response_type = 'photo'
+    response_text    TEXT NOT NULL,        
+    
+    -- URL gambar di storage internal kita jika response_type = 'photo'
+    file_url         VARCHAR(500),
+
+    -- Menyimpan File ID unik dari Telegram jika response_type = 'photo'
+    telegram_file_id TEXT,                 
+    
+    is_active        BOOLEAN NOT NULL DEFAULT true,
+    created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    deleted_at       TIMESTAMP,
+
+    -- CONSTRAINT PROTEKSI: Satu bot tidak boleh punya perintah pemicu yang kembar
+    CONSTRAINT unique_bot_command_trigger UNIQUE(bot_id, command_trigger)
+);
+
+-- ==========================================
+-- INDEXES UNTUK HIGH-PERFORMANCE LOOKUP
+-- ==========================================
+-- Index gabungan kondisional (Partial Index) untuk mempercepat pencarian webhook Go.
+CREATE INDEX idx_custom_commands_webhook_lookup 
+    ON custom_commands(bot_id, command_trigger) 
+    WHERE is_active = true AND deleted_at IS NULL;
+
+-- Index untuk filter dashboard management per tenant
+CREATE INDEX idx_custom_commands_client 
+    ON custom_commands(client_id) 
+    WHERE deleted_at IS NULL;

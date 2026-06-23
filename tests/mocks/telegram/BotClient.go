@@ -147,6 +147,34 @@ func (_m *BotClient) GetChatMember(ctx context.Context, chatID int64, userID int
 	return r0, r1
 }
 
+// GetChatMembersCount provides a mock function with given fields: ctx, chatID
+func (_m *BotClient) GetChatMembersCount(ctx context.Context, chatID int64) (int, error) {
+	ret := _m.Called(ctx, chatID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChatMembersCount")
+	}
+
+	var r0 int
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, int64) (int, error)); ok {
+		return rf(ctx, chatID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, int64) int); ok {
+		r0 = rf(ctx, chatID)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, int64) error); ok {
+		r1 = rf(ctx, chatID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetWebhookInfo provides a mock function with given fields: ctx
 func (_m *BotClient) GetWebhookInfo(ctx context.Context) (tgbotapi.WebhookInfo, error) {
 	ret := _m.Called(ctx)
@@ -209,6 +237,92 @@ func (_m *BotClient) RevokeChatInviteLink(ctx context.Context, chatID int64, inv
 	}
 
 	return r0
+}
+
+// Request provides a mock function with given fields: ctx, c
+func (_m *BotClient) Request(ctx context.Context, c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
+	ret := _m.Called(ctx, c)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Request")
+	}
+
+	var r0 *tgbotapi.APIResponse
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, tgbotapi.Chattable) (*tgbotapi.APIResponse, error)); ok {
+		return rf(ctx, c)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, tgbotapi.Chattable) *tgbotapi.APIResponse); ok {
+		r0 = rf(ctx, c)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*tgbotapi.APIResponse)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, tgbotapi.Chattable) error); ok {
+		r1 = rf(ctx, c)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Send provides a mock function with given fields: ctx, c
+func (_m *BotClient) Send(ctx context.Context, c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	ret := _m.Called(ctx, c)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Send")
+	}
+
+	var r0 tgbotapi.Message
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, tgbotapi.Chattable) (tgbotapi.Message, error)); ok {
+		return rf(ctx, c)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, tgbotapi.Chattable) tgbotapi.Message); ok {
+		r0 = rf(ctx, c)
+	} else {
+		r0 = ret.Get(0).(tgbotapi.Message)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, tgbotapi.Chattable) error); ok {
+		r1 = rf(ctx, c)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SendDocument provides a mock function with given fields: ctx, c
+func (_m *BotClient) SendDocument(ctx context.Context, c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	ret := _m.Called(ctx, c)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SendDocument")
+	}
+
+	var r0 tgbotapi.Message
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, tgbotapi.Chattable) (tgbotapi.Message, error)); ok {
+		return rf(ctx, c)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, tgbotapi.Chattable) tgbotapi.Message); ok {
+		r0 = rf(ctx, c)
+	} else {
+		r0 = ret.Get(0).(tgbotapi.Message)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, tgbotapi.Chattable) error); ok {
+		r1 = rf(ctx, c)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // SendMessage provides a mock function with given fields: ctx, chatID, text

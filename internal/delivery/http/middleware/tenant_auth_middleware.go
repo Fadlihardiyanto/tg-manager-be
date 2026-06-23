@@ -32,7 +32,7 @@ func TenantAuth(jwtConfig *pkg_jwt.JWTConfig) fiber.Handler {
 
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-		claims, err := pkg_jwt.ParseTenantToken(tokenStr, jwtConfig.SecretKey)
+		claims, err := pkg_jwt.ParseTenantToken(tokenStr, jwtConfig.TenantSecretKey)
 		if err != nil {
 			return helper.NewUnauthorized("Token tidak valid atau sudah kedaluwarsa")
 		}

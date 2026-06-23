@@ -117,6 +117,15 @@ func Conflict(c fiber.Ctx, message string) error {
 	})
 }
 
+func TooManyRequests(c fiber.Ctx, message string) error {
+	return c.Status(fiber.StatusTooManyRequests).JSON(Response{
+		Success:   false,
+		Code:      fiber.StatusTooManyRequests,
+		Message:   message,
+		RequestID: logger.RequestID(c),
+	})
+}
+
 func NewMeta(page, limit int, total int64) *Meta {
 	totalPages := int(total) / limit
 	if int(total)%limit > 0 {

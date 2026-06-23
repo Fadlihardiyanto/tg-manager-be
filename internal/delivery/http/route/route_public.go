@@ -19,6 +19,7 @@ type PublicRouteConfig struct {
 	// Midtrans webhook — public endpoint, dipanggil oleh server Midtrans (bukan admin)
 	ClientBillingController *controller.ClientBillingController
 	MemberOrderController   *controller.MemberOrderController
+	PlatformPlanController  *controller.PlatformPlanController
 }
 
 func (c *PublicRouteConfig) Setup() {
@@ -50,4 +51,7 @@ func (c *PublicRouteConfig) Setup() {
 	}))
 	api.Use(middleware.RequestContext())
 	api.Post("/member/checkout", c.MemberOrderController.Checkout)
+
+	public := api.Group("/public")
+	public.Get("/plans", c.PlatformPlanController.ListPublic)
 }

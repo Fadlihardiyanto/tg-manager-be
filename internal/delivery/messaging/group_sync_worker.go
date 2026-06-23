@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/metrics"
@@ -102,17 +103,25 @@ func (w *GroupSyncWorker) Process(ctx context.Context) {
 		// 4. Process each group for this bot
 		for _, idx := range groupIndices {
 			group := groups[idx]
-			
+
 			count, err := botClient.GetChatMembersCount(ctx, group.TelegramChatID)
 			if err != nil {
-				w.log.Warn("group sync worker: failed to get member count, marking inactive",
-					zap.String("group_id", group.ID.String()),
-					zap.Error(err),
-				)
-				// If we can't get the count, maybe the bot was kicked silently. We deactivate the group.
-				group.IsActive = false
-				group.InactiveReason = "Failed to fetch member count: " + err.Error()
-				w.groupRepo.Update(ctx, w.db, &group)
+				if shouldDeactivateGroupOnCountError(err) {
+					w.log.Warn("group sync worker: failed to get member count with permanent error, marking inactive",
+						zap.String("group_id", group.ID.String()),
+						zap.Error(err),
+					)
+					group.IsActive = false
+					group.InactiveReason = "Failed to fetch member count: " + err.Error()
+					if upErr := w.groupRepo.Update(ctx, w.db, &group); upErr != nil {
+						w.log.Error("group sync worker: failed to mark group inactive", zap.String("group_id", group.ID.String()), zap.Error(upErr))
+					}
+				} else {
+					w.log.Warn("group sync worker: transient error while fetching member count, keeping group active",
+						zap.String("group_id", group.ID.String()),
+						zap.Error(err),
+					)
+				}
 			} else {
 				// Update the member count
 				if group.MemberCount != count {
@@ -132,4 +141,25 @@ func (w *GroupSyncWorker) Process(ctx context.Context) {
 	}
 
 	w.log.Info("group sync worker: finished sync", zap.Duration("duration", time.Since(start)))
+}
+
+func shouldDeactivateGroupOnCountError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	permanentHints := []string{
+		"forbidden",
+		"chat not found",
+		"bot was kicked",
+		"user is deactivated",
+		"not enough rights",
+	}
+	for _, hint := range permanentHints {
+		if strings.Contains(msg, hint) {
+			return true
+		}
+	}
+	return false
 }

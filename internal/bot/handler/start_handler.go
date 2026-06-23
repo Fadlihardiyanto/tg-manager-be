@@ -10,6 +10,14 @@ import (
 	"go.uber.org/zap"
 )
 
+const startReplyMessage = `Halo! Selamat datang di bot ini. 😊
+
+Berikut adalah perintah yang bisa Anda gunakan:
+/start - Menampilkan pesan sambutan ini
+/packages - Melihat dan membeli paket langganan
+/mysub (atau /status) - Melihat status langganan Anda saat ini
+/myorders - Melihat riwayat dan status pembayaran Anda`
+
 type StartHandler struct {
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
@@ -46,8 +54,7 @@ func (h *StartHandler) Execute(ctx context.Context, bot *entity.TelegramBot, mes
 		return err
 	}
 
-	replyMsg := "Halo! Selamat datang di bot ini. 😊"
-	if err := botClient.SendMessage(ctx, message.Chat.ID, replyMsg); err != nil {
+	if err := botClient.SendMessage(ctx, message.Chat.ID, startReplyMessage); err != nil {
 		h.log.Error("failed to send reply", zap.Error(err))
 		return err
 	}

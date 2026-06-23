@@ -15,6 +15,7 @@ type IOrderRepository interface {
 	FindByExternalID(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error)
 	FindPendingOrderByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Order, error)
 	FindExpiredPendingOrders(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Order, error)
+	FindRecentByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID, limit int) ([]entity.Order, error)
 	Create(ctx context.Context, tx *gorm.DB, order *entity.Order) error
 	Update(ctx context.Context, tx *gorm.DB, order *entity.Order) error
 }
@@ -57,6 +58,20 @@ func (r *OrderRepository) FindExpiredPendingOrders(ctx context.Context, tx *gorm
 	var orders []entity.Order
 	err := tx.WithContext(ctx).
 		Where("status = ? AND deleted_at IS NULL AND expired_at IS NOT NULL AND expired_at <= ?", "pending", time.Now()).
+		Limit(limit).
+		Find(&orders).Error
+	return orders, err
+}
+
+func (r *OrderRepository) FindRecentByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID, limit int) ([]entity.Order, error) {
+	var orders []entity.Order
+	err := tx.WithContext(ctx).
+		Joins("JOIN telegram_users tu ON orders.telegram_user_id = tu.id").
+		Preload("Package").
+		Where("tu.telegram_user_id = ?", telegramUserID).
+		Where("orders.client_id = ?", clientID).
+		Where("orders.deleted_at IS NULL").
+		Order("orders.created_at DESC").
 		Limit(limit).
 		Find(&orders).Error
 	return orders, err

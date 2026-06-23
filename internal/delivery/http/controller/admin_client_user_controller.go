@@ -53,7 +53,6 @@ func (c *AdminClientUserController) List(ctx fiber.Ctx) error {
 		Role:              ctx.Query("role"),
 		Verified:          ctx.Query("verified"),
 		Page:              page,
-		Size:              size,
 		Limit:             size,
 		CallerPermissions: middleware.GetAdminPermissions(ctx),
 	}

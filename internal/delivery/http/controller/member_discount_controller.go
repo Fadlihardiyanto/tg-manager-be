@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"strconv"
 	"strings"
 
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
@@ -58,17 +60,26 @@ func (c *MemberDiscountController) handleError(ctx fiber.Ctx, err error) error {
 func (c *MemberDiscountController) List(ctx fiber.Ctx) error {
 	logger.FromContext(ctx, c.log).Info("list member discounts request received")
 
-	clientIDStr := ctx.Locals("ClientID").(string)
-	clientID, _ := uuid.Parse(clientIDStr)
+	clientID := middleware.GetTenantClientID(ctx)
 
 	onlyActive := ctx.Query("active") == "true"
 
-	discounts, err := c.discountUC.ListByClient(ctx.Context(), clientID, onlyActive)
+	page, _ := strconv.Atoi(ctx.Query("page", "1"))
+	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	discounts, total, err := c.discountUC.ListByClient(ctx.Context(), clientID, onlyActive, page, limit)
 	if err != nil {
 		return c.handleError(ctx, err)
 	}
 
-	return helper.Success(ctx, "Berhasil mengambil daftar diskon", discounts)
+	meta := helper.NewMeta(page, limit, total)
+	return helper.SuccessWithMeta(ctx, "Berhasil mengambil daftar diskon", discounts, meta)
 }
 
 func (c *MemberDiscountController) Create(ctx fiber.Ctx) error {
@@ -79,8 +90,8 @@ func (c *MemberDiscountController) Create(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "Format request tidak valid: "+err.Error())
 	}
 
-	clientIDStr := ctx.Locals("ClientID").(string)
-	req.ClientID, _ = uuid.Parse(clientIDStr)
+	clientID := middleware.GetTenantClientID(ctx)
+	req.ClientID = clientID
 
 	if errors := helper.ValidateStruct(c.validate, &req); errors != nil {
 		return helper.UnprocessableEntity(ctx, errors)
@@ -109,8 +120,8 @@ func (c *MemberDiscountController) Update(ctx fiber.Ctx) error {
 	}
 
 	req.DiscountID = id
-	clientIDStr := ctx.Locals("ClientID").(string)
-	req.ClientID, _ = uuid.Parse(clientIDStr)
+	clientID := middleware.GetTenantClientID(ctx)
+	req.ClientID = clientID
 
 	if errors := helper.ValidateStruct(c.validate, &req); errors != nil {
 		return helper.UnprocessableEntity(ctx, errors)
@@ -133,8 +144,7 @@ func (c *MemberDiscountController) Delete(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "ID diskon tidak valid")
 	}
 
-	clientIDStr := ctx.Locals("ClientID").(string)
-	clientID, _ := uuid.Parse(clientIDStr)
+	clientID := middleware.GetTenantClientID(ctx)
 
 	if err := c.discountUC.Delete(ctx.Context(), id, clientID); err != nil {
 		return c.handleError(ctx, err)

@@ -19,6 +19,7 @@ type ClientResponse struct {
 	ID               uuid.UUID `json:"id"`
 	Name             string    `json:"name"`
 	Slug             string    `json:"slug"`
+	Category         string    `json:"category"`
 	Description      string    `json:"description"`
 	LogoURL          string    `json:"logo_url"`
 	OwnerUserID      uuid.UUID `json:"owner_user_id"`
@@ -29,23 +30,31 @@ type ClientResponse struct {
 }
 
 type ClientUpdateRequest struct {
-	Name             string `json:"name" validate:"omitempty,min=3"`
-	Description      string `json:"description" validate:"omitempty"`
-	LogoURL          string `json:"logo_url" validate:"omitempty,url"`
-	SubscriptionTier string `json:"subscription_tier" validate:"omitempty,oneof=free basic pro enterprise"`
-	IsActive         *bool  `json:"is_active" validate:"omitempty"`
+	Name        string `json:"name" validate:"omitempty,min=3"`
+	Slug        string `json:"slug" validate:"omitempty,min=3,max=50,slug"`
+	Category    string `json:"category" validate:"omitempty,min=3,max=100"`
+	Description string `json:"description" validate:"omitempty"`
+	LogoURL     string `json:"logo_url" validate:"omitempty,url"`
 }
 
 type PaymentSettingsUpdateRequest struct {
-	MidtransServerKey string `json:"midtrans_server_key" validate:"required"`
-	MidtransClientKey string `json:"midtrans_client_key" validate:"required"`
-	MidtransIsSandbox *bool  `json:"midtrans_is_sandbox" validate:"required"`
+	SandboxServerKey    *string `json:"sandbox_server_key" validate:"omitempty"`
+	SandboxClientKey    *string `json:"sandbox_client_key" validate:"omitempty"`
+	SandboxMerchantID   *string `json:"sandbox_merchant_id" validate:"omitempty"`
+	ProductionServerKey *string `json:"production_server_key" validate:"omitempty"`
+	ProductionClientKey *string `json:"production_client_key" validate:"omitempty"`
+	ProductionMerchantID *string `json:"production_merchant_id" validate:"omitempty"`
+	IsSandbox           *bool   `json:"is_sandbox" validate:"required"`
 }
 
 type PaymentSettingsResponse struct {
-	MidtransClientKey string `json:"midtrans_client_key"`
-	MidtransIsSandbox bool   `json:"midtrans_is_sandbox"`
-	// We deliberately do not return MidtransServerKey for security reasons
+	HasSandboxServerKey    bool `json:"has_sandbox_server_key"`
+	HasSandboxClientKey    bool `json:"has_sandbox_client_key"`
+	HasSandboxMerchantID   bool `json:"has_sandbox_merchant_id"`
+	HasProductionServerKey bool `json:"has_production_server_key"`
+	HasProductionClientKey bool `json:"has_production_client_key"`
+	HasProductionMerchantID bool `json:"has_production_merchant_id"`
+	IsSandbox              bool `json:"is_sandbox"`
 }
 
 // ClientUser Models

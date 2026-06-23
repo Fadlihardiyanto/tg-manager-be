@@ -57,6 +57,7 @@ func (c *AdminRouteConfig) setupPublicRoutes(admin fiber.Router) {
 	auth := admin.Group("/auth")
 	auth.Post("/login", c.AdminAuthController.Login)
 	auth.Post("/otp/verify", c.AdminAuthController.VerifyOTP)
+	auth.Post("/otp/resend", c.AdminAuthController.ResendOTP)
 	auth.Post("/refresh", c.AdminAuthController.RefreshToken)
 	auth.Post("/register", c.AdminAuthController.Register)
 	auth.Get("/verify-email", c.AdminAuthController.VerifyEmail)

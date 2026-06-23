@@ -27,6 +27,12 @@ type AdminVerify2FARequest struct {
 	ClientIP  string `json:"-" validate:"-"`
 }
 
+// AdminResendOTPRequest is the payload for POST /admin/v1/auth/otp/resend
+// Allows admin to request a new OTP code without re-entering their password.
+type AdminResendOTPRequest struct {
+	TempToken string `json:"temp_token" validate:"required"`
+}
+
 // AdminEnable2FARequest is the payload for POST /admin/auth/2fa/enable
 type AdminEnable2FARequest struct {
 	OTPCode string    `json:"otp_code" validate:"required,len=6"`

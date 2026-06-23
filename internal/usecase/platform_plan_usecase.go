@@ -16,11 +16,12 @@ import (
 )
 
 type IPlatformPlanUseCase interface {
-	List(ctx context.Context, req *model.PlatformPlanFilterRequest, callerPermissions []string) ([]model.PlatformPlanResponse, error)
+	List(ctx context.Context, req *model.PlatformPlanFilterRequest, callerPermissions []string) ([]model.PlatformPlanResponse, int64, error)
 	GetByID(ctx context.Context, id uuid.UUID, callerPermissions []string) (*model.PlatformPlanResponse, error)
 	Create(ctx context.Context, req *model.CreatePlatformPlanRequest, callerPermissions []string) (*model.PlatformPlanResponse, error)
 	Update(ctx context.Context, id uuid.UUID, req *model.UpdatePlatformPlanRequest, callerPermissions []string) (*model.PlatformPlanResponse, error)
 	Delete(ctx context.Context, id uuid.UUID, callerPermissions []string) error
+	ListPublic(ctx context.Context) ([]model.PlatformPlanResponse, error)
 }
 
 type platformPlanUseCase struct {
@@ -44,9 +45,9 @@ func NewPlatformPlanUseCase(
 	}
 }
 
-func (uc *platformPlanUseCase) List(ctx context.Context, req *model.PlatformPlanFilterRequest, callerPermissions []string) ([]model.PlatformPlanResponse, error) {
+func (uc *platformPlanUseCase) List(ctx context.Context, req *model.PlatformPlanFilterRequest, callerPermissions []string) ([]model.PlatformPlanResponse, int64, error) {
 	if !rbac.HasPermission(callerPermissions, "billing.read") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+		return nil, 0, helper.NewForbidden("forbidden: requires 'billing.read' permission")
 	}
 
 	onlyActive := false
@@ -54,10 +55,32 @@ func (uc *platformPlanUseCase) List(ctx context.Context, req *model.PlatformPlan
 		onlyActive = *req.IsActive
 	}
 
-	plans, err := uc.planRepo.FindAll(ctx, uc.db.Gorm, onlyActive)
+	plans, err := uc.planRepo.FindAll(ctx, uc.db.Gorm, onlyActive, req.IsLandingPage, req.Page, req.Limit)
 	if err != nil {
 		uc.log.Error("platform plan: list", zap.Error(err))
-		return nil, fmt.Errorf("failed to fetch plans")
+		return nil, 0, fmt.Errorf("failed to fetch plans")
+	}
+
+	total, err := uc.planRepo.CountAll(ctx, uc.db.Gorm, onlyActive, req.IsLandingPage)
+	if err != nil {
+		uc.log.Error("platform plan: count", zap.Error(err))
+		return nil, 0, fmt.Errorf("failed to fetch plans count")
+	}
+
+	result := make([]model.PlatformPlanResponse, len(plans))
+	for i, p := range plans {
+		result[i] = *converter.PlatformPlanToResponse(&p)
+	}
+	return result, total, nil
+}
+
+func (uc *platformPlanUseCase) ListPublic(ctx context.Context) ([]model.PlatformPlanResponse, error) {
+	isActive := true
+	isLandingPage := true
+	plans, err := uc.planRepo.FindAll(ctx, uc.db.Gorm, isActive, &isLandingPage, 0, 0)
+	if err != nil {
+		uc.log.Error("platform plan: list public", zap.Error(err))
+		return nil, fmt.Errorf("failed to fetch public plans")
 	}
 
 	result := make([]model.PlatformPlanResponse, len(plans))
@@ -99,6 +122,19 @@ func (uc *platformPlanUseCase) Create(ctx context.Context, req *model.CreatePlat
 	}
 
 	now := time.Now()
+	var features entity.JSONFeatureList
+	if len(req.Features) > 0 {
+		features = make(entity.JSONFeatureList, len(req.Features))
+		for i, f := range req.Features {
+			features[i] = entity.FeatureItem{
+				Name:     f.Name,
+				Included: f.Included,
+			}
+		}
+	} else {
+		features = entity.JSONFeatureList{}
+	}
+
 	plan := &entity.PlatformPlan{
 		ID:           uuid.New(),
 		Name:         req.Name,
@@ -109,8 +145,10 @@ func (uc *platformPlanUseCase) Create(ctx context.Context, req *model.CreatePlat
 		MaxGroups:    req.MaxGroups,
 		MaxPackages:  req.MaxPackages,
 		MaxMembers:   req.MaxMembers,
-		Features:     entity.JSONMap(req.Features),
+		MaxCustomCommands: req.MaxCustomCommands,
+		Features:     features,
 		IsActive:     req.IsActive,
+		IsLandingPage: req.IsLandingPage,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -159,11 +197,24 @@ func (uc *platformPlanUseCase) Update(ctx context.Context, id uuid.UUID, req *mo
 	if req.MaxMembers != nil {
 		plan.MaxMembers = *req.MaxMembers
 	}
+	if req.MaxCustomCommands != nil {
+		plan.MaxCustomCommands = *req.MaxCustomCommands
+	}
 	if req.Features != nil {
-		plan.Features = entity.JSONMap(req.Features)
+		features := make(entity.JSONFeatureList, len(req.Features))
+		for i, f := range req.Features {
+			features[i] = entity.FeatureItem{
+				Name:     f.Name,
+				Included: f.Included,
+			}
+		}
+		plan.Features = features
 	}
 	if req.IsActive != nil {
 		plan.IsActive = *req.IsActive
+	}
+	if req.IsLandingPage != nil {
+		plan.IsLandingPage = *req.IsLandingPage
 	}
 	plan.UpdatedAt = time.Now()
 

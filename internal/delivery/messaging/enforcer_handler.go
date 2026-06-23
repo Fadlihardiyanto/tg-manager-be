@@ -79,8 +79,10 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 	}
 
 	// 1. Kick User
-	// untilDate set to now() means they are removed but can rejoin immediately if unbanned.
-	if err := botClient.KickChatMember(ctx, payload.TelegramChatID, payload.TelegramUserID, time.Now()); err != nil {
+	// Telegram treats very short bans as permanent bans. Use >30s to ensure temporary ban,
+	// then explicitly unban to produce "soft kick" behavior.
+	untilDate := time.Now().Add(35 * time.Second)
+	if err := botClient.KickChatMember(ctx, payload.TelegramChatID, payload.TelegramUserID, untilDate); err != nil {
 		h.logger.Error("enforcer handler: failed to kick chat member", append(logFields, zap.Error(err))...)
 		return err
 	}
@@ -91,9 +93,9 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 	// Memungkinkan user untuk gabung lagi di masa depan jika mereka beli paket baru
 	if err := botClient.UnbanChatMember(ctx, payload.TelegramChatID, payload.TelegramUserID, false); err != nil {
 		h.logger.Error("enforcer handler: failed to unban chat member (soft kick)", append(logFields, zap.Error(err))...)
-	} else {
-		h.logger.Info("enforcer handler: successfully unbanned user for future re-entry", append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
+		return err
 	}
 
+	h.logger.Info("enforcer handler: successfully unbanned user for future re-entry", append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
 	return nil
 }

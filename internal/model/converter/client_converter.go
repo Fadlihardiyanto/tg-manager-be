@@ -15,6 +15,7 @@ func ClientToResponse(client *entity.Client) *model.ClientResponse {
 		ID:               client.ID,
 		Name:             client.Name,
 		Slug:             client.Slug,
+		Category:         client.Category,
 		Description:      client.Description,
 		LogoURL:          client.LogoURL,
 		OwnerUserID:      client.OwnerUserID,

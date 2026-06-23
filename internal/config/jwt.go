@@ -6,9 +6,16 @@ import (
 
 func NewJWTConfig(c *Config) *pkg_jwt.JWTConfig {
 	return &pkg_jwt.JWTConfig{
-		SecretKey:     c.JWT.AdminSecretKey,
-		AccessExpiry:  c.JWT.AdminAccessExpiry,
-		RefreshExpiry: c.JWT.AdminRefreshExpiry,
-		Issuer:        c.App.Name,
+		// Admin
+		AdminSecretKey:     c.JWT.AdminSecretKey,
+		AdminAccessExpiry:  c.JWT.AdminAccessExpiry,
+		AdminRefreshExpiry: c.JWT.AdminRefreshExpiry,
+
+		// Tenant
+		TenantSecretKey:     c.JWT.TenantSecretKey,
+		TenantAccessExpiry:  c.JWT.TenantAccessExpiry,
+		TenantRefreshExpiry: c.JWT.TenantRefreshExpiry,
+
+		Issuer: c.App.Name,
 	}
 }

@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"fmt"
 
 	json "github.com/bytedance/sonic"
 
@@ -79,7 +80,12 @@ func (h *GatekeepingHandler) Handle(ctx context.Context, body []byte) error {
 
 	// 2. Dapatkan kredensial Bot
 	bot, err := h.botRepo.FindByID(ctx, h.db, payload.BotID)
-	if err != nil || bot == nil {
+	if err != nil {
+		h.logger.Error("gatekeeping handler: failed to find bot", append(logFields, zap.Error(err))...)
+		return err // Retryable
+	}
+	if bot == nil {
+		err := fmt.Errorf("gatekeeping handler: bot not found: %s", payload.BotID.String())
 		h.logger.Error("gatekeeping handler: failed to find bot", append(logFields, zap.Error(err))...)
 		return err // Retryable
 	}

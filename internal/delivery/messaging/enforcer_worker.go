@@ -98,7 +98,7 @@ func (w *EnforcerWorker) processExpiredSubscription(ctx context.Context, sub *en
 	var targetGroups []entity.Group
 	if sub.Package.IsAllAccess {
 		// IsAllAccess: kick from ALL active groups belonging to this client
-		groups, err := w.groupRepo.FindByClientID(ctx, w.db, sub.Package.ClientID)
+		groups, err := w.groupRepo.FindByClientID(ctx, w.db, sub.Package.ClientID, 1, 10000000000000000)
 		if err != nil {
 			w.log.Error("enforcer worker: failed to fetch groups for all-access package",
 				zap.String("sub_id", sub.ID.String()),

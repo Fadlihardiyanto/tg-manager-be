@@ -17,8 +17,10 @@ type ISubscriptionRepository interface {
 	FindActiveAllAccessByUserAndClient(ctx context.Context, tx *gorm.DB, userID uuid.UUID, clientID uuid.UUID) (*entity.Subscription, error)
 	FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error)
 	FindExpiringSoon(ctx context.Context, tx *gorm.DB, withinHours int, limit int) ([]entity.Subscription, error)
+	FindActiveByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID) ([]entity.Subscription, error)
 	Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
+	CountActiveUniqueUsersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
 }
 
 type SubscriptionRepository struct {
@@ -97,7 +99,7 @@ func (r *SubscriptionRepository) FindExpiringSoon(ctx context.Context, tx *gorm.
 			`status = 'active'
 			AND deleted_at IS NULL
 			AND expired_at > CURRENT_TIMESTAMP
-			AND expired_at <= CURRENT_TIMESTAMP + INTERVAL '? hours'
+			AND expired_at <= CURRENT_TIMESTAMP + (? * INTERVAL '1 hour')
 			AND id NOT IN (
 				SELECT aggregate_id FROM outbox
 				WHERE event_type = ? AND status != 'failed'
@@ -111,6 +113,25 @@ func (r *SubscriptionRepository) FindExpiringSoon(ctx context.Context, tx *gorm.
 	}
 
 	err := query.Find(&subscriptions).Error
+	return subscriptions, err
+}
+
+// FindActiveByTelegramUserID fetches all active subscriptions for a given Telegram user
+// scoped to a specific client (tenant), with Package + Package.Groups preloaded.
+func (r *SubscriptionRepository) FindActiveByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID) ([]entity.Subscription, error) {
+	var subscriptions []entity.Subscription
+	err := tx.WithContext(ctx).
+		Joins("JOIN telegram_users tu ON subscriptions.telegram_user_id = tu.id").
+		Preload("Package", func(db *gorm.DB) *gorm.DB {
+			return db.Unscoped()
+		}).
+		Preload("Package.Groups").
+		Where("tu.telegram_user_id = ?", telegramUserID).
+		Where("subscriptions.client_id = ?", clientID).
+		Where("subscriptions.status = ?", "active").
+		Where("subscriptions.deleted_at IS NULL").
+		Order("subscriptions.expired_at ASC").
+		Find(&subscriptions).Error
 	return subscriptions, err
 }
 
@@ -132,7 +153,11 @@ func (r *SubscriptionRepository) HasActiveSubscriptionForGroup(ctx context.Conte
 		Where("s.status = ?", "active").
 		Where("s.deleted_at IS NULL").
 		Where(`
-			(p.is_all_access = true AND p.client_id = (SELECT client_id FROM groups WHERE telegram_chat_id = ? LIMIT 1))
+			(p.is_all_access = true AND p.client_id = (
+				SELECT client_id FROM groups
+				WHERE telegram_chat_id = ? AND deleted_at IS NULL
+				LIMIT 1
+			))
 			OR EXISTS (
 				SELECT 1 FROM package_groups pg
 				JOIN groups g ON pg.group_id = g.id
@@ -141,4 +166,14 @@ func (r *SubscriptionRepository) HasActiveSubscriptionForGroup(ctx context.Conte
 		`, telegramChatID, telegramChatID).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func (r *SubscriptionRepository) CountActiveUniqueUsersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Model(&entity.Subscription{}).
+		Where("client_id = ? AND status = 'active' AND deleted_at IS NULL", clientID).
+		Distinct("telegram_user_id").
+		Count(&count).Error
+	return count, err
 }

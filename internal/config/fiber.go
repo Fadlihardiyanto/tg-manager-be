@@ -5,6 +5,7 @@ import (
 
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
 	"go.uber.org/zap"
 )
 
@@ -14,6 +15,12 @@ func NewFiber(cfg *AppConfig) *fiber.App {
 		AppName:      cfg.Name,
 		ErrorHandler: NewErrorHandler(),
 	})
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+	}))
 
 	return app
 }
@@ -54,6 +61,11 @@ func NewErrorHandler() fiber.ErrorHandler {
 			return helper.UnprocessableEntity(c, errUnprocessable.Error())
 		}
 
+		var errTooManyRequests *helper.ErrTooManyRequests
+		if errors.As(err, &errTooManyRequests) {
+			return helper.TooManyRequests(c, errTooManyRequests.Error())
+		}
+
 		var fiberErr *fiber.Error
 		if errors.As(err, &fiberErr) {
 			return c.Status(fiberErr.Code).JSON(helper.Response{
@@ -63,6 +75,6 @@ func NewErrorHandler() fiber.ErrorHandler {
 			})
 		}
 
-		return helper.InternalError(c, "Internal server error")
+		return helper.InternalError(c, "Terjadi kesalahan pada server")
 	}
 }

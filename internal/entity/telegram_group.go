@@ -10,7 +10,7 @@ type Group struct {
 	ID             uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
 	ClientID       uuid.UUID `gorm:"type:uuid;index;not null"`
 	BotID          uuid.UUID `gorm:"type:uuid;index;not null"`
-	TelegramChatID int64     `gorm:"not null;unique"` // Telegram's chat ID is always a number
+	TelegramChatID int64     `gorm:"not null"` // Telegram's chat ID is always a number
 	Name           string    `gorm:"type:varchar(255)"`
 	Description    string    `gorm:"type:text"`
 	IsActive       bool      `gorm:"default:true"`

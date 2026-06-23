@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"fmt"
+	"crypto/subtle"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
@@ -13,14 +13,16 @@ import (
 )
 
 type TelegramWebhookController struct {
-	webhookUC usecase.ITelegramWebhookUseCase
-	log       *zap.Logger
+	webhookUC     usecase.ITelegramWebhookUseCase
+	log           *zap.Logger
+	webhookSecret string
 }
 
-func NewTelegramWebhookController(uc usecase.ITelegramWebhookUseCase, log *zap.Logger) *TelegramWebhookController {
+func NewTelegramWebhookController(uc usecase.ITelegramWebhookUseCase, log *zap.Logger, webhookSecret string) *TelegramWebhookController {
 	return &TelegramWebhookController{
-		webhookUC: uc,
-		log:       log,
+		webhookUC:     uc,
+		log:           log,
+		webhookSecret: webhookSecret,
 	}
 }
 
@@ -30,19 +32,24 @@ func (c *TelegramWebhookController) HandleIncomingUpdate(ctx fiber.Ctx) error {
 	log := logger.FromContext(ctx.Context(), c.log)
 
 	botIDStr := ctx.Params("bot_id")
-
-	fmt.Println("Received Telegram webhook for bot_id:", botIDStr)
-
 	botID, err := uuid.Parse(botIDStr)
 	if err != nil {
 		log.Warn("telegram webhook invalid bot id", zap.String("bot_id", botIDStr))
-		return helper.BadRequest(ctx, "Invalid bot ID")
+		return helper.BadRequest(ctx, "ID bot tidak valid")
+	}
+
+	if c.webhookSecret != "" {
+		receivedSecret := ctx.Get("X-Telegram-Bot-Api-Secret-Token")
+		if subtle.ConstantTimeCompare([]byte(receivedSecret), []byte(c.webhookSecret)) != 1 {
+			log.Warn("telegram webhook invalid secret token", zap.String("bot_id", botID.String()))
+			return helper.Forbidden(ctx, "Webhook secret tidak valid")
+		}
 	}
 
 	var update tgbotapi.Update
 	if err := ctx.Bind().JSON(&update); err != nil {
 		log.Warn("telegram webhook bind failed", zap.Error(err))
-		return helper.BadRequest(ctx, "Invalid JSON payload")
+		return helper.BadRequest(ctx, "Payload JSON tidak valid")
 	}
 
 	if err := c.webhookUC.ProcessUpdate(ctx.Context(), botID, &update); err != nil {

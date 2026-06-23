@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -11,8 +12,11 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/pdf"
+	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/trace"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -26,6 +30,11 @@ type TelegramActionHandler struct {
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
 	logger          *zap.Logger
+	orderRepo       repository.IOrderRepository
+	clientRepo      repository.IClientRepository
+	tgUserRepo      repository.ITelegramUserRepository
+	pdfClient       *pdf.Client
+	s3Client        *pkg_s3.Client
 }
 
 func NewTelegramActionHandler(
@@ -36,6 +45,11 @@ func NewTelegramActionHandler(
 	telegramFactory telegram.BotFactory,
 	encryptionKey string,
 	logger *zap.Logger,
+	orderRepo repository.IOrderRepository,
+	clientRepo repository.IClientRepository,
+	tgUserRepo repository.ITelegramUserRepository,
+	pdfClient *pdf.Client,
+	s3Client *pkg_s3.Client,
 ) *TelegramActionHandler {
 	return &TelegramActionHandler{
 		db:              db,
@@ -45,6 +59,11 @@ func NewTelegramActionHandler(
 		telegramFactory: telegramFactory,
 		encryptionKey:   encryptionKey,
 		logger:          logger,
+		orderRepo:       orderRepo,
+		clientRepo:      clientRepo,
+		tgUserRepo:      tgUserRepo,
+		pdfClient:       pdfClient,
+		s3Client:        s3Client,
 	}
 }
 
@@ -53,6 +72,7 @@ type SubscriptionActivatedPayload struct {
 	TelegramUserID int64  `json:"telegram_user_id"`
 	PackageID      string `json:"package_id"`
 	ClientID       string `json:"client_id"`
+	OrderID        string `json:"order_id"`
 }
 
 func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
@@ -90,7 +110,7 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 
 	var targetGroups []entity.Group
 	if pkg.IsAllAccess {
-		groups, err := h.groupRepo.FindByClientID(ctx, h.db, pkg.ClientID)
+		groups, err := h.groupRepo.FindByClientID(ctx, h.db, pkg.ClientID, 1, 10000000000000000)
 		if err != nil {
 			return fmt.Errorf("group lookup failed: %w", err)
 		}
@@ -149,16 +169,23 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	}
 
 	if len(inviteLinks) == 0 {
-		h.logger.Error("telegram action handler: failed to generate any invite links, dropping message",
+		err := fmt.Errorf("telegram action handler: failed to generate any invite links")
+		h.logger.Error("telegram action handler: failed to generate any invite links",
 			append(logFields,
 				zap.String("subscription_id", payload.SubscriptionID),
 				zap.String("package_id", payload.PackageID),
+				zap.Error(err),
 			)...,
 		)
-		return nil
+		return err
 	}
 
-	// 5. Fetch Subscription for Expiration Date
+	// 5. Generate Receipt PDF and Upload to S3 (non-blocking)
+	var receiptPDFBytes []byte
+	var receiptURL string
+	receiptPDFBytes, receiptURL, _ = h.generateReceipt(ctx, payload, pkg, logFields)
+
+	// 6. Fetch Subscription for Expiration Date
 	subID, err := uuid.Parse(payload.SubscriptionID)
 	if err != nil {
 		h.logger.Error("telegram action handler: invalid subscription id", append(logFields, zap.String("subscription_id", payload.SubscriptionID))...)
@@ -174,8 +201,11 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	expiredStr := sub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
 
-	// 6. Send DM to User
+	// 7. Send DM to User FIRST (welcome text + invite links + receipt URL link)
 	message := fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\nBerikut adalah link khusus untuk masuk ke grup:\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, expiredStr, strings.Join(inviteLinks, "\n"))
+	if receiptURL != "" {
+		message = fmt.Sprintf("%s\n\n📄 <a href=\"%s\">Download Kwitansi Pembayaran</a>", message, receiptURL)
+	}
 	if len(failedGroups) > 0 {
 		message = fmt.Sprintf("%s\n\n⚠️ Gagal membuat link untuk: %s. Silakan hubungi admin.", message, strings.Join(failedGroups, ", "))
 	}
@@ -185,6 +215,141 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		return fmt.Errorf("failed to send dm: %w", err)
 	}
 
+	// 8. Send PDF document AFTER text DM (so user reads the welcome message first)
+	if receiptPDFBytes != nil {
+		doc := tgbotapi.NewDocument(payload.TelegramUserID, tgbotapi.FileBytes{
+			Name:  "kwitansi.pdf",
+			Bytes: receiptPDFBytes,
+		})
+		doc.Caption = fmt.Sprintf("Kwitansi pembayaran paket %s", pkg.Name)
+		if _, err := botClient.SendDocument(ctx, doc); err != nil {
+			h.logger.Warn("telegram action handler: failed to send receipt document", append(logFields, zap.Error(err))...)
+			// non-fatal — text DM with receipt URL link already delivered
+		}
+	}
+
 	h.logger.Info("telegram action handler: successfully processed subscription.activated", append(logFields, zap.String("subscription_id", payload.SubscriptionID))...)
 	return nil
+}
+
+// generateReceipt builds a PDF receipt, uploads it to S3, and saves the URL on the order.
+// Returns (pdfBytes, receiptURL, error). pdfBytes is nil when skipped (idempotent retry).
+// Errors are logged as warnings and do not block the overall flow.
+func (h *TelegramActionHandler) generateReceipt(
+	ctx context.Context,
+	payload SubscriptionActivatedPayload,
+	pkg *entity.Package,
+	logFields []zap.Field,
+) ([]byte, string, error) {
+	// 1. Fetch Order by order_id from payload (not subscription_id, to handle renewals correctly)
+	var order entity.Order
+	if err := h.db.WithContext(ctx).
+		Where("id = ? AND deleted_at IS NULL", payload.OrderID).
+		First(&order).Error; err != nil {
+		h.logger.Warn("receipt: order not found", append(logFields, zap.String("order_id", payload.OrderID), zap.Error(err))...)
+		return nil, "", fmt.Errorf("order not found: %w", err)
+	}
+
+	// 2. Idempotency check — if receipt already generated on a previous attempt, skip regeneration.
+	if order.ReceiptURL != "" {
+		h.logger.Info("receipt: already generated, skipping regeneration",
+			append(logFields, zap.String("url", order.ReceiptURL))...)
+		return nil, order.ReceiptURL, nil
+	}
+
+	// 3. Fetch Client
+	client, err := h.clientRepo.FindByID(ctx, h.db, order.ClientID)
+	if err != nil {
+		h.logger.Warn("receipt: client lookup failed", append(logFields, zap.Error(err))...)
+		return nil, "", fmt.Errorf("client lookup failed: %w", err)
+	}
+
+	// 4. Fetch TelegramUser
+	tgUser, err := h.tgUserRepo.FindByTelegramID(ctx, h.db, payload.TelegramUserID)
+	if err != nil {
+		h.logger.Warn("receipt: telegram user lookup failed", append(logFields, zap.Error(err))...)
+		return nil, "", fmt.Errorf("telegram user lookup failed: %w", err)
+	}
+
+	// 5. Build ReceiptData
+	customerName := tgUser.FirstName
+	if tgUser.LastName != "" {
+		customerName = customerName + " " + tgUser.LastName
+	}
+
+	loc, _ := time.LoadLocation("Asia/Jakarta")
+	paidAt := time.Now()
+	if order.PaidAt != nil {
+		paidAt = *order.PaidAt
+	}
+
+	receiptData := &pdf.ReceiptData{
+		MerchantName:    client.Name,
+		OrderID:         order.ID.String(),
+		TransactionID:   order.ExternalID,
+		TransactionTime: paidAt.In(loc).Format("02 Januari 2006, 15:04 WIB"),
+		PaymentMethod:   order.PaymentMethod,
+		Status:          "paid",
+		PaidAt:          paidAt,
+		CustomerName:    customerName,
+		CustomerTelegram: func() string {
+			if tgUser.Username != "" {
+				return "@" + tgUser.Username
+			}
+			return ""
+		}(),
+		CustomerPhone: tgUser.Phone,
+		Items: []pdf.ReceiptItem{
+			{
+				Name:     pkg.Name,
+				Duration: fmt.Sprintf("%d Hari", pkg.DurationDays),
+				Qty:      1,
+				Price:    pkg.Price,
+				Subtotal: pkg.Price,
+			},
+		},
+		Subtotal:       order.OriginalAmount,
+		DiscountAmount: order.DiscountAmount,
+		TotalPaid:      order.Amount,
+		CurrencyCode:   "IDR",
+		ReceiptNumber:  order.ExternalID,
+		Notes:          fmt.Sprintf("Paket berlangganan %s — %d hari akses.", pkg.Name, pkg.DurationDays),
+	}
+
+	// 6. Generate PDF
+	pdfBytes, err := h.pdfClient.GenerateReceipt(receiptData)
+	if err != nil {
+		h.logger.Warn("receipt: pdf generation failed", append(logFields, zap.Error(err))...)
+		return nil, "", fmt.Errorf("pdf generation failed: %w", err)
+	}
+
+	// 7. Upload to S3
+	if h.s3Client == nil {
+		h.logger.Warn("receipt: s3 client not configured, skipping upload", logFields...)
+		return nil, "", fmt.Errorf("s3 client not configured")
+	}
+
+	s3Key := fmt.Sprintf("receipts/%s/%s.pdf", order.ClientID.String(), order.ID.String())
+	uploadOut, err := h.s3Client.Upload(ctx, &pkg_s3.UploadInput{
+		Key:         s3Key,
+		Body:        bytes.NewReader(pdfBytes),
+		ContentType: "application/pdf",
+		Size:        int64(len(pdfBytes)),
+	})
+	if err != nil {
+		h.logger.Warn("receipt: s3 upload failed", append(logFields, zap.Error(err))...)
+		return nil, "", fmt.Errorf("s3 upload failed: %w", err)
+	}
+
+	receiptURL := uploadOut.PublicURL
+
+	// 8. Save receipt_url on Order
+	order.ReceiptURL = receiptURL
+	if err := h.orderRepo.Update(ctx, h.db, &order); err != nil {
+		h.logger.Warn("receipt: failed to save receipt_url on order", append(logFields, zap.Error(err))...)
+		// non-fatal, continue
+	}
+
+	h.logger.Info("receipt: generated and uploaded", append(logFields, zap.String("receipt_url", receiptURL))...)
+	return pdfBytes, receiptURL, nil
 }

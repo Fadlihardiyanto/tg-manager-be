@@ -8,7 +8,7 @@ import (
 
 type AdminRole struct {
 	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
-	Name        string    `gorm:"type:varchar(50);unique;not null"`
+	Name        string    `gorm:"type:varchar(50);not null"`
 	DisplayName string    `gorm:"type:varchar(100);not null"`
 	Description string    `gorm:"type:text"`
 	CreatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
