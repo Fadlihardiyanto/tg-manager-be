@@ -241,13 +241,35 @@ func (h *TelegramActionHandler) generateReceipt(
 	pkg *entity.Package,
 	logFields []zap.Field,
 ) ([]byte, string, error) {
-	// 1. Fetch Order by order_id from payload (not subscription_id, to handle renewals correctly)
-	var order entity.Order
-	if err := h.db.WithContext(ctx).
-		Where("id = ? AND deleted_at IS NULL", payload.OrderID).
-		First(&order).Error; err != nil {
-		h.logger.Warn("receipt: order not found", append(logFields, zap.String("order_id", payload.OrderID), zap.Error(err))...)
-		return nil, "", fmt.Errorf("order not found: %w", err)
+	// 1. Fetch Order via repository
+	var order *entity.Order
+	if payload.OrderID != "" {
+		orderID, err := uuid.Parse(payload.OrderID)
+		if err != nil {
+			h.logger.Warn("receipt: invalid order_id", append(logFields, zap.String("order_id", payload.OrderID), zap.Error(err))...)
+			return nil, "", fmt.Errorf("invalid order_id: %w", err)
+		}
+		order, err = h.orderRepo.FindByID(ctx, h.db, orderID)
+		if err != nil {
+			h.logger.Warn("receipt: order lookup failed", append(logFields, zap.String("order_id", payload.OrderID), zap.Error(err))...)
+			return nil, "", fmt.Errorf("order lookup failed: %w", err)
+		}
+	} else {
+		// Fallback: older events may not carry order_id — look up by subscription_id
+		subID, err := uuid.Parse(payload.SubscriptionID)
+		if err != nil {
+			h.logger.Warn("receipt: invalid subscription_id", append(logFields, zap.String("subscription_id", payload.SubscriptionID), zap.Error(err))...)
+			return nil, "", fmt.Errorf("invalid subscription_id: %w", err)
+		}
+		order, err = h.orderRepo.FindBySubscriptionID(ctx, h.db, subID)
+		if err != nil {
+			h.logger.Warn("receipt: order lookup by subscription failed", append(logFields, zap.String("subscription_id", payload.SubscriptionID), zap.Error(err))...)
+			return nil, "", fmt.Errorf("order lookup by subscription failed: %w", err)
+		}
+	}
+	if order == nil {
+		h.logger.Warn("receipt: order not found", append(logFields, zap.String("order_id", payload.OrderID), zap.String("subscription_id", payload.SubscriptionID))...)
+		return nil, "", fmt.Errorf("order not found")
 	}
 
 	// 2. Idempotency check — if receipt already generated on a previous attempt, skip regeneration.
@@ -345,7 +367,7 @@ func (h *TelegramActionHandler) generateReceipt(
 
 	// 8. Save receipt_url on Order
 	order.ReceiptURL = receiptURL
-	if err := h.orderRepo.Update(ctx, h.db, &order); err != nil {
+	if err := h.orderRepo.Update(ctx, h.db, order); err != nil {
 		h.logger.Warn("receipt: failed to save receipt_url on order", append(logFields, zap.Error(err))...)
 		// non-fatal, continue
 	}

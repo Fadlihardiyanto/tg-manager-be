@@ -276,6 +276,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, billingRepo, config.Log)
 	tenantProfileUC := usecase.NewTenantProfileUseCase(config.DB, clientRepo, config.Config.App.EncryptionKey, config.Log)
 	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.Log)
+	memberUC := usecase.NewMemberUseCase(config.DB, telegramUserRepo, subscriptionRepo, outboxRepo, auditLogRepo, config.Log)
+	tenantTransactionUC := usecase.NewTenantTransactionUseCase(config.DB, orderRepo, config.S3, config.Log)
 
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
@@ -315,6 +317,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 	auditLogCtrl := controller.NewAuditLogController(auditLogUC, config.Log)
 	tenantProfileCtrl := controller.NewTenantProfileController(tenantProfileUC, config.Log, config.Validate)
 	customCommandCtrl := controller.NewCustomCommandController(customCommandUC, config.Log, config.Validate)
+	memberCtrl := controller.NewMemberController(memberUC, config.Validate, config.Log)
+	tenantTransactionCtrl := controller.NewTenantTransactionController(tenantTransactionUC, config.Log)
 	// Routes
 	adminRoute := &route.AdminRouteConfig{
 		App:                       config.App,
@@ -333,19 +337,21 @@ func BootstrapWeb(config *BootstrapConfig) {
 	adminRoute.Setup()
 
 	tenantRoute := &route.TenantRouteConfig{
-		App:                       config.App,
-		Log:                       config.Log,
-		TenantAuthController:      tenantAuthCtrl,
-		TelegramBotController:     botCtrl,
-		TelegramGroupController:   groupCtrl,
-		PackageController:         packageCtrl,
-		MemberDiscountController:  memberDiscountCtrl,
-		TenantAnalyticsController: tenantAnalyticsCtrl,
-		AuditLogController:        auditLogCtrl,
-		ClientBillingController:   billingCtrl,
-		TenantProfileController:   tenantProfileCtrl,
-		CustomCommandController:   customCommandCtrl,
-		TenantAuthMiddleware:      middleware.TenantAuth(config.Jwt),
+		App:                         config.App,
+		Log:                         config.Log,
+		TenantAuthController:        tenantAuthCtrl,
+		TelegramBotController:       botCtrl,
+		TelegramGroupController:     groupCtrl,
+		PackageController:           packageCtrl,
+		MemberDiscountController:    memberDiscountCtrl,
+		MemberController:            memberCtrl,
+		TenantTransactionController: tenantTransactionCtrl,
+		TenantAnalyticsController:   tenantAnalyticsCtrl,
+		AuditLogController:          auditLogCtrl,
+		ClientBillingController:     billingCtrl,
+		TenantProfileController:     tenantProfileCtrl,
+		CustomCommandController:     customCommandCtrl,
+		TenantAuthMiddleware:        middleware.TenantAuth(config.Jwt),
 	}
 	tenantRoute.Setup()
 

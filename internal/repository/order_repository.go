@@ -6,16 +6,21 @@ import (
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type IOrderRepository interface {
 	IRepository[entity.Order]
+	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Order, error)
 	FindByExternalID(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error)
+	FindBySubscriptionID(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID) (*entity.Order, error)
 	FindPendingOrderByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Order, error)
 	FindExpiredPendingOrders(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Order, error)
 	FindRecentByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID, limit int) ([]entity.Order, error)
+	FindTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) ([]entity.Order, error)
+	CountTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) (int64, error)
 	Create(ctx context.Context, tx *gorm.DB, order *entity.Order) error
 	Update(ctx context.Context, tx *gorm.DB, order *entity.Order) error
 }
@@ -26,6 +31,30 @@ type OrderRepository struct {
 
 func NewOrderRepository() IOrderRepository {
 	return &OrderRepository{}
+}
+
+func (r *OrderRepository) FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Order, error) {
+	var order entity.Order
+	err := tx.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).First(&order).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &order, nil
+}
+
+func (r *OrderRepository) FindBySubscriptionID(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID) (*entity.Order, error) {
+	var order entity.Order
+	err := tx.WithContext(ctx).Where("subscription_id = ? AND deleted_at IS NULL", subscriptionID).First(&order).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &order, nil
 }
 
 func (r *OrderRepository) FindByExternalID(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error) {
@@ -83,4 +112,83 @@ func (r *OrderRepository) Create(ctx context.Context, tx *gorm.DB, order *entity
 
 func (r *OrderRepository) Update(ctx context.Context, tx *gorm.DB, order *entity.Order) error {
 	return tx.WithContext(ctx).Save(order).Error
+}
+
+// ── Tenant Transaction queries ──────────────────────────────────────
+
+// applyTransactionScope builds the base GORM query for tenant transaction
+// listing/counting. It JOINs to packages and telegram_users, and applies
+// status, search, package, payment_method, and date-range filters.
+func (r *OrderRepository) applyTransactionScope(query *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) *gorm.DB {
+	q := query.Model(&entity.Order{}).
+		Joins("JOIN packages ON packages.id = orders.package_id").
+		Joins("JOIN telegram_users ON telegram_users.id = orders.telegram_user_id").
+		Where("orders.client_id = ? AND orders.deleted_at IS NULL", clientID)
+
+	// Status filter
+	if filter.Status != "" && filter.Status != "all" {
+		q = q.Where("orders.status = ?", filter.Status)
+	}
+
+	// Package filter
+	if filter.PackageID != uuid.Nil {
+		q = q.Where("orders.package_id = ?", filter.PackageID)
+	}
+
+	// Payment method filter
+	if filter.PaymentMethod != "" {
+		q = q.Where("orders.payment_method = ?", filter.PaymentMethod)
+	}
+
+	// Free-text search across member username, first_name, last_name, external_id
+	if filter.Search != "" {
+		search := "%" + filter.Search + "%"
+		q = q.Where("telegram_users.username ILIKE ? OR telegram_users.first_name ILIKE ? OR telegram_users.last_name ILIKE ? OR orders.external_id ILIKE ?", search, search, search, search)
+	}
+
+	// Date range filters (based on order created_at)
+	if filter.DateFrom != nil {
+		q = q.Where("orders.created_at >= ?", *filter.DateFrom)
+	}
+	if filter.DateTo != nil {
+		q = q.Where("orders.created_at <= ?", *filter.DateTo)
+	}
+
+	return q
+}
+
+// FindTransactionsByClientID returns paginated orders with preloaded Package, User, and Discount.
+func (r *OrderRepository) FindTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) ([]entity.Order, error) {
+	var orders []entity.Order
+
+	page := filter.Page
+	limit := filter.Limit
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	query := r.applyTransactionScope(tx.WithContext(ctx), clientID, filter)
+	query = query.
+		Preload("Package", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).
+		Preload("User").
+		Preload("Discount", func(db *gorm.DB) *gorm.DB { return db.Unscoped() })
+
+	err := query.
+		Order("orders.created_at DESC").
+		Offset(offset).Limit(limit).
+		Find(&orders).Error
+
+	return orders, err
+}
+
+// CountTransactionsByClientID counts orders matching the transaction filter.
+func (r *OrderRepository) CountTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) (int64, error) {
+	var count int64
+	query := r.applyTransactionScope(tx.WithContext(ctx), clientID, filter)
+	err := query.Count(&count).Error
+	return count, err
 }

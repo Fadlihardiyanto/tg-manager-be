@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 
+	"github.com/bytedance/sonic"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
@@ -14,6 +15,8 @@ func NewFiber(cfg *AppConfig) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      cfg.Name,
 		ErrorHandler: NewErrorHandler(),
+		JSONEncoder:  sonic.Marshal,
+		JSONDecoder:  sonic.Unmarshal,
 	})
 
 	app.Use(cors.New(cors.Config{

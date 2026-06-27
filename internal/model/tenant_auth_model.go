@@ -56,3 +56,11 @@ type TenantLoginResponse struct {
 	Role            string          `json:"role"`
 	NeedsOnboarding bool            `json:"needs_onboarding"`
 }
+
+type TenantMeResponse struct {
+	User            UserResponse    `json:"user"`
+	Client          *ClientResponse `json:"client"`
+	Role            string          `json:"role"`
+	Permissions     []string        `json:"permissions"`
+	NeedsOnboarding bool            `json:"needs_onboarding"`
+}

@@ -18,6 +18,58 @@ type TelegramUserResponse struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// ── Member (telegram_users JOIN subscriptions) ─────────────────────
+
+// MemberSubscriptionBrief is the subscription summary embedded in member list/detail.
+type MemberSubscriptionBrief struct {
+	ID          uuid.UUID  `json:"id"`
+	PackageID   uuid.UUID  `json:"package_id"`
+	PackageName string     `json:"package_name"`
+	Status      string     `json:"status"`
+	ActivatedAt time.Time  `json:"activated_at"`
+	ExpiredAt   time.Time  `json:"expired_at"`
+	AutoRenew   bool       `json:"auto_renew"`
+	KickedAt    *time.Time `json:"kicked_at,omitempty"`
+}
+
+// MemberResponse is used in the paginated member list.
+// Shows the most relevant subscription (active first, then latest expired).
+type MemberResponse struct {
+	ID             uuid.UUID                `json:"id"`
+	TelegramUserID int64                    `json:"telegram_user_id"`
+	Username       string                   `json:"username"`
+	FirstName      string                   `json:"first_name"`
+	LastName       string                   `json:"last_name"`
+	Phone          string                   `json:"phone"`
+	Subscription   *MemberSubscriptionBrief `json:"subscription"` // nil = never subscribed
+	TotalOrders    int64                    `json:"total_orders"`
+	CreatedAt      time.Time                `json:"created_at"`
+}
+
+// MemberDetailResponse is used for single-member detail.
+// Includes ALL subscriptions for full history.
+type MemberDetailResponse struct {
+	ID             uuid.UUID                 `json:"id"`
+	TelegramUserID int64                     `json:"telegram_user_id"`
+	Username       string                    `json:"username"`
+	FirstName      string                    `json:"first_name"`
+	LastName       string                    `json:"last_name"`
+	Phone          string                    `json:"phone"`
+	Subscriptions  []MemberSubscriptionBrief `json:"subscriptions"`
+	TotalOrders    int64                     `json:"total_orders"`
+	CreatedAt      time.Time                 `json:"created_at"`
+	UpdatedAt      time.Time                 `json:"updated_at"`
+}
+
+// MemberFilterRequest holds the query parameters for member list.
+type MemberFilterRequest struct {
+	Page      int       `json:"page" validate:"omitempty,min=1"`
+	Limit     int       `json:"limit" validate:"omitempty,min=1,max=100"`
+	Status    string    `json:"status" validate:"omitempty,oneof=active expired all"`
+	Search    string    `json:"search" validate:"omitempty,max=100"`
+	PackageID uuid.UUID `json:"package_id" validate:"omitempty,uuid"`
+}
+
 // Audit Log Models
 type AuditLogResponse struct {
 	ID         uuid.UUID              `json:"id"`
@@ -39,3 +91,9 @@ type AuditLogFilterRequest struct {
 	Limit      int       `json:"limit" validate:"omitempty,min=1,max=100"`
 	Offset     int       `json:"offset" validate:"omitempty,min=0"`
 }
+
+// ExtendMemberRequest holds the payload for manual expiry extension.
+type ExtendMemberRequest struct {
+	NewExpiryAt time.Time `json:"new_expiry_at" validate:"required"`
+}
+

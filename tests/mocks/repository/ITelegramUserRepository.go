@@ -6,6 +6,8 @@ import (
 	context "context"
 
 	entity "github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	model "github.com/Fadlihardiyanto/telegram-management-app/internal/model"
+	uuid "github.com/google/uuid"
 	gorm "gorm.io/gorm"
 
 	mock "github.com/stretchr/testify/mock"
@@ -174,6 +176,124 @@ func (_m *ITelegramUserRepository) Update(ctx context.Context, tx *gorm.DB, _a2 
 	}
 
 	return r0
+}
+
+// FindMembersByClientID provides a mock function with given fields: ctx, tx, clientID, filter
+func (_m *ITelegramUserRepository) FindMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) ([]entity.TelegramUser, error) {
+	ret := _m.Called(ctx, tx, clientID, filter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindMembersByClientID")
+	}
+
+	var r0 []entity.TelegramUser
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.MemberFilterRequest) ([]entity.TelegramUser, error)); ok {
+		return rf(ctx, tx, clientID, filter)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.MemberFilterRequest) []entity.TelegramUser); ok {
+		r0 = rf(ctx, tx, clientID, filter)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entity.TelegramUser)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID, model.MemberFilterRequest) error); ok {
+		r1 = rf(ctx, tx, clientID, filter)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// CountMembersByClientID provides a mock function with given fields: ctx, tx, clientID, filter
+func (_m *ITelegramUserRepository) CountMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) (int64, error) {
+	ret := _m.Called(ctx, tx, clientID, filter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountMembersByClientID")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.MemberFilterRequest) (int64, error)); ok {
+		return rf(ctx, tx, clientID, filter)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.MemberFilterRequest) int64); ok {
+		r0 = rf(ctx, tx, clientID, filter)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID, model.MemberFilterRequest) error); ok {
+		r1 = rf(ctx, tx, clientID, filter)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// FindMemberDetailByID provides a mock function with given fields: ctx, tx, userID, clientID
+func (_m *ITelegramUserRepository) FindMemberDetailByID(ctx context.Context, tx *gorm.DB, userID uuid.UUID, clientID uuid.UUID) (*entity.TelegramUser, error) {
+	ret := _m.Called(ctx, tx, userID, clientID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindMemberDetailByID")
+	}
+
+	var r0 *entity.TelegramUser
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, uuid.UUID) (*entity.TelegramUser, error)); ok {
+		return rf(ctx, tx, userID, clientID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, uuid.UUID) *entity.TelegramUser); ok {
+		r0 = rf(ctx, tx, userID, clientID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*entity.TelegramUser)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID, uuid.UUID) error); ok {
+		r1 = rf(ctx, tx, userID, clientID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// CountOrdersByUserIDs provides a mock function with given fields: ctx, tx, userIDs, clientID
+func (_m *ITelegramUserRepository) CountOrdersByUserIDs(ctx context.Context, tx *gorm.DB, userIDs []uuid.UUID, clientID uuid.UUID) (map[uuid.UUID]int64, error) {
+	ret := _m.Called(ctx, tx, userIDs, clientID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountOrdersByUserIDs")
+	}
+
+	var r0 map[uuid.UUID]int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, []uuid.UUID, uuid.UUID) (map[uuid.UUID]int64, error)); ok {
+		return rf(ctx, tx, userIDs, clientID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, []uuid.UUID, uuid.UUID) map[uuid.UUID]int64); ok {
+		r0 = rf(ctx, tx, userIDs, clientID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[uuid.UUID]int64)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, []uuid.UUID, uuid.UUID) error); ok {
+		r1 = rf(ctx, tx, userIDs, clientID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // NewITelegramUserRepository creates a new instance of ITelegramUserRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

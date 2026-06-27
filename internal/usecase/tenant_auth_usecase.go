@@ -29,6 +29,7 @@ type ITenantAuthUseCase interface {
 	VerifyEmail(ctx context.Context, req *model.TenantVerifyEmailRequest) (*model.TenantLoginResponse, error)
 	ResendVerification(ctx context.Context, req *model.TenantResendVerificationRequest) error
 	Onboarding(ctx context.Context, userID uuid.UUID, req *model.TenantOnboardingRequest) (*model.TenantOnboardingResponse, error)
+	GetProfile(ctx context.Context, userID uuid.UUID, clientID uuid.UUID) (*model.TenantMeResponse, error)
 }
 
 type TenantAuthUseCase struct {
@@ -540,11 +541,7 @@ func (uc *TenantAuthUseCase) Onboarding(ctx context.Context, userID uuid.UUID, r
 		return nil, err
 	}
 
-	log.Info("tenant onboarding success",
-		zap.String("user_id", userID.String()),
-		zap.String("client_id", createdClient.ID.String()),
-		zap.String("slug", createdClient.Slug),
-	)
+	log.Info("tenant onboarding completed successfully", zap.String("client_id", createdClient.ID.String()))
 
 	return &model.TenantOnboardingResponse{
 		AccessToken:  accessToken,
@@ -553,5 +550,62 @@ func (uc *TenantAuthUseCase) Onboarding(ctx context.Context, userID uuid.UUID, r
 		User:         *converter.UserToResponse(user),
 		Client:       *converter.ClientToResponse(createdClient),
 		Role:         "owner",
+	}, nil
+}
+
+func (uc *TenantAuthUseCase) GetProfile(ctx context.Context, userID uuid.UUID, clientID uuid.UUID) (*model.TenantMeResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("tenant auth get profile start", zap.String("user_id", userID.String()))
+
+	user, err := uc.userRepo.FindByID(ctx, uc.db.Gorm, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, helper.NewNotFound("User tidak ditemukan")
+		}
+		log.Error("failed to find user", zap.Error(err))
+		return nil, err
+	}
+
+	// Fetch client associated with user
+	var clientResp *model.ClientResponse
+	var role string
+	var permissions []string
+	needsOnboarding := true
+
+	if clientID != uuid.Nil {
+		// Verify client ownership/access
+		clientUser, err := uc.clientUserRepo.FindByClientAndUserID(ctx, uc.db.Gorm, clientID, userID)
+		if err == nil && clientUser != nil {
+			client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, clientID)
+			if err == nil && client != nil {
+				clientResp = converter.ClientToResponse(client)
+				role = clientUser.Role
+				needsOnboarding = false
+
+				// Fetch permissions
+				perms, err := uc.permissionRepo.FindPermissionNamesByRole(ctx, uc.db.Gorm, role)
+				if err == nil {
+					permissions = perms
+				} else {
+					log.Warn("failed to fetch permissions for role", zap.String("role", role), zap.Error(err))
+				}
+			}
+		} else {
+			log.Warn("client user not found for get profile", zap.Error(err))
+		}
+	} else {
+		// Check if user has any client
+		userWithClient, err := uc.userRepo.FindByEmailWithClient(ctx, uc.db.Gorm, user.Email)
+		if err == nil && len(userWithClient.ClientUsers) > 0 {
+			needsOnboarding = false
+		}
+	}
+
+	return &model.TenantMeResponse{
+		User:            *converter.UserToResponse(user),
+		Client:          clientResp,
+		Role:            role,
+		Permissions:     permissions,
+		NeedsOnboarding: needsOnboarding,
 	}, nil
 }

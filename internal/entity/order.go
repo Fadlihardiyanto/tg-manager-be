@@ -29,6 +29,7 @@ type Order struct {
 	DeletedAt      *time.Time
 
 	// Relationships
-	User    TelegramUser `gorm:"foreignKey:TelegramUserID"`
-	Package Package      `gorm:"foreignKey:PackageID"`
+	User     TelegramUser    `gorm:"foreignKey:TelegramUserID"`
+	Package  Package         `gorm:"foreignKey:PackageID"`
+	Discount *MemberDiscount `gorm:"foreignKey:DiscountID"`
 }

@@ -6,6 +6,7 @@ import (
 	context "context"
 
 	entity "github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	model "github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	gorm "gorm.io/gorm"
 
 	mock "github.com/stretchr/testify/mock"
@@ -142,6 +143,96 @@ func (_m *IOrderRepository) FindByExternalID(ctx context.Context, tx *gorm.DB, e
 	return r0, r1
 }
 
+// FindByID provides a mock function with given fields: ctx, tx, id
+func (_m *IOrderRepository) FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Order, error) {
+	ret := _m.Called(ctx, tx, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindByID")
+	}
+
+	var r0 *entity.Order
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID) (*entity.Order, error)); ok {
+		return rf(ctx, tx, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID) *entity.Order); ok {
+		r0 = rf(ctx, tx, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*entity.Order)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID) error); ok {
+		r1 = rf(ctx, tx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// FindBySubscriptionID provides a mock function with given fields: ctx, tx, subscriptionID
+func (_m *IOrderRepository) FindBySubscriptionID(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID) (*entity.Order, error) {
+	ret := _m.Called(ctx, tx, subscriptionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindBySubscriptionID")
+	}
+
+	var r0 *entity.Order
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID) (*entity.Order, error)); ok {
+		return rf(ctx, tx, subscriptionID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID) *entity.Order); ok {
+		r0 = rf(ctx, tx, subscriptionID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*entity.Order)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID) error); ok {
+		r1 = rf(ctx, tx, subscriptionID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// FindRecentByTelegramUserID provides a mock function with given fields: ctx, tx, telegramUserID, clientID, limit
+func (_m *IOrderRepository) FindRecentByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID, limit int) ([]entity.Order, error) {
+	ret := _m.Called(ctx, tx, telegramUserID, clientID, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindRecentByTelegramUserID")
+	}
+
+	var r0 []entity.Order
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, int64, uuid.UUID, int) ([]entity.Order, error)); ok {
+		return rf(ctx, tx, telegramUserID, clientID, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, int64, uuid.UUID, int) []entity.Order); ok {
+		r0 = rf(ctx, tx, telegramUserID, clientID, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entity.Order)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, int64, uuid.UUID, int) error); ok {
+		r1 = rf(ctx, tx, telegramUserID, clientID, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // FindById provides a mock function with given fields: ctx, tx, _a2, id
 func (_m *IOrderRepository) FindById(ctx context.Context, tx *gorm.DB, _a2 *entity.Order, id interface{}) error {
 	ret := _m.Called(ctx, tx, _a2, id)
@@ -236,6 +327,64 @@ func (_m *IOrderRepository) Update(ctx context.Context, tx *gorm.DB, order *enti
 	}
 
 	return r0
+}
+
+// FindTransactionsByClientID provides a mock function with given fields: ctx, tx, clientID, filter
+func (_m *IOrderRepository) FindTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) ([]entity.Order, error) {
+	ret := _m.Called(ctx, tx, clientID, filter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindTransactionsByClientID")
+	}
+
+	var r0 []entity.Order
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.TransactionFilterRequest) ([]entity.Order, error)); ok {
+		return rf(ctx, tx, clientID, filter)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.TransactionFilterRequest) []entity.Order); ok {
+		r0 = rf(ctx, tx, clientID, filter)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entity.Order)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID, model.TransactionFilterRequest) error); ok {
+		r1 = rf(ctx, tx, clientID, filter)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// CountTransactionsByClientID provides a mock function with given fields: ctx, tx, clientID, filter
+func (_m *IOrderRepository) CountTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) (int64, error) {
+	ret := _m.Called(ctx, tx, clientID, filter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountTransactionsByClientID")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.TransactionFilterRequest) (int64, error)); ok {
+		return rf(ctx, tx, clientID, filter)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, uuid.UUID, model.TransactionFilterRequest) int64); ok {
+		r0 = rf(ctx, tx, clientID, filter)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, uuid.UUID, model.TransactionFilterRequest) error); ok {
+		r1 = rf(ctx, tx, clientID, filter)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // NewIOrderRepository creates a new instance of IOrderRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

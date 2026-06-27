@@ -81,6 +81,25 @@ func (c *TenantAuthController) Login(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Login berhasil", result)
 }
 
+// Me godoc
+// GET /api/v1/auth/me
+func (c *TenantAuthController) Me(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	
+	userID := middleware.GetTenantUserID(ctx)
+	clientID := middleware.GetTenantClientID(ctx)
+	
+	log.Info("tenant auth get profile request", zap.String("user_id", userID.String()), zap.String("client_id", clientID.String()))
+
+	res, err := c.tenantAuthUC.GetProfile(ctx.Context(), userID, clientID)
+	if err != nil {
+		log.Error("tenant auth get profile failed", zap.Error(err))
+		return err
+	}
+
+	return helper.Success(ctx, "Profil user berhasil diambil", res)
+}
+
 // VerifyEmail godoc
 // GET /api/v1/auth/verify-email?token=...
 // After successful verification, auto-logs the user in and returns JWT tokens.

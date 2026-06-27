@@ -76,6 +76,41 @@ type OrderResponse struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
+// ── Tenant Transactions (orders JOIN packages JOIN telegram_users) ───
+
+// TransactionFilterRequest holds query parameters for the tenant transaction list.
+type TransactionFilterRequest struct {
+	Page          int        `json:"page" validate:"omitempty,min=1"`
+	Limit         int        `json:"limit" validate:"omitempty,min=1,max=100"`
+	Status        string     `json:"status" validate:"omitempty,oneof=pending paid expired failed all"`
+	Search        string     `json:"search" validate:"omitempty,max=100"`
+	PackageID     uuid.UUID  `json:"package_id" validate:"omitempty,uuid"`
+	PaymentMethod string     `json:"payment_method" validate:"omitempty"`
+	DateFrom      *time.Time `json:"date_from" validate:"omitempty"`
+	DateTo        *time.Time `json:"date_to" validate:"omitempty"`
+}
+
+// TransactionResponse is a single row in the tenant transactions table.
+type TransactionResponse struct {
+	ID             uuid.UUID       `json:"id"`
+	ExternalID     string          `json:"external_id"`
+	MemberName     string          `json:"member_name"`
+	MemberUsername string          `json:"member_username"`
+	TelegramUserID int64           `json:"telegram_user_id"`
+	PackageID      uuid.UUID       `json:"package_id"`
+	PackageName    string          `json:"package_name"`
+	OriginalAmount decimal.Decimal `json:"original_amount"`
+	DiscountAmount decimal.Decimal `json:"discount_amount"`
+	Amount         decimal.Decimal `json:"amount"`
+	PaymentMethod  string          `json:"payment_method"`
+	DiscountCode   *string         `json:"discount_code,omitempty"`
+	Status         string          `json:"status"`
+	ReceiptURL     string          `json:"receipt_url,omitempty"`
+	PaidAt         *time.Time      `json:"paid_at,omitempty"`
+	ExpiredAt      *time.Time      `json:"expired_at,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
 // Order Payment Webhook
 type OrderPaymentWebhookRequest struct {
 	ExternalID string          `json:"external_id" validate:"required"`

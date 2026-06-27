@@ -32,6 +32,8 @@ tags:
     description: Telegram group management
   - name: Tenant - Packages & Discounts
     description: Subscription packages for group members
+  - name: Tenant - Members
+    description: Member (Telegram user + subscription) management
   - name: Tenant - Billing
     description: Self-service billing for tenants
 
@@ -355,6 +357,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/me:
+    get:
+      tags:
+        - Tenant - Auth
+      summary: Get Current User Profile (Me)
+      description: Returns the profile of the currently authenticated user, including their role and permissions.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantMeResponse"
 
   /api/v1/auth/login:
     post:
@@ -1438,6 +1461,239 @@ paths:
         "401":
           description: Unauthorized
 
+  /api/v1/tenant/members:
+    get:
+      tags:
+        - Tenant - Members
+      summary: List Members
+      description: |
+        Retrieve a paginated list of Telegram members belonging to the tenant's client,
+        joined with their most relevant subscription (active first, then latest expired).
+        Supports filtering by subscription status, package, and free-text search on username/name.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Items per page
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, expired, all]
+            default: all
+          description: Filter by subscription status
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: Free-text search on username, first_name, or last_name
+        - name: package_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter by package UUID
+      responses:
+        "200":
+          description: Paginated member list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      meta:
+                        $ref: "#/components/schemas/Meta"
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/MemberResponse"
+        "401":
+          description: Unauthorized
+
+  /api/v1/tenant/members/{id}:
+    get:
+      tags:
+        - Tenant - Members
+      summary: Get Member Detail
+      description: |
+        Retrieve full detail of a single Telegram member including ALL subscription history
+        (active and expired) for the tenant's client.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Telegram user UUID (internal ID, not Telegram numeric ID)
+      responses:
+        "200":
+          description: Member detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MemberDetailResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Member not found
+
+  /api/v1/tenant/members/{id}/kick:
+    post:
+      tags:
+        - Tenant - Members
+      summary: Kick Member
+      description: Cancel a member's active subscription and trigger a background job to remove them from connected Telegram groups.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Member kicked successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires members.update permission
+        "404":
+          description: Member or active subscription not found
+
+  /api/v1/tenant/members/{id}/extend:
+    post:
+      tags:
+        - Tenant - Members
+      summary: Extend Member Expiry
+      description: Manually extend the expiry date of a member's active subscription.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                new_expiry_at:
+                  type: string
+                  format: date-time
+              required:
+                - new_expiry_at
+      responses:
+        "200":
+          description: Member expiry extended successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires members.update permission
+        "404":
+          description: Member or active subscription not found
+
+  /api/v1/tenant/members/{id}/sync:
+    post:
+      tags:
+        - Tenant - Members
+      summary: Sync Member Access
+      description: Force a synchronization of a member's access rights across Telegram groups.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Sync requested successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires members.update permission
+        "404":
+          description: Member or active subscription not found
+
+  /api/v1/tenant/members/{id}/resend-link:
+    post:
+      tags:
+        - Tenant - Members
+      summary: Resend Member Link
+      description: Force generating and sending the invite link again for the member's active subscriptions to their DM.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Resend link requested successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - Requires members.update permission
+        "404":
+          description: Member or active subscription not found
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1562,6 +1818,53 @@ components:
           format: email
           example: "john@example.com"
 
+    TenantMeResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UserResponse"
+        client:
+          $ref: "#/components/schemas/ClientResponse"
+        role:
+          type: string
+          example: "owner"
+        permissions:
+          type: array
+          items:
+            type: string
+          example: ["billing.view", "billing.manage", "bot.manage"]
+        needs_onboarding:
+          type: boolean
+          example: false
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        phone:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        is_email_verified:
+          type: boolean
+        last_login_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
     TenantLoginResponse:
       type: object
       properties:
@@ -1649,8 +1952,6 @@ components:
         role:
           type: string
           example: "owner"
-
-
 
     TelegramBotCreateRequest:
       type: object
@@ -1906,7 +2207,11 @@ components:
           items:
             type: string
             format: uuid
-          example: ["123e4567-e89b-12d3-a456-426614174000", "987e6543-e21b-12d3-a456-426614174000"]
+          example:
+            [
+              "123e4567-e89b-12d3-a456-426614174000",
+              "987e6543-e21b-12d3-a456-426614174000",
+            ]
 
     PackageResponse:
       type: object
@@ -2402,6 +2707,135 @@ components:
           example: false
         note:
           type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Meta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          format: int64
+          example: 150
+        total_pages:
+          type: integer
+          example: 8
+
+    MemberSubscriptionBrief:
+      type: object
+      description: Compact subscription info embedded in member response
+      properties:
+        id:
+          type: string
+          format: uuid
+        package_id:
+          type: string
+          format: uuid
+        package_name:
+          type: string
+          example: VIP Monthly
+        status:
+          type: string
+          enum: [active, expired, cancelled]
+          example: active
+        activated_at:
+          type: string
+          format: date-time
+        expired_at:
+          type: string
+          format: date-time
+        auto_renew:
+          type: boolean
+          example: false
+        kicked_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    MemberResponse:
+      type: object
+      description: Member list item — Telegram user with their most relevant subscription
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Internal TelegramUser UUID
+        telegram_user_id:
+          type: integer
+          format: int64
+          example: 123456789
+          description: Telegram numeric user ID
+        username:
+          type: string
+          example: johndoe
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        phone:
+          type: string
+          example: "+628123456789"
+        subscription:
+          allOf:
+            - $ref: "#/components/schemas/MemberSubscriptionBrief"
+          nullable: true
+          description: Most relevant subscription (active preferred); null if never subscribed
+        total_orders:
+          type: integer
+          format: int64
+          example: 3
+          description: Total paid orders placed by this member
+        created_at:
+          type: string
+          format: date-time
+
+    MemberDetailResponse:
+      type: object
+      description: Full member detail with complete subscription history
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Internal TelegramUser UUID
+        telegram_user_id:
+          type: integer
+          format: int64
+          example: 123456789
+          description: Telegram numeric user ID
+        username:
+          type: string
+          example: johndoe
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        phone:
+          type: string
+          example: "+628123456789"
+        subscriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberSubscriptionBrief"
+          description: All subscriptions (active first, then by expired_at desc)
+        total_orders:
+          type: integer
+          format: int64
+          example: 3
+          description: Total paid orders placed by this member
         created_at:
           type: string
           format: date-time

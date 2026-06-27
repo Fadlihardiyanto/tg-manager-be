@@ -27,6 +27,12 @@ type TenantRouteConfig struct {
 	PackageController        *controller.PackageController
 	MemberDiscountController *controller.MemberDiscountController
 
+	// Members
+	MemberController *controller.MemberController
+
+	// Transactions
+	TenantTransactionController *controller.TenantTransactionController
+
 	// Billing (Self-Service)
 	ClientBillingController *controller.ClientBillingController
 
@@ -75,8 +81,9 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// All protected tenant routes go through TenantAuth middleware
 	protected := api.Group("/tenant", c.TenantAuthMiddleware)
 
-	// ── Me (current user profile) ────────────────────────────────────
-	// TODO: protected.Get("/me", c.TenantProfileController.Me)
+	// ── Auth (Protected) ────────────────────────────────────
+	authProtected := api.Group("/auth", c.TenantAuthMiddleware)
+	authProtected.Get("/me", c.TenantAuthController.Me)
 
 	// ── Bots ─────────────────────────────────────────────────────────
 	bots := protected.Group("/bots")
@@ -117,6 +124,19 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	discounts.Post("/", middleware.TenantRequirePermission("packages.create"), c.MemberDiscountController.Create)
 	discounts.Put("/:id", middleware.TenantRequirePermission("packages.update"), c.MemberDiscountController.Update)
 	discounts.Delete("/:id", middleware.TenantRequirePermission("packages.delete"), c.MemberDiscountController.Delete)
+
+	// ── Members ──────────────────────────────────────────────────────
+	members := protected.Group("/members")
+	members.Get("/", middleware.TenantRequirePermission("members.read"), c.MemberController.List)
+	members.Get("/:id", middleware.TenantRequirePermission("members.read"), c.MemberController.Get)
+	members.Post("/:id/kick", middleware.TenantRequirePermission("members.update"), c.MemberController.Kick)
+	members.Post("/:id/extend", middleware.TenantRequirePermission("members.update"), c.MemberController.Extend)
+	members.Post("/:id/sync", middleware.TenantRequirePermission("members.update"), c.MemberController.Sync)
+	members.Post("/:id/resend-link", middleware.TenantRequirePermission("members.update"), c.MemberController.ResendLink)
+
+	// ── Transactions ─────────────────────────────────────────────────
+	transactions := protected.Group("/transactions")
+	transactions.Get("/", middleware.TenantRequirePermission("members.read"), c.TenantTransactionController.List)
 
 	// ── Analytics & Audit ────────────────────────────────────────────────────
 	analytics := protected.Group("/analytics")
