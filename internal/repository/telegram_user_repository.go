@@ -13,7 +13,7 @@ import (
 type ITelegramUserRepository interface {
 	IRepository[entity.TelegramUser]
 	FindByTelegramID(ctx context.Context, tx *gorm.DB, telegramID int64) (*entity.TelegramUser, error)
-	FindMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) ([]entity.TelegramUser, error)
+	FindMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) ([]model.AggregatedMemberRow, error)
 	CountMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) (int64, error)
 	FindMemberDetailByID(ctx context.Context, tx *gorm.DB, userID uuid.UUID, clientID uuid.UUID) (*entity.TelegramUser, error)
 	CountOrdersByUserIDs(ctx context.Context, tx *gorm.DB, userIDs []uuid.UUID, clientID uuid.UUID) (map[uuid.UUID]int64, error)
@@ -66,6 +66,18 @@ func (r *TelegramUserRepository) applyMemberScope(query *gorm.DB, clientID uuid.
 		q = q.Where("EXISTS (SELECT 1 FROM subscriptions s WHERE s.telegram_user_id = telegram_users.id AND s.package_id = ? AND s.deleted_at IS NULL)", filter.PackageID)
 	}
 
+	if filter.JoinedStart != nil && filter.JoinedEnd != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM subscriptions s WHERE s.telegram_user_id = telegram_users.id AND s.client_id = ? AND s.created_at BETWEEN ? AND ? AND s.deleted_at IS NULL)", clientID, filter.JoinedStart, filter.JoinedEnd)
+	}
+
+	if filter.ExpiredStart != nil && filter.ExpiredEnd != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM subscriptions s WHERE s.telegram_user_id = telegram_users.id AND s.client_id = ? AND s.expired_at BETWEEN ? AND ? AND s.deleted_at IS NULL)", clientID, filter.ExpiredStart, filter.ExpiredEnd)
+	}
+
+	if filter.NearestExpiryStart != nil && filter.NearestExpiryEnd != nil {
+		q = q.Where("EXISTS (SELECT 1 FROM (SELECT MIN(s.expired_at) as min_exp FROM subscriptions s WHERE s.telegram_user_id = telegram_users.id AND s.client_id = ? AND s.status = 'active' AND s.deleted_at IS NULL) sub WHERE sub.min_exp BETWEEN ? AND ?)", clientID, filter.NearestExpiryStart, filter.NearestExpiryEnd)
+	}
+
 	return q
 }
 
@@ -82,9 +94,9 @@ func preloadMemberSubscriptions(query *gorm.DB, clientID uuid.UUID) *gorm.DB {
 		})
 }
 
-// FindMembersByClientID returns paginated telegram users with preloaded subscriptions.
-func (r *TelegramUserRepository) FindMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) ([]entity.TelegramUser, error) {
-	var users []entity.TelegramUser
+// FindMembersByClientID returns paginated telegram users with aggregated subscriptions.
+func (r *TelegramUserRepository) FindMembersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.MemberFilterRequest) ([]model.AggregatedMemberRow, error) {
+	var users []model.AggregatedMemberRow
 
 	page := filter.Page
 	limit := filter.Limit
@@ -97,9 +109,23 @@ func (r *TelegramUserRepository) FindMembersByClientID(ctx context.Context, tx *
 	offset := (page - 1) * limit
 
 	query := r.applyMemberScope(tx.WithContext(ctx), clientID, filter)
-	query = preloadMemberSubscriptions(query, clientID)
 
 	err := query.
+		Select(`
+			telegram_users.id,
+			telegram_users.telegram_user_id,
+			telegram_users.username,
+			telegram_users.first_name,
+			telegram_users.last_name,
+			telegram_users.phone,
+			telegram_users.created_at,
+			bool_or(s.status = 'active' AND s.deleted_at IS NULL) as global_status,
+			COALESCE(json_agg(p.name) FILTER (WHERE s.status = 'active' AND s.deleted_at IS NULL), '[]') as active_packages,
+			MIN(s.expired_at) FILTER (WHERE s.status = 'active' AND s.deleted_at IS NULL) as nearest_expiry
+		`).
+		Joins("LEFT JOIN subscriptions s ON s.telegram_user_id = telegram_users.id AND s.client_id = ?", clientID).
+		Joins("LEFT JOIN packages p ON p.id = s.package_id").
+		Group("telegram_users.id").
 		Order("telegram_users.created_at DESC").
 		Offset(offset).Limit(limit).
 		Find(&users).Error

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
@@ -74,7 +75,15 @@ func (c *PackageController) List(ctx fiber.Ctx) error {
 		limit = 20
 	}
 
-	result, total, err := c.packageUC.FindAllByClient(ctx.Context(), clientID, page, limit)
+	filter := model.PackageFilterRequest{
+		Page:        page,
+		Limit:       limit,
+		Search:      ctx.Query("search", ""),
+		IsAllAccess: parseBoolSlice(ctx.Query("is_all_access", "")),
+		IsActive:    parseBoolSlice(ctx.Query("is_active", "")),
+	}
+
+	result, total, err := c.packageUC.FindAllByClient(ctx.Context(), clientID, filter)
 	if err != nil {
 		log.Error("package controller list failed", zap.Error(err))
 		return err
@@ -190,4 +199,69 @@ func (c *PackageController) AssociateGroups(ctx fiber.Ctx) error {
 	}
 
 	return helper.Success(ctx, "Grup berhasil dikaitkan dengan paket", nil)
+}
+
+func parseBoolSlice(val string) []bool {
+	if val == "" {
+		return nil
+	}
+	parts := strings.Split(val, ",")
+	var result []bool
+	for _, p := range parts {
+		b, err := strconv.ParseBool(strings.TrimSpace(p))
+		if err == nil {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+// Activate godoc
+// PATCH /api/v1/tenant/packages/:id/activate
+func (c *PackageController) Activate(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("package controller activate request")
+
+	clientID := middleware.GetTenantClientID(ctx)
+	packageID, err := uuid.Parse(ctx.Params("id"))
+	if err != nil {
+		log.Warn("package controller activate invalid id", zap.Error(err))
+		return helper.BadRequest(ctx, "ID paket tidak valid")
+	}
+
+	isActive := true
+	result, err := c.packageUC.Update(ctx.Context(), clientID, packageID, &model.PackageUpdateRequest{
+		IsActive: &isActive,
+	})
+	if err != nil {
+		log.Error("package controller activate failed", zap.Error(err))
+		return err
+	}
+
+	return helper.Success(ctx, "Paket berhasil diaktifkan", result)
+}
+
+// Deactivate godoc
+// PATCH /api/v1/tenant/packages/:id/deactivate
+func (c *PackageController) Deactivate(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("package controller deactivate request")
+
+	clientID := middleware.GetTenantClientID(ctx)
+	packageID, err := uuid.Parse(ctx.Params("id"))
+	if err != nil {
+		log.Warn("package controller deactivate invalid id", zap.Error(err))
+		return helper.BadRequest(ctx, "ID paket tidak valid")
+	}
+
+	isActive := false
+	result, err := c.packageUC.Update(ctx.Context(), clientID, packageID, &model.PackageUpdateRequest{
+		IsActive: &isActive,
+	})
+	if err != nil {
+		log.Error("package controller deactivate failed", zap.Error(err))
+		return err
+	}
+
+	return helper.Success(ctx, "Paket berhasil dinonaktifkan", result)
 }

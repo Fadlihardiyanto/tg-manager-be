@@ -19,7 +19,7 @@ import (
 
 type IPackageUseCase interface {
 	Create(ctx context.Context, clientID uuid.UUID, req *model.PackageCreateRequest) (*model.PackageResponse, error)
-	FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.PackageResponse, int64, error)
+	FindAllByClient(ctx context.Context, clientID uuid.UUID, filter model.PackageFilterRequest) ([]model.PackageResponse, int64, error)
 	FindByID(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) (*model.PackageResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID, req *model.PackageUpdateRequest) (*model.PackageResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) error
@@ -95,17 +95,17 @@ func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *m
 	return converter.PackageToResponse(pkg), nil
 }
 
-func (uc *PackageUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.PackageResponse, int64, error) {
+func (uc *PackageUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID, filter model.PackageFilterRequest) ([]model.PackageResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("package usecase find all start", zap.String("client_id", clientID.String()))
 
-	packages, err := uc.packageRepo.FindByClientID(ctx, uc.db.Gorm, clientID, page, limit)
+	packages, err := uc.packageRepo.FindPackages(ctx, uc.db.Gorm, clientID, filter)
 	if err != nil {
 		log.Error("package usecase find all failed", zap.Error(err))
 		return nil, 0, err
 	}
 
-	total, err := uc.packageRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
+	total, err := uc.packageRepo.CountPackages(ctx, uc.db.Gorm, clientID, filter)
 	if err != nil {
 		log.Error("package usecase count failed", zap.Error(err))
 		return nil, 0, err
@@ -162,6 +162,9 @@ func (uc *PackageUseCase) Update(ctx context.Context, clientID uuid.UUID, packag
 	}
 	if req.IsAllAccess != nil {
 		pkg.IsAllAccess = *req.IsAllAccess
+	}
+	if req.IsActive != nil {
+		pkg.IsActive = *req.IsActive
 	}
 	pkg.UpdatedAt = time.Now()
 

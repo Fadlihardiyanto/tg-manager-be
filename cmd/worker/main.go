@@ -66,6 +66,13 @@ func main() {
 		go bootstrapConfig.ExpiryReminderWorker.Start(expiryReminderCtx, 1*time.Hour)
 	}
 
+	// 9. Start Broadcast Scheduler Worker (polls every 30 seconds)
+	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
+	defer schedulerCancel()
+	if bootstrapConfig.BroadcastSchedulerWorker != nil {
+		go bootstrapConfig.BroadcastSchedulerWorker.Start(schedulerCtx, 30*time.Second)
+	}
+
 	bootstrapConfig.Log.Info("worker: starting consumer...")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,6 +89,7 @@ func main() {
 	<-quit
 
 	bootstrapConfig.Log.Info("worker: received shutdown signal")
+	schedulerCancel()      // Stop broadcast scheduler worker
 	expiryReminderCancel() // Stop expiry reminder worker
 	enforcerCancel()       // Stop the enforcer worker loop
 	cleanupCancel()        // Stop the cleanup worker loop first

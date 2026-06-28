@@ -21,14 +21,14 @@ type CustomCommandResponse struct {
 type CreateCustomCommandRequest struct {
 	BotID          uuid.UUID `json:"bot_id" validate:"required"`
 	CommandTrigger string    `json:"command_trigger" validate:"required,min=2,max=50"`
-	ResponseType   string    `json:"response_type" validate:"required,oneof=text photo"`
+	ResponseType   string    `json:"response_type" validate:"required,oneof=text photo document"`
 	ResponseText   string    `json:"response_text" validate:"required"`
 	FileUrl        *string   `json:"file_url" validate:"omitempty,url"`
 }
 
 type UpdateCustomCommandRequest struct {
 	CommandTrigger *string `json:"command_trigger" validate:"omitempty,min=2,max=50"`
-	ResponseType   *string `json:"response_type" validate:"omitempty,oneof=text photo"`
+	ResponseType   *string `json:"response_type" validate:"omitempty,oneof=text photo document"`
 	ResponseText   *string `json:"response_text" validate:"omitempty"`
 	FileUrl        *string `json:"file_url" validate:"omitempty,url"`
 	IsActive       *bool   `json:"is_active"`

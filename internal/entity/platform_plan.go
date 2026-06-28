@@ -20,6 +20,7 @@ type PlatformPlan struct {
 	MaxPackages         int `gorm:"not null;default:3"`
 	MaxMembers          int `gorm:"not null;default:100"`
 	MaxCustomCommands   int `gorm:"not null;default:5"`
+	MaxBroadcasts       int `gorm:"not null;default:3"`
 
 	Features  JSONFeatureList   `gorm:"type:jsonb;not null;default:'[]';column:features"`
 	IsActive  bool      `gorm:"default:true"`

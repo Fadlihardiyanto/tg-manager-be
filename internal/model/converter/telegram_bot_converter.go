@@ -44,7 +44,9 @@ func GroupToResponse(group *entity.Group) *model.GroupResponse {
 	return &model.GroupResponse{
 		ID:             group.ID,
 		ClientID:       group.ClientID,
-		BotID:          group.BotID,
+		BotID:          group.BotUUID,
+		BotUsername:    group.Bot.Username,
+		BotRole:        group.Bot.BotRole,
 		TelegramChatID: group.TelegramChatID,
 		Name:           group.Name,
 		Description:    group.Description,

@@ -77,7 +77,7 @@ func (w *GroupSyncWorker) Process(ctx context.Context) {
 	// 2. Group by BotID to avoid multiple bot client instantiations for the same bot
 	groupsByBot := make(map[uuid.UUID][]int)
 	for i, group := range groups {
-		groupsByBot[group.BotID] = append(groupsByBot[group.BotID], i)
+		groupsByBot[group.BotUUID] = append(groupsByBot[group.BotUUID], i)
 	}
 
 	// 3. Process each bot

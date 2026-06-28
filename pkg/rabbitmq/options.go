@@ -27,6 +27,8 @@ const (
 	QueueEnforcerDLQ         = "task.telegram_enforcer.dlq"
 	QueueExpiryReminder      = "task.telegram_expiry_reminder"
 	QueueExpiryReminderDLQ   = "task.telegram_expiry_reminder.dlq"
+	QueueBroadcast           = "task.broadcast"
+	QueueBroadcastDLQ        = "task.broadcast.dlq"
 )
 
 // Routing keys
@@ -37,6 +39,7 @@ const (
 	RoutingKeyGatekeeping    = "telegram.gatekeeping"
 	RoutingKeyEnforcer       = "telegram.enforcer"
 	RoutingKeyExpiryReminder = "telegram.expiry_reminder"
+	RoutingKeyBroadcast      = "telegram.broadcast"
 )
 
 // ExchangeConfig holds the configuration for declaring an exchange.

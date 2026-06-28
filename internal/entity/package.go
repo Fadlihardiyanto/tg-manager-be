@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 type Package struct {
@@ -18,7 +19,7 @@ type Package struct {
 	IsActive     bool            `gorm:"default:true"`
 	CreatedAt    time.Time       `gorm:"default:CURRENT_TIMESTAMP"`
 	UpdatedAt    time.Time       `gorm:"default:CURRENT_TIMESTAMP"`
-	DeletedAt    *time.Time
+	DeletedAt    gorm.DeletedAt `gorm:"index"`
 
 	// Relationships
 	Client Client  `gorm:"foreignKey:ClientID"`

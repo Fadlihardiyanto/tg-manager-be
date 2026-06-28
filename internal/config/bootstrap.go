@@ -51,6 +51,7 @@ type BootstrapConfig struct {
 	EnforcerWorker       *deliveryMsg.EnforcerWorker
 	GroupSyncWorker      *deliveryMsg.GroupSyncWorker
 	ExpiryReminderWorker *deliveryMsg.ExpiryReminderWorker
+	BroadcastSchedulerWorker *deliveryMsg.BroadcastSchedulerWorker
 }
 
 // BootstrapOption allows selective initialization of components.
@@ -246,6 +247,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	platformDiscountRepo := repository.NewPlatformDiscountRepository()
 	outboxRepo := repository.NewOutboxRepository()
 	customCommandRepo := repository.NewCustomCommandRepository()
+	broadcastRepo := repository.NewBroadcastRepository()
 
 	adminUserRepo := repository.NewAdminUserRepository(config.Log)
 	adminPermissionRepo := repository.NewAdminPermissionRepository(config.Log)
@@ -272,12 +274,14 @@ func BootstrapWeb(config *BootstrapConfig) {
 	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, config.Log)
 	auditLogUC := usecase.NewAuditLogUseCase(config.DB.Gorm, auditLogRepo, config.Log)
 	botUC := usecase.NewTelegramBotUseCase(config.DB, botRepo, billingRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey, config.Config.Telegram.WebhookBaseURL, config.Config.Telegram.WebhookSecret)
-	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey)
+	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Redis, config.Log, config.Config.App.EncryptionKey)
 	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, billingRepo, config.Log)
 	tenantProfileUC := usecase.NewTenantProfileUseCase(config.DB, clientRepo, config.Config.App.EncryptionKey, config.Log)
-	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.Log)
+	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.S3, config.Log)
 	memberUC := usecase.NewMemberUseCase(config.DB, telegramUserRepo, subscriptionRepo, outboxRepo, auditLogRepo, config.Log)
 	tenantTransactionUC := usecase.NewTenantTransactionUseCase(config.DB, orderRepo, config.S3, config.Log)
+	uploadUC := usecase.NewUploadUseCase(config.S3, config.Log)
+	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepo, botRepo, groupRepo, outboxRepo, billingRepo, config.Log)
 
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
@@ -295,7 +299,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	cmdRegistry.Register(myOrdersHandler)
 	cmdRegistry.RegisterCallback(packageSelectHandler)
 
-	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, customCommandRepo, cmdRegistry, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, customCommandRepo, cmdRegistry, config.TelegramFactory, config.Redis, config.Config.App.EncryptionKey, config.Log)
 
 	// Controllers
 	adminAuthCtrl := controller.NewAdminAuthController(adminAuthUC, config.Log, config.Validate)
@@ -319,6 +323,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 	customCommandCtrl := controller.NewCustomCommandController(customCommandUC, config.Log, config.Validate)
 	memberCtrl := controller.NewMemberController(memberUC, config.Validate, config.Log)
 	tenantTransactionCtrl := controller.NewTenantTransactionController(tenantTransactionUC, config.Log)
+	uploadCtrl := controller.NewUploadController(uploadUC, config.Log, config.Validate)
+	broadcastCtrl := controller.NewBroadcastController(broadcastUC, config.Log, config.Validate)
 	// Routes
 	adminRoute := &route.AdminRouteConfig{
 		App:                       config.App,
@@ -351,6 +357,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 		ClientBillingController:     billingCtrl,
 		TenantProfileController:     tenantProfileCtrl,
 		CustomCommandController:     customCommandCtrl,
+		UploadController:            uploadCtrl,
+		BroadcastController:         broadcastCtrl,
 		TenantAuthMiddleware:        middleware.TenantAuth(config.Jwt),
 	}
 	tenantRoute.Setup()
@@ -415,6 +423,16 @@ func BootstrapWorker(config *BootstrapConfig) {
 	// Register ExpiryReminderHandler as consumer
 	expiryReminderHandler := deliveryMsg.NewExpiryReminderHandler(config.DB.Gorm, packageRepo, botRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	config.Consumer.RegisterHandler(rabbitmq.QueueExpiryReminder, expiryReminderHandler.Handle)
+
+	// Register BroadcastHandler as consumer
+	broadcastRepoWorker := repository.NewBroadcastRepository()
+	broadcastHandler := deliveryMsg.NewBroadcastHandler(config.DB.Gorm, broadcastRepoWorker, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	config.Consumer.RegisterHandler(rabbitmq.QueueBroadcast, broadcastHandler.Handle)
+
+	// Instantiate BroadcastSchedulerWorker
+	billingRepo := repository.NewClientBillingRepository()
+	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepoWorker, botRepo, groupRepo, outboxRepo, billingRepo, config.Log)
+	config.BroadcastSchedulerWorker = deliveryMsg.NewBroadcastSchedulerWorker(config.DB.Gorm, broadcastUC, config.Log)
 }
 
 // Shutdown gracefully closes all infrastructure connections.

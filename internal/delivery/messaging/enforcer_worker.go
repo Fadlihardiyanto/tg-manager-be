@@ -149,7 +149,7 @@ func (w *EnforcerWorker) processExpiredSubscription(ctx context.Context, sub *en
 		// Publish eviction task for each target group
 		for _, group := range targetGroups {
 			payload := EnforcerPayload{
-				BotID:          group.BotID,
+				BotID:          group.BotUUID,
 				TelegramUserID: sub.User.TelegramUserID,
 				TelegramChatID: group.TelegramChatID,
 			}

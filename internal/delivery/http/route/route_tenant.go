@@ -43,6 +43,12 @@ type TenantRouteConfig struct {
 	// Profile & Settings
 	TenantProfileController *controller.TenantProfileController
 
+	// Upload
+	UploadController *controller.UploadController
+
+	// Broadcast
+	BroadcastController *controller.BroadcastController
+
 	// Middleware
 	TenantAuthMiddleware fiber.Handler // JWT validation for tenant
 }
@@ -92,6 +98,8 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	bots.Post("/", middleware.TenantRequirePermission("bots.create"), c.TelegramBotController.Create)
 	bots.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.TelegramBotController.Update)
 	bots.Delete("/:id", middleware.TenantRequirePermission("bots.delete"), c.TelegramBotController.Delete)
+	bots.Post("/:bot_id/groups/connect-token", middleware.TenantRequirePermission("groups.create"), c.TelegramGroupController.GenerateConnectToken)
+	bots.Get("/:bot_id/groups/connect-status/:token", middleware.TenantRequirePermission("groups.create"), c.TelegramGroupController.CheckConnectStatus)
 
 	// ── Custom Commands ──────────────────────────────────────────────
 	commands := protected.Group("/commands")
@@ -117,6 +125,8 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	packages.Put("/:id", middleware.TenantRequirePermission("packages.update"), c.PackageController.Update)
 	packages.Delete("/:id", middleware.TenantRequirePermission("packages.delete"), c.PackageController.Delete)
 	packages.Post("/:id/groups", middleware.TenantRequirePermission("packages.update"), c.PackageController.AssociateGroups)
+	packages.Patch("/:id/activate", middleware.TenantRequirePermission("packages.update"), c.PackageController.Activate)
+	packages.Patch("/:id/deactivate", middleware.TenantRequirePermission("packages.update"), c.PackageController.Deactivate)
 
 	// ── Discounts ────────────────────────────────────────────────────
 	discounts := protected.Group("/discounts")
@@ -154,6 +164,14 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	billing := protected.Group("/billing")
 	billing.Get("/active", c.ClientBillingController.ClientGetActiveBilling)
 	billing.Post("/checkout", c.ClientBillingController.ClientCheckout)
+
+	// ── Uploads ──────────────────────────────────────────────────────────
+	protected.Post("/upload/presign", c.UploadController.GetPresignedURL)
+
+	// ── Broadcasts ────────────────────────────────────────────────────────
+	broadcasts := protected.Group("/bots/:bot_id/broadcasts", middleware.TenantRequirePermission("bots.write"))
+	broadcasts.Post("/", c.BroadcastController.Create)
+	broadcasts.Get("/", middleware.TenantRequirePermission("bots.read"), c.BroadcastController.List)
 
 	// ── Team ─────────────────────────────────────────────────────────
 	// TODO: Wire team management routes here

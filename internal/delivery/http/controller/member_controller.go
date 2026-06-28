@@ -2,6 +2,8 @@ package controller
 
 import (
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
@@ -67,6 +69,18 @@ func (c *MemberController) List(ctx fiber.Ctx) error {
 		PackageID: packageID,
 	}
 
+	joinedStart, joinedEnd := parseTimeRangeMs(ctx.Query("joined", ""))
+	filter.JoinedStart = joinedStart
+	filter.JoinedEnd = joinedEnd
+
+	expiredStart, expiredEnd := parseTimeRangeMs(ctx.Query("expired", ""))
+	filter.ExpiredStart = expiredStart
+	filter.ExpiredEnd = expiredEnd
+
+	nearestExpiryStart, nearestExpiryEnd := parseTimeRangeMs(ctx.Query("nearest_expiry", ""))
+	filter.NearestExpiryStart = nearestExpiryStart
+	filter.NearestExpiryEnd = nearestExpiryEnd
+
 	result, total, err := c.memberUC.FindAll(ctx.Context(), clientID, filter)
 	if err != nil {
 		log.Error("member controller list failed", zap.Error(err))
@@ -75,6 +89,29 @@ func (c *MemberController) List(ctx fiber.Ctx) error {
 
 	meta := helper.NewMeta(page, limit, total)
 	return helper.SuccessWithMeta(ctx, "Berhasil mengambil daftar member", result, meta)
+}
+
+func parseTimeRangeMs(val string) (*time.Time, *time.Time) {
+	if val == "" {
+		return nil, nil
+	}
+	parts := strings.Split(val, ",")
+	if len(parts) != 2 {
+		return nil, nil
+	}
+
+	startMs, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+	endMs, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+
+	start := time.UnixMilli(startMs)
+	end := time.UnixMilli(endMs)
+	return &start, &end
 }
 
 // Get godoc

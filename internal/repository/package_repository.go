@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -11,11 +12,13 @@ import (
 type IPackageRepository interface {
 	IRepository[entity.Package]
 	FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.Package, error)
+	FindPackages(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.PackageFilterRequest) ([]entity.Package, error)
 	FindByGroupID(ctx context.Context, tx *gorm.DB, groupID uuid.UUID) ([]entity.Package, error)
 	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Package, error)
 	Delete(ctx context.Context, tx *gorm.DB, pkg *entity.Package) error
 	AssociateGroups(ctx context.Context, tx *gorm.DB, pkg *entity.Package, groups []entity.Group) error
 	CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
+	CountPackages(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.PackageFilterRequest) (int64, error)
 }
 
 type PackageRepository struct {
@@ -42,6 +45,7 @@ func (r *PackageRepository) FindByClientID(ctx context.Context, tx *gorm.DB, cli
 		Where("client_id = ? AND deleted_at IS NULL", clientID).
 		Offset(offset).
 		Limit(limit).
+		Order("created_at DESC").
 		Find(&packages).Error
 	return packages, err
 }
@@ -60,11 +64,63 @@ func (r *PackageRepository) AssociateGroups(ctx context.Context, tx *gorm.DB, pk
 	return tx.WithContext(ctx).Model(pkg).Association("Groups").Replace(groups)
 }
 
+func (r *PackageRepository) FindPackages(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.PackageFilterRequest) ([]entity.Package, error) {
+	var packages []entity.Package
+	page := filter.Page
+	limit := filter.Limit
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	query := tx.WithContext(ctx).Where("client_id = ? AND deleted_at IS NULL", clientID)
+
+	if filter.Search != "" {
+		searchPattern := "%" + filter.Search + "%"
+		query = query.Where("name ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
+	}
+
+	if len(filter.IsAllAccess) > 0 {
+		query = query.Where("is_all_access IN ?", filter.IsAllAccess)
+	}
+
+	if len(filter.IsActive) > 0 {
+		query = query.Where("is_active IN ?", filter.IsActive)
+	}
+
+	err := query.Offset(offset).Limit(limit).Find(&packages).Error
+	return packages, err
+}
+
 func (r *PackageRepository) CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error) {
 	var count int64
 	err := tx.WithContext(ctx).
 		Model(&entity.Package{}).
 		Where("client_id = ? AND deleted_at IS NULL", clientID).
 		Count(&count).Error
+	return count, err
+}
+
+func (r *PackageRepository) CountPackages(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.PackageFilterRequest) (int64, error) {
+	var count int64
+	query := tx.WithContext(ctx).Model(&entity.Package{}).Where("client_id = ? AND deleted_at IS NULL", clientID)
+
+	if filter.Search != "" {
+		searchPattern := "%" + filter.Search + "%"
+		query = query.Where("name ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
+	}
+
+	if len(filter.IsAllAccess) > 0 {
+		query = query.Where("is_all_access IN ?", filter.IsAllAccess)
+	}
+
+	if len(filter.IsActive) > 0 {
+		query = query.Where("is_active IN ?", filter.IsActive)
+	}
+
+	err := query.Count(&count).Error
 	return count, err
 }

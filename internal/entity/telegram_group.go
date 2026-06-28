@@ -9,7 +9,7 @@ import (
 type Group struct {
 	ID             uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
 	ClientID       uuid.UUID `gorm:"type:uuid;index;not null"`
-	BotID          uuid.UUID `gorm:"type:uuid;index;not null"`
+	BotUUID        uuid.UUID `gorm:"column:bot_id;type:uuid;index;not null"`
 	TelegramChatID int64     `gorm:"not null"` // Telegram's chat ID is always a number
 	Name           string    `gorm:"type:varchar(255)"`
 	Description    string    `gorm:"type:text"`
@@ -22,6 +22,6 @@ type Group struct {
 
 	// Relationships
 	Client   Client      `gorm:"foreignKey:ClientID"`
-	Bot      TelegramBot `gorm:"foreignKey:BotID"`
+	Bot      TelegramBot `gorm:"foreignKey:BotUUID;references:ID"`
 	Packages []Package   `gorm:"many2many:package_groups;"`
 }

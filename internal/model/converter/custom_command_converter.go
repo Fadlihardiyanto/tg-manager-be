@@ -12,7 +12,7 @@ func CustomCommandToResponse(cc *entity.CustomCommand) *model.CustomCommandRespo
 
 	return &model.CustomCommandResponse{
 		ID:             cc.ID,
-		BotID:          cc.BotID,
+		BotID:          cc.BotUUID,
 		CommandTrigger: cc.CommandTrigger,
 		ResponseType:   cc.ResponseType,
 		ResponseText:   cc.ResponseText,

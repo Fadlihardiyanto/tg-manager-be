@@ -52,6 +52,7 @@ func (r *TelegramGroupRepository) FindByClientID(ctx context.Context, tx *gorm.D
 	var groups []entity.Group
 	offset := (page - 1) * limit
 	err := tx.WithContext(ctx).
+		Preload("Bot").
 		Where("client_id = ? AND deleted_at IS NULL", clientID).
 		Offset(offset).
 		Limit(limit).
@@ -61,7 +62,10 @@ func (r *TelegramGroupRepository) FindByClientID(ctx context.Context, tx *gorm.D
 
 func (r *TelegramGroupRepository) FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Group, error) {
 	var group entity.Group
-	err := tx.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).First(&group).Error
+	err := tx.WithContext(ctx).
+		Preload("Bot").
+		Where("id = ? AND deleted_at IS NULL", id).
+		First(&group).Error
 	return &group, err
 }
 

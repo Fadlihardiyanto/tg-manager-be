@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"crypto/rand"
+	json "github.com/bytedance/sonic"
 	"errors"
 	"fmt"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -25,6 +28,8 @@ type ITelegramGroupUseCase interface {
 	FindByID(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) (*model.GroupResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID, req *model.GroupUpdateRequest) (*model.GroupResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
+	GenerateConnectToken(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (string, string, error)
+	CheckConnectStatus(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, token string) (string, error)
 }
 
 type TelegramGroupUseCase struct {
@@ -33,6 +38,7 @@ type TelegramGroupUseCase struct {
 	botRepo         repository.ITelegramBotRepository
 	billingRepo     repository.IClientBillingRepository
 	telegramFactory telegram.BotFactory
+	redisClient     *redis.Client
 	log             *zap.Logger
 	encryptionKey   string
 }
@@ -43,6 +49,7 @@ func NewTelegramGroupUseCase(
 	botRepo repository.ITelegramBotRepository,
 	billingRepo repository.IClientBillingRepository,
 	telegramFactory telegram.BotFactory,
+	redisClient *redis.Client,
 	log *zap.Logger,
 	encryptionKey string,
 ) ITelegramGroupUseCase {
@@ -52,6 +59,7 @@ func NewTelegramGroupUseCase(
 		botRepo:         botRepo,
 		billingRepo:     billingRepo,
 		telegramFactory: telegramFactory,
+		redisClient:     redisClient,
 		log:             log,
 		encryptionKey:   encryptionKey,
 	}
@@ -133,7 +141,7 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	group := &entity.Group{
 		ID:             uuid.New(),
 		ClientID:       clientID,
-		BotID:          bot.ID,
+		BotUUID:        bot.ID,
 		TelegramChatID: req.TelegramChatID,
 		Name:           req.Name,
 		CreatedAt:      time.Now(),
@@ -214,7 +222,7 @@ func (uc *TelegramGroupUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		if err != nil || bot.ClientID != clientID {
 			return nil, helper.NewBadRequest("Bot tidak valid")
 		}
-		group.BotID = req.BotID
+		group.BotUUID = req.BotID
 	}
 	group.UpdatedAt = time.Now()
 
@@ -251,4 +259,88 @@ func (uc *TelegramGroupUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 
 	log.Info("group usecase delete success", zap.String("group_id", groupID.String()))
 	return nil
+}
+
+func (uc *TelegramGroupUseCase) GenerateConnectToken(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (string, string, error) {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("generating group connect token", zap.String("client_id", clientID.String()), zap.String("bot_id", botID.String()))
+
+	// 1. Verify Bot belongs to client
+	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, botID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", helper.NewNotFound("Bot tidak ditemukan")
+		}
+		log.Error("group usecase generate token find bot failed", zap.Error(err))
+		return "", "", err
+	}
+
+	if bot.ClientID != clientID {
+		return "", "", helper.NewNotFound("Bot tidak ditemukan")
+	}
+
+	// 2. Generate random 6 characters code
+	code := uc.generateRandomCode(6)
+
+	// 3. Save to Redis
+	redisKey := fmt.Sprintf("connect_group:%s", code)
+	payload := map[string]interface{}{
+		"client_id": clientID,
+		"bot_id":    botID,
+	}
+	val, err := json.Marshal(payload)
+	if err != nil {
+		log.Error("failed to marshal connect token payload", zap.Error(err))
+		return "", "", err
+	}
+
+	err = uc.redisClient.Set(ctx, redisKey, string(val), 15*time.Minute).Err()
+	if err != nil {
+		log.Error("failed to save connect token to redis", zap.Error(err))
+		return "", "", fmt.Errorf("Gagal membuat token koneksi")
+	}
+
+	return code, bot.Username, nil
+}
+
+func (uc *TelegramGroupUseCase) generateRandomCode(length int) string {
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // avoid confusing characters
+	b := make([]byte, length)
+	_, _ = rand.Read(b)
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b)
+}
+
+func (uc *TelegramGroupUseCase) CheckConnectStatus(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, token string) (string, error) {
+	// 1. Check if status key in Redis is "success"
+	statusKey := fmt.Sprintf("connect_group_status:%s", token)
+	status, err := uc.redisClient.Get(ctx, statusKey).Result()
+	if err == nil && status == "success" {
+		return "success", nil
+	}
+
+	// 2. Check if connect token exists in Redis
+	redisKey := fmt.Sprintf("connect_group:%s", token)
+	val, err := uc.redisClient.Get(ctx, redisKey).Result()
+	if err != nil {
+		// Token doesn't exist (expired/deleted) or redis error
+		return "expired", nil
+	}
+
+	// 3. Unmarshal and verify client ID and bot ID directly from Redis payload
+	var payload struct {
+		ClientID uuid.UUID `json:"client_id"`
+		BotID    uuid.UUID `json:"bot_id"`
+	}
+	if err := json.Unmarshal([]byte(val), &payload); err != nil {
+		return "expired", nil
+	}
+
+	if payload.ClientID != clientID || payload.BotID != botID {
+		return "expired", nil
+	}
+
+	return "pending", nil
 }

@@ -20,6 +20,20 @@ type TelegramUserResponse struct {
 
 // ── Member (telegram_users JOIN subscriptions) ─────────────────────
 
+// AggregatedMemberRow captures the raw SQL aggregation result.
+type AggregatedMemberRow struct {
+	ID             uuid.UUID  `gorm:"column:id"`
+	TelegramUserID int64      `gorm:"column:telegram_user_id"`
+	Username       string     `gorm:"column:username"`
+	FirstName      string     `gorm:"column:first_name"`
+	LastName       string     `gorm:"column:last_name"`
+	Phone          string     `gorm:"column:phone"`
+	CreatedAt      time.Time  `gorm:"column:created_at"`
+	GlobalStatus   bool       `gorm:"column:global_status"`
+	ActivePackages []byte     `gorm:"column:active_packages"`
+	NearestExpiry  *time.Time `gorm:"column:nearest_expiry"`
+}
+
 // MemberSubscriptionBrief is the subscription summary embedded in member list/detail.
 type MemberSubscriptionBrief struct {
 	ID          uuid.UUID  `json:"id"`
@@ -35,15 +49,17 @@ type MemberSubscriptionBrief struct {
 // MemberResponse is used in the paginated member list.
 // Shows the most relevant subscription (active first, then latest expired).
 type MemberResponse struct {
-	ID             uuid.UUID                `json:"id"`
-	TelegramUserID int64                    `json:"telegram_user_id"`
-	Username       string                   `json:"username"`
-	FirstName      string                   `json:"first_name"`
-	LastName       string                   `json:"last_name"`
-	Phone          string                   `json:"phone"`
-	Subscription   *MemberSubscriptionBrief `json:"subscription"` // nil = never subscribed
-	TotalOrders    int64                    `json:"total_orders"`
-	CreatedAt      time.Time                `json:"created_at"`
+	ID             uuid.UUID  `json:"id"`
+	TelegramUserID int64      `json:"telegram_user_id"`
+	Username       string     `json:"username"`
+	FirstName      string     `json:"first_name"`
+	LastName       string     `json:"last_name"`
+	Phone          string     `json:"phone"`
+	GlobalStatus   bool       `json:"global_status"`
+	ActivePackages []string   `json:"active_packages"`
+	NearestExpiry  *time.Time `json:"nearest_expiry"`
+	TotalOrders    int64      `json:"total_orders"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // MemberDetailResponse is used for single-member detail.
@@ -63,11 +79,17 @@ type MemberDetailResponse struct {
 
 // MemberFilterRequest holds the query parameters for member list.
 type MemberFilterRequest struct {
-	Page      int       `json:"page" validate:"omitempty,min=1"`
-	Limit     int       `json:"limit" validate:"omitempty,min=1,max=100"`
-	Status    string    `json:"status" validate:"omitempty,oneof=active expired all"`
-	Search    string    `json:"search" validate:"omitempty,max=100"`
-	PackageID uuid.UUID `json:"package_id" validate:"omitempty,uuid"`
+	Page         int        `json:"page" validate:"omitempty,min=1"`
+	Limit        int        `json:"limit" validate:"omitempty,min=1,max=100"`
+	Status       string     `json:"status" validate:"omitempty,oneof=active expired all"`
+	Search       string     `json:"search" validate:"omitempty,max=100"`
+	PackageID    uuid.UUID  `json:"package_id" validate:"omitempty,uuid"`
+	JoinedStart        *time.Time `json:"joined_start" validate:"omitempty"`
+	JoinedEnd          *time.Time `json:"joined_end" validate:"omitempty"`
+	ExpiredStart       *time.Time `json:"expired_start" validate:"omitempty"`
+	ExpiredEnd         *time.Time `json:"expired_end" validate:"omitempty"`
+	NearestExpiryStart *time.Time `json:"nearest_expiry_start" validate:"omitempty"`
+	NearestExpiryEnd   *time.Time `json:"nearest_expiry_end" validate:"omitempty"`
 }
 
 // Audit Log Models
@@ -96,4 +118,3 @@ type AuditLogFilterRequest struct {
 type ExtendMemberRequest struct {
 	NewExpiryAt time.Time `json:"new_expiry_at" validate:"required"`
 }
-

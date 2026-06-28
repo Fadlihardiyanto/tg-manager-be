@@ -20,5 +20,5 @@ type TelegramBot struct {
 
 	// Relationships
 	Client Client  `gorm:"foreignKey:ClientID"`
-	Groups []Group `gorm:"foreignKey:BotID"`
+	Groups []Group `gorm:"foreignKey:BotUUID;references:ID"`
 }

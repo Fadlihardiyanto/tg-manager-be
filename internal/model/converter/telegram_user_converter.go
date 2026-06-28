@@ -1,6 +1,7 @@
 package converter
 
 import (
+	json "github.com/bytedance/sonic"
 	"sort"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
@@ -87,28 +88,9 @@ func pickPrimarySubscription(subs []entity.Subscription) *model.MemberSubscripti
 	return &brief
 }
 
-// MemberToResponse converts a TelegramUser (with preloaded Subscriptions + Package) to MemberResponse.
-func MemberToResponse(user *entity.TelegramUser, totalOrders int64) *model.MemberResponse {
-	if user == nil {
-		return nil
-	}
-
-	return &model.MemberResponse{
-		ID:             user.ID,
-		TelegramUserID: user.TelegramUserID,
-		Username:       user.Username,
-		FirstName:      user.FirstName,
-		LastName:       user.LastName,
-		Phone:          user.Phone,
-		Subscription:   pickPrimarySubscription(user.Subscriptions),
-		TotalOrders:    totalOrders,
-		CreatedAt:      user.CreatedAt,
-	}
-}
-
-// MembersToResponse converts a slice of TelegramUser entities to MemberResponse slice.
+// MembersToResponse converts a slice of AggregatedMemberRow to MemberResponse slice.
 // orderCounts maps user.ID → total orders for that user.
-func MembersToResponse(users []entity.TelegramUser, orderCounts map[string]int64) []model.MemberResponse {
+func MembersToResponse(users []model.AggregatedMemberRow, orderCounts map[string]int64) []model.MemberResponse {
 	if len(users) == 0 {
 		return []model.MemberResponse{}
 	}
@@ -116,10 +98,29 @@ func MembersToResponse(users []entity.TelegramUser, orderCounts map[string]int64
 	responses := make([]model.MemberResponse, 0, len(users))
 	for i := range users {
 		count := orderCounts[users[i].ID.String()]
-		res := MemberToResponse(&users[i], count)
-		if res != nil {
-			responses = append(responses, *res)
+		
+		var activePackages []string
+		if len(users[i].ActivePackages) > 0 && string(users[i].ActivePackages) != "null" {
+			_ = json.Unmarshal(users[i].ActivePackages, &activePackages)
 		}
+		if activePackages == nil {
+			activePackages = []string{}
+		}
+
+		res := model.MemberResponse{
+			ID:             users[i].ID,
+			TelegramUserID: users[i].TelegramUserID,
+			Username:       users[i].Username,
+			FirstName:      users[i].FirstName,
+			LastName:       users[i].LastName,
+			Phone:          users[i].Phone,
+			GlobalStatus:   users[i].GlobalStatus,
+			ActivePackages: activePackages,
+			NearestExpiry:  users[i].NearestExpiry,
+			TotalOrders:    count,
+			CreatedAt:      users[i].CreatedAt,
+		}
+		responses = append(responses, res)
 	}
 	return responses
 }

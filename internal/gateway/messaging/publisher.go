@@ -165,6 +165,16 @@ func (p *RabbitMQPublisher) PublishExpiryReminder(ctx context.Context, payload i
 	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyExpiryReminder, body)
 }
 
+// PublishBroadcast publishes a broadcast sending task.
+func (p *RabbitMQPublisher) PublishBroadcast(ctx context.Context, payload interface{}) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("publisher: failed to marshal broadcast payload: %w", err)
+	}
+	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyBroadcast, body)
+}
+
+
 // Close closes the publisher's dedicated channel.
 func (p *RabbitMQPublisher) Close() error {
 	p.mu.Lock()

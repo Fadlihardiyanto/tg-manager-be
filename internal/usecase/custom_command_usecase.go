@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
@@ -13,6 +14,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
+	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -31,6 +33,7 @@ type CustomCommandUseCase struct {
 	commandRepo repository.ICustomCommandRepository
 	botRepo     repository.ITelegramBotRepository
 	billingRepo repository.IClientBillingRepository
+	s3Client    *pkg_s3.Client
 	log         *zap.Logger
 }
 
@@ -39,6 +42,7 @@ func NewCustomCommandUseCase(
 	commandRepo repository.ICustomCommandRepository,
 	botRepo repository.ITelegramBotRepository,
 	billingRepo repository.IClientBillingRepository,
+	s3Client *pkg_s3.Client,
 	log *zap.Logger,
 ) ICustomCommandUseCase {
 	return &CustomCommandUseCase{
@@ -46,6 +50,7 @@ func NewCustomCommandUseCase(
 		commandRepo: commandRepo,
 		botRepo:     botRepo,
 		billingRepo: billingRepo,
+		s3Client:    s3Client,
 		log:         log,
 	}
 }
@@ -87,11 +92,19 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	if !strings.HasPrefix(trigger, "/") {
 		trigger = "/" + trigger
 	}
+	if isBlacklistedCommand(trigger) {
+		return nil, helper.NewBadRequest(fmt.Sprintf("Perintah '%s' adalah perintah bawaan sistem dan tidak dapat digunakan", trigger))
+	}
+
+	// Validasi panjang karakter response_text
+	if err := validateResponseTextLength(req.ResponseType, req.ResponseText); err != nil {
+		return nil, helper.NewBadRequest(err.Error())
+	}
 
 	cmd := &entity.CustomCommand{
 		ID:             uuid.New(),
 		ClientID:       clientID,
-		BotID:          req.BotID,
+		BotUUID:        req.BotID,
 		CommandTrigger: trigger,
 		ResponseType:   req.ResponseType,
 		ResponseText:   req.ResponseText,
@@ -160,8 +173,24 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		if !strings.HasPrefix(trigger, "/") {
 			trigger = "/" + trigger
 		}
+		if isBlacklistedCommand(trigger) {
+			return nil, helper.NewBadRequest(fmt.Sprintf("Perintah '%s' adalah perintah bawaan sistem dan tidak dapat digunakan", trigger))
+		}
 		cmd.CommandTrigger = trigger
 	}
+	// Validasi panjang karakter response_text
+	nextType := cmd.ResponseType
+	if req.ResponseType != nil {
+		nextType = *req.ResponseType
+	}
+	nextText := cmd.ResponseText
+	if req.ResponseText != nil {
+		nextText = *req.ResponseText
+	}
+	if err := validateResponseTextLength(nextType, nextText); err != nil {
+		return nil, helper.NewBadRequest(err.Error())
+	}
+
 	if req.ResponseType != nil {
 		cmd.ResponseType = *req.ResponseType
 	}
@@ -169,6 +198,14 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		cmd.ResponseText = *req.ResponseText
 	}
 	if req.FileUrl != nil {
+		// Jika ada gambar lama dan gambar baru berbeda, hapus gambar lama dari S3
+		if cmd.FileUrl != nil && *cmd.FileUrl != "" && *req.FileUrl != *cmd.FileUrl {
+			oldKey := extractS3Key(*cmd.FileUrl)
+			if oldKey != "" && uc.s3Client != nil {
+				// Abaikan error agar proses update tetap berjalan meskipun hapus file lama gagal
+				_ = uc.s3Client.Delete(ctx, oldKey)
+			}
+		}
 		cmd.FileUrl = req.FileUrl
 		// Reset telegram_file_id karena file mungkin berubah
 		cmd.TelegramFileID = nil
@@ -202,5 +239,51 @@ func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 		return helper.NewNotFound("Custom command tidak ditemukan")
 	}
 
+	// Hapus file dari S3 jika ada
+	if cmd.FileUrl != nil && *cmd.FileUrl != "" && uc.s3Client != nil {
+		key := extractS3Key(*cmd.FileUrl)
+		if key != "" {
+			if errS3 := uc.s3Client.Delete(ctx, key); errS3 != nil {
+				uc.log.Warn("failed to delete S3 file during custom command deletion", zap.String("key", key), zap.Error(errS3))
+			}
+		}
+	}
+
 	return uc.commandRepo.Delete(ctx, uc.db.Gorm, cmd)
+}
+
+func isBlacklistedCommand(trigger string) bool {
+	blacklist := []string{"/start", "/packages", "/mysub", "/status", "/myorders", "/connect"}
+	for _, cmd := range blacklist {
+		if trigger == cmd {
+			return true
+		}
+	}
+	return false
+}
+
+func extractS3Key(fileURL string) string {
+	if fileURL == "" {
+		return ""
+	}
+	// Find "tenant_uploads/"
+	idx := strings.Index(fileURL, "tenant_uploads/")
+	if idx == -1 {
+		return ""
+	}
+	return fileURL[idx:]
+}
+
+func validateResponseTextLength(responseType string, responseText string) error {
+	charCount := utf8.RuneCountInString(responseText)
+	if responseType == "text" {
+		if charCount > 4096 {
+			return fmt.Errorf("Panjang isi pesan balasan teks maksimal 4096 karakter (saat ini %d karakter)", charCount)
+		}
+	} else if responseType == "photo" || responseType == "document" {
+		if charCount > 1024 {
+			return fmt.Errorf("Panjang keterangan (caption) untuk tipe %s maksimal 1024 karakter (saat ini %d karakter)", responseType, charCount)
+		}
+	}
+	return nil
 }

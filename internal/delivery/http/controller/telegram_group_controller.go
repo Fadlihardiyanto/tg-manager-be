@@ -159,3 +159,62 @@ func (c *TelegramGroupController) Delete(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Grup berhasil dihapus", nil)
 }
+
+// GenerateConnectToken godoc
+// POST /api/v1/tenant/bots/:bot_id/groups/connect-token
+func (c *TelegramGroupController) GenerateConnectToken(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("group controller generate connect token request")
+
+	clientID := middleware.GetTenantClientID(ctx)
+	botID, err := uuid.Parse(ctx.Params("bot_id"))
+	if err != nil {
+		log.Warn("group controller generate token invalid bot id", zap.Error(err))
+		return helper.BadRequest(ctx, "ID bot tidak valid")
+	}
+
+	token, botUsername, err := c.groupUC.GenerateConnectToken(ctx.Context(), clientID, botID)
+	if err != nil {
+		log.Error("group controller generate token failed", zap.Error(err))
+		return err
+	}
+
+	resp := model.GroupConnectTokenResponse{
+		Token:       token,
+		ExpiresIn:   900, // 15 minutes
+		BotUsername: botUsername,
+	}
+
+	return helper.Success(ctx, "Token koneksi berhasil dibuat", resp)
+}
+
+// CheckConnectStatus godoc
+// GET /api/v1/tenant/bots/:bot_id/groups/connect-status/:token
+func (c *TelegramGroupController) CheckConnectStatus(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("group controller check connect status request")
+
+	clientID := middleware.GetTenantClientID(ctx)
+	botID, err := uuid.Parse(ctx.Params("bot_id"))
+	if err != nil {
+		log.Warn("group controller check status invalid bot id", zap.Error(err))
+		return helper.BadRequest(ctx, "ID bot tidak valid")
+	}
+
+	token := ctx.Params("token")
+	if token == "" {
+		return helper.BadRequest(ctx, "Token tidak valid")
+	}
+
+	status, err := c.groupUC.CheckConnectStatus(ctx.Context(), clientID, botID, token)
+	if err != nil {
+		log.Error("group controller check status failed", zap.Error(err))
+		return err
+	}
+
+	resp := map[string]interface{}{
+		"status": status,
+	}
+
+	return helper.Success(ctx, "Status koneksi berhasil diperiksa", resp)
+}

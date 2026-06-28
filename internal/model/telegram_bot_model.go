@@ -39,6 +39,8 @@ type GroupResponse struct {
 	ID             uuid.UUID `json:"id"`
 	ClientID       uuid.UUID `json:"client_id"`
 	BotID          uuid.UUID `json:"bot_id"`
+	BotUsername    string    `json:"bot_username,omitempty"`
+	BotRole        string    `json:"bot_role,omitempty"`
 	TelegramChatID int64     `json:"telegram_chat_id"`
 	Name           string    `json:"name"`
 	Description    string    `json:"description"`
@@ -52,4 +54,10 @@ type GroupResponse struct {
 type GroupUpdateRequest struct {
 	BotID uuid.UUID `json:"bot_id" validate:"omitempty,uuid"`
 	Name  string    `json:"name" validate:"omitempty,min=3"`
+}
+
+type GroupConnectTokenResponse struct {
+	Token       string `json:"token"`
+	ExpiresIn   int    `json:"expires_in"`
+	BotUsername string `json:"bot_username"`
 }

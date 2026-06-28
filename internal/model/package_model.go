@@ -33,9 +33,18 @@ type PackageUpdateRequest struct {
 	Price        decimal.Decimal `json:"price" validate:"omitempty,min=0"`
 	DurationDays int             `json:"duration_days" validate:"omitempty,min=1"`
 	IsAllAccess  *bool           `json:"is_all_access" validate:"omitempty"`
+	IsActive     *bool           `json:"is_active" validate:"omitempty"`
 }
 
 // Package-Group Association
 type PackageGroupAssociateRequest struct {
 	GroupIDs []uuid.UUID `json:"group_ids" validate:"required"`
+}
+
+type PackageFilterRequest struct {
+	Page        int      `json:"page"`
+	Limit       int      `json:"limit"`
+	Search      string   `json:"search"`
+	IsAllAccess []bool   `json:"is_all_access"`
+	IsActive    []bool   `json:"is_active"`
 }

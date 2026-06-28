@@ -97,15 +97,18 @@ func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, re
 		return nil, helper.NewBadRequest("Gagal memvalidasi token bot dengan Telegram API")
 	}
 
-	// 1.5 Cek apakah bot ini sudah pernah didaftarkan
-	existingBot, err := uc.botRepo.FindByBotID(ctx, uc.db.Gorm, botInfo.Self.ID)
+	// 1.5 Cek apakah bot ini sudah pernah didaftarkan oleh client ini
+	var existingBot entity.TelegramBot
+	err = uc.db.Gorm.WithContext(ctx).
+		Where("bot_id = ? AND client_id = ? AND deleted_at IS NULL", botInfo.Self.ID, clientID).
+		First(&existingBot).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error("bot usecase create check existing bot failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to check existing bot")
 	}
-	if existingBot != nil {
-		log.Warn("bot usecase create bot already exists", zap.Int64("bot_id", botInfo.Self.ID))
-		return nil, helper.NewConflict("Bot Telegram ini sudah terdaftar di sistem")
+	if err == nil {
+		log.Warn("bot usecase create bot already exists for this client", zap.Int64("bot_id", botInfo.Self.ID), zap.String("client_id", clientID.String()))
+		return nil, helper.NewConflict("Bot Telegram ini sudah terdaftar di akun Anda")
 	}
 
 	// 2. Encrypt token before saving
