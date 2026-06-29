@@ -6,6 +6,8 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
+	"time"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
 	"go.uber.org/zap"
@@ -78,7 +80,64 @@ func (c *TenantAuthController) Login(ctx fiber.Ctx) error {
 	}
 	log.Info("tenant auth login succeeded")
 
+	ctx.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    result.RefreshToken,
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Strict",
+		MaxAge:   30 * 24 * 60 * 60, // 30 days
+		Path:     "/",
+	})
+
 	return helper.Success(ctx, "Login berhasil", result)
+}
+
+// Refresh godoc
+// POST /api/v1/auth/refresh
+func (c *TenantAuthController) Refresh(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("tenant auth refresh request")
+
+	refreshToken := ctx.Cookies("refresh_token")
+	if refreshToken == "" {
+		return helper.NewUnauthorized("Sesi tidak valid, silakan login kembali")
+	}
+
+	result, err := c.tenantAuthUC.Refresh(ctx.Context(), refreshToken)
+	if err != nil {
+		log.Error("tenant auth refresh failed", zap.Error(err))
+		return err
+	}
+
+	ctx.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    result.RefreshToken,
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Strict",
+		MaxAge:   30 * 24 * 60 * 60, // 30 days
+		Path:     "/",
+	})
+
+	log.Info("tenant auth refresh succeeded")
+
+	return helper.Success(ctx, "Sesi berhasil diperbarui", result)
+}
+
+// Logout godoc
+// POST /api/v1/auth/logout
+func (c *TenantAuthController) Logout(ctx fiber.Ctx) error {
+	ctx.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Strict",
+		Expires:  time.Now().Add(-1 * time.Hour), // Expire immediately
+		Path:     "/",
+	})
+	return helper.Success(ctx, "Logout berhasil", nil)
 }
 
 // Me godoc

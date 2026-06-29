@@ -71,6 +71,8 @@ func (c *TenantRouteConfig) setupPublicRoutes(api fiber.Router) {
 	auth := api.Group("/auth")
 	auth.Post("/register", c.TenantAuthController.Register)
 	auth.Post("/login", c.TenantAuthController.Login)
+	auth.Post("/refresh", c.TenantAuthController.Refresh)
+	auth.Post("/logout", c.TenantAuthController.Logout)
 	auth.Get("/verify-email", c.TenantAuthController.VerifyEmail)
 	auth.Post("/resend-verification", c.TenantAuthController.ResendVerification)
 }

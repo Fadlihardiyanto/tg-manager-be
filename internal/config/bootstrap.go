@@ -248,6 +248,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	outboxRepo := repository.NewOutboxRepository()
 	customCommandRepo := repository.NewCustomCommandRepository()
 	broadcastRepo := repository.NewBroadcastRepository()
+	tenantAnalyticsRepo := repository.NewTenantAnalyticsRepository()
 
 	adminUserRepo := repository.NewAdminUserRepository(config.Log)
 	adminPermissionRepo := repository.NewAdminPermissionRepository(config.Log)
@@ -271,7 +272,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, config.Midtrans, config.Redis, config.Log)
 	memberOrderUC := usecase.NewMemberOrderUseCase(config.DB, orderRepo, subscriptionRepo, packageRepo, telegramUserRepo, clientRepo, billingRepo, discountRepo, memberDiscountUC, outboxRepo, config.Redis, config.Log, config.Config.App.EncryptionKey, config.Config.Midtrans.BaseURL, config.Config.Midtrans.SnapURL)
 	tenantAuthUC := usecase.NewTenantAuthUseCase(config.DB, userRepo, clientRepo, clientUserRepo, tenantPermissionRepo, outboxRepo, config.Log, config.Redis, config.Jwt, config.Config.App.FrontendURL)
-	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, config.Log)
+	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, tenantAnalyticsRepo, config.Log)
 	auditLogUC := usecase.NewAuditLogUseCase(config.DB.Gorm, auditLogRepo, config.Log)
 	botUC := usecase.NewTelegramBotUseCase(config.DB, botRepo, billingRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey, config.Config.Telegram.WebhookBaseURL, config.Config.Telegram.WebhookSecret)
 	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Redis, config.Log, config.Config.App.EncryptionKey)

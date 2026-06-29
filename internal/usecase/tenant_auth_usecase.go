@@ -26,6 +26,7 @@ import (
 type ITenantAuthUseCase interface {
 	Register(ctx context.Context, req *model.TenantRegisterRequest) (*model.TenantRegisterResponse, error)
 	Login(ctx context.Context, req *model.TenantLoginRequest) (*model.TenantLoginResponse, error)
+	Refresh(ctx context.Context, refreshToken string) (*model.TenantLoginResponse, error)
 	VerifyEmail(ctx context.Context, req *model.TenantVerifyEmailRequest) (*model.TenantLoginResponse, error)
 	ResendVerification(ctx context.Context, req *model.TenantResendVerificationRequest) error
 	Onboarding(ctx context.Context, userID uuid.UUID, req *model.TenantOnboardingRequest) (*model.TenantOnboardingResponse, error)
@@ -250,6 +251,98 @@ func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRe
 		ExpiresIn:       int64(uc.jwtConfig.TenantAccessExpiry.Seconds()),
 		User:            *converter.UserToResponse(user),
 		Client:          clientResp,
+		Role:            clientUser.Role,
+		NeedsOnboarding: false,
+	}, nil
+}
+
+func (uc *TenantAuthUseCase) Refresh(ctx context.Context, refreshToken string) (*model.TenantLoginResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("tenant auth refresh request")
+
+	// 1. Parse token
+	claims, err := pkg_jwt.ParseTenantToken(refreshToken, uc.jwtConfig.TenantSecretKey)
+	if err != nil {
+		log.Warn("tenant auth refresh invalid token", zap.Error(err))
+		return nil, helper.NewUnauthorized("Sesi tidak valid atau telah kedaluwarsa")
+	}
+
+	// Ensure it's a refresh token by checking audience
+	isRefresh := false
+	for _, aud := range claims.Audience {
+		if aud == "refresh" {
+			isRefresh = true
+			break
+		}
+	}
+	if !isRefresh {
+		log.Warn("tenant auth refresh token used invalid audience")
+		return nil, helper.NewUnauthorized("Token tidak valid untuk operasi ini")
+	}
+
+	// 2. Find user
+	user, err := uc.userRepo.FindByID(ctx, uc.db.Gorm, claims.UserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, helper.NewUnauthorized("User tidak ditemukan")
+		}
+		return nil, err
+	}
+
+	if !user.IsEmailVerified {
+		return nil, helper.NewForbidden("Email belum diverifikasi")
+	}
+
+	// 3. Handle client logic
+	if claims.ClientID == uuid.Nil {
+		// Needs onboarding
+		newAccessToken, newRefreshToken, _, err := pkg_jwt.GenerateTenantTokens(ctx, user.ID, uuid.Nil, "", nil, uc.jwtConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return &model.TenantLoginResponse{
+			AccessToken:     newAccessToken,
+			RefreshToken:    newRefreshToken,
+			ExpiresIn:       int64(uc.jwtConfig.TenantAccessExpiry.Seconds()),
+			User:            *converter.UserToResponse(user),
+			Client:          nil,
+			Role:            "",
+			NeedsOnboarding: true,
+		}, nil
+	}
+
+	// Fetch client and role
+	clientUser, err := uc.clientUserRepo.FindByClientAndUserID(ctx, uc.db.Gorm, claims.ClientID, user.ID)
+	if err != nil || clientUser == nil {
+		return nil, helper.NewUnauthorized("Akses tenant ditolak")
+	}
+
+	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, claims.ClientID)
+	if err != nil || client == nil || !client.IsActive {
+		return nil, helper.NewForbidden("Tenant bisnis Anda sedang tidak aktif")
+	}
+
+	// Fetch permissions
+	permissions, err := uc.permissionRepo.FindPermissionNamesByRole(ctx, uc.db.Gorm, clientUser.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate new tokens
+	newAccessToken, newRefreshToken, _, err := pkg_jwt.GenerateTenantTokens(ctx, user.ID, client.ID, clientUser.Role, permissions, uc.jwtConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("tenant auth refresh success", zap.String("user_id", user.ID.String()))
+
+	return &model.TenantLoginResponse{
+		AccessToken:     newAccessToken,
+		RefreshToken:    newRefreshToken,
+		ExpiresIn:       int64(uc.jwtConfig.TenantAccessExpiry.Seconds()),
+		User:            *converter.UserToResponse(user),
+		Client:          converter.ClientToResponse(client),
 		Role:            clientUser.Role,
 		NeedsOnboarding: false,
 	}, nil
