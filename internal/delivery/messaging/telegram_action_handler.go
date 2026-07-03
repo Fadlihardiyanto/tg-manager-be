@@ -125,48 +125,67 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		return nil
 	}
 
-	// 3. Fetch Bot for this Client
-	clientID, err := uuid.Parse(payload.ClientID)
-	if err != nil {
-		h.logger.Error("telegram action handler: invalid client id", append(logFields, zap.String("client_id", payload.ClientID))...)
-		return nil
+	// 3. Group target groups by bot_id — each group uses its own bot.
+	groupsByBot := make(map[uuid.UUID][]entity.Group)
+	for _, group := range targetGroups {
+		groupsByBot[group.BotUUID] = append(groupsByBot[group.BotUUID], group)
 	}
 
-	bot, err := h.botRepo.FindFirstByClientID(ctx, h.db, clientID)
-	if err != nil {
-		return fmt.Errorf("bot lookup failed: %w", err)
-	}
-	if bot == nil {
-		h.logger.Error("telegram action handler: no bot found for client", append(logFields, zap.String("client_id", payload.ClientID))...)
-		return nil
-	}
-	token, err := crypto.Decrypt(bot.Token, h.encryptionKey)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt bot token: %w", err)
-	}
-
-	botClient, err := h.telegramFactory.NewClient(token)
-	if err != nil {
-		return fmt.Errorf("failed to init telegram client: %w", err)
-	}
-
-	// 4. Generate Invite Links for each group
+	// 4. Generate Invite Links for each group using the correct bot.
 	var inviteLinks []string
 	var failedGroups []string
-	for _, group := range targetGroups {
-		// Limit to 1 use, so it can't be shared
-		subIDPrefix := payload.SubscriptionID
-		if len(subIDPrefix) > 8 {
-			subIDPrefix = subIDPrefix[:8]
-		}
-		linkName := fmt.Sprintf("Sub-%s", subIDPrefix)
-		inviteLink, err := botClient.CreateChatInviteLink(ctx, group.TelegramChatID, linkName, true)
+	var dmClient telegram.BotClient
+	subIDPrefix := payload.SubscriptionID
+	if len(subIDPrefix) > 8 {
+		subIDPrefix = subIDPrefix[:8]
+	}
+
+	for botID, groups := range groupsByBot {
+		bot, err := h.botRepo.FindByID(ctx, h.db, botID)
 		if err != nil {
-			h.logger.Error("telegram action handler: failed to create invite link", append(logFields, zap.String("group", group.Name), zap.Error(err))...)
-			failedGroups = append(failedGroups, group.Name)
+			h.logger.Error("telegram action handler: failed to find bot",
+				append(logFields, zap.String("bot_id", botID.String()), zap.Error(err))...)
+			for _, group := range groups {
+				failedGroups = append(failedGroups, group.Name)
+			}
 			continue
 		}
-		inviteLinks = append(inviteLinks, fmt.Sprintf("• %s: %s", group.Name, inviteLink))
+
+		token, err := crypto.Decrypt(bot.Token, h.encryptionKey)
+		if err != nil {
+			h.logger.Error("telegram action handler: failed to decrypt bot token",
+				append(logFields, zap.String("bot_id", botID.String()), zap.Error(err))...)
+			for _, group := range groups {
+				failedGroups = append(failedGroups, group.Name)
+			}
+			continue
+		}
+
+		botClient, err := h.telegramFactory.NewClient(token)
+		if err != nil {
+			h.logger.Error("telegram action handler: failed to init telegram client",
+				append(logFields, zap.String("bot_id", botID.String()), zap.Error(err))...)
+			for _, group := range groups {
+				failedGroups = append(failedGroups, group.Name)
+			}
+			continue
+		}
+
+		if dmClient == nil {
+			dmClient = botClient
+		}
+
+		for _, group := range groups {
+			linkName := fmt.Sprintf("Sub-%s", subIDPrefix)
+			inviteLink, err := botClient.CreateChatInviteLink(ctx, group.TelegramChatID, linkName, true)
+			if err != nil {
+				h.logger.Error("telegram action handler: failed to create invite link",
+					append(logFields, zap.String("group", group.Name), zap.Error(err))...)
+				failedGroups = append(failedGroups, group.Name)
+				continue
+			}
+			inviteLinks = append(inviteLinks, fmt.Sprintf("• %s: %s", group.Name, inviteLink))
+		}
 	}
 
 	if len(inviteLinks) == 0 {
@@ -225,19 +244,23 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		message = fmt.Sprintf("%s\n\n⚠️ Gagal membuat link untuk: %s. Silakan hubungi admin.", message, strings.Join(failedGroups, ", "))
 	}
 
-	if err := botClient.SendMessage(ctx, payload.TelegramUserID, message); err != nil {
-		h.logger.Error("telegram action handler: failed to send dm", append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Error(err))...)
-		return fmt.Errorf("failed to send dm: %w", err)
+	if dmClient != nil {
+		if err := dmClient.SendMessage(ctx, payload.TelegramUserID, message); err != nil {
+			h.logger.Error("telegram action handler: failed to send dm", append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Error(err))...)
+			return fmt.Errorf("failed to send dm: %w", err)
+		}
+	} else {
+		h.logger.Error("telegram action handler: no bot available to send dm", logFields...)
 	}
 
 	// 8. Send PDF document AFTER text DM (so user reads the welcome message first)
-	if receiptPDFBytes != nil {
+	if receiptPDFBytes != nil && dmClient != nil {
 		doc := tgbotapi.NewDocument(payload.TelegramUserID, tgbotapi.FileBytes{
 			Name:  "kwitansi.pdf",
 			Bytes: receiptPDFBytes,
 		})
 		doc.Caption = fmt.Sprintf("Kwitansi pembayaran paket %s", pkg.Name)
-		if _, err := botClient.SendDocument(ctx, doc); err != nil {
+		if _, err := dmClient.SendDocument(ctx, doc); err != nil {
 			h.logger.Warn("telegram action handler: failed to send receipt document", append(logFields, zap.Error(err))...)
 			// non-fatal — text DM with receipt URL link already delivered
 		}
