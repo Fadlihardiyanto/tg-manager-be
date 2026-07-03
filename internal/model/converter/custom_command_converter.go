@@ -13,6 +13,7 @@ func CustomCommandToResponse(cc *entity.CustomCommand) *model.CustomCommandRespo
 	return &model.CustomCommandResponse{
 		ID:             cc.ID,
 		BotID:          cc.BotUUID,
+		BotUsername:    cc.Bot.Username,
 		CommandTrigger: cc.CommandTrigger,
 		ResponseType:   cc.ResponseType,
 		ResponseText:   cc.ResponseText,

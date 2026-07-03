@@ -294,6 +294,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 	if cmd.ResponseType == "text" {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, cmd.ResponseText)
+		reply.ParseMode = tgbotapi.ModeHTML
 		_, err = botClient.Send(ctx, reply)
 		if err != nil {
 			log.Error("failed to send custom text command", zap.Error(err))
@@ -307,6 +308,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 			// Reuse existing file_id
 			reply := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileID(*cmd.TelegramFileID))
 			reply.Caption = cmd.ResponseText
+			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
 				log.Warn("failed to send custom photo command with file_id, falling back to URL", zap.Error(err))
@@ -319,6 +321,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && cmd.FileUrl != nil && *cmd.FileUrl != "" {
 			reply := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(*cmd.FileUrl))
 			reply.Caption = cmd.ResponseText
+			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
 				log.Error("failed to send custom photo command with url", zap.Error(err))
@@ -339,6 +342,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		// Fallback ke teks jika tidak ada gambar sama sekali
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && (cmd.FileUrl == nil || *cmd.FileUrl == "") {
 			reply := tgbotapi.NewMessage(msg.Chat.ID, cmd.ResponseText)
+			reply.ParseMode = tgbotapi.ModeHTML
 			_, err = botClient.Send(ctx, reply)
 			if err != nil {
 				return err
@@ -352,6 +356,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 			// Reuse existing file_id
 			reply := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FileID(*cmd.TelegramFileID))
 			reply.Caption = cmd.ResponseText
+			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
 				log.Warn("failed to send custom document command with file_id, falling back to URL", zap.Error(err))
@@ -364,6 +369,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && cmd.FileUrl != nil && *cmd.FileUrl != "" {
 			reply := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FileURL(*cmd.FileUrl))
 			reply.Caption = cmd.ResponseText
+			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
 				log.Error("failed to send custom document command with url", zap.Error(err))

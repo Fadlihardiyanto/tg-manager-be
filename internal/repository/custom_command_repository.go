@@ -46,7 +46,7 @@ func (r *CustomCommandRepository) FindByClientID(ctx context.Context, tx *gorm.D
 		query = query.Where("is_active = ?", *isActive)
 	}
 
-	err := query.Offset(offset).Limit(limit).Find(&commands).Error
+	err := query.Preload("Bot").Offset(offset).Limit(limit).Find(&commands).Error
 	return commands, err
 }
 
@@ -69,6 +69,6 @@ func (r *CustomCommandRepository) CountByClientID(ctx context.Context, tx *gorm.
 
 func (r *CustomCommandRepository) FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.CustomCommand, error) {
 	var cmd entity.CustomCommand
-	err := tx.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).First(&cmd).Error
+	err := tx.WithContext(ctx).Preload("Bot").Where("id = ? AND deleted_at IS NULL", id).First(&cmd).Error
 	return &cmd, err
 }

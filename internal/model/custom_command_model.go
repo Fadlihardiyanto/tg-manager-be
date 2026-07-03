@@ -9,6 +9,7 @@ import (
 type CustomCommandResponse struct {
 	ID             uuid.UUID `json:"id"`
 	BotID          uuid.UUID `json:"bot_id"`
+	BotUsername    string    `json:"bot_username"`
 	CommandTrigger string    `json:"command_trigger"`
 	ResponseType   string    `json:"response_type"`
 	ResponseText   string    `json:"response_text"`
