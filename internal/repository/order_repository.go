@@ -142,7 +142,7 @@ func (r *OrderRepository) applyTransactionScope(query *gorm.DB, clientID uuid.UU
 
 	// Free-text search across member username, first_name, last_name, external_id
 	if filter.Search != "" {
-		search := "%" + filter.Search + "%"
+		search := "%" + escapeLike(filter.Search) + "%"
 		q = q.Where("telegram_users.username ILIKE ? OR telegram_users.first_name ILIKE ? OR telegram_users.last_name ILIKE ? OR orders.external_id ILIKE ?", search, search, search, search)
 	}
 

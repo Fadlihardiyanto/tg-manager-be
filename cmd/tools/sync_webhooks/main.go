@@ -56,11 +56,10 @@ func main() {
 
 	encKey := os.Getenv("ENCRYPTION_KEY")
 	if encKey == "" {
-		encKey = "change_me_32_characters_key!!" // fallback
-	}
-	if os.Getenv("APP_ENCRYPTION_KEY") != "" {
-		// Just in case it was stored here
 		encKey = os.Getenv("APP_ENCRYPTION_KEY")
+	}
+	if encKey == "" {
+		log.Fatal("ENCRYPTION_KEY tidak dikonfigurasi di environment")
 	}
 
 	fmt.Println("========================================")

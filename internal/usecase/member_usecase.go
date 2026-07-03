@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -29,8 +30,8 @@ type IMemberUseCase interface {
 	// KickMember cancels active subscription and sends an outbox event to kick the user from Telegram groups.
 	KickMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error
 
-	// ExtendMember updates the active subscription expiry time.
-	ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, newExpiryAt time.Time) error
+	// ExtendMember adds N days to a specific subscription's expiry.
+	ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, req *model.ExtendMemberRequest) error
 
 	// SyncMember creates a sync_request outbox event.
 	SyncMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error
@@ -210,58 +211,53 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 	})
 }
 
-// ExtendMember updates the expiry date of an active subscription.
-func (uc *memberUseCase) ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, newExpiryAt time.Time) error {
+// ExtendMember adds N days to the expiry of a specific subscription.
+func (uc *memberUseCase) ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, req *model.ExtendMemberRequest) error {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("member usecase ExtendMember start", zap.String("user_id", userID.String()))
 
 	return uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user, err := uc.tgUserRepo.FindMemberDetailByID(ctx, tx, userID, clientID)
-		if err != nil {
+		var sub entity.Subscription
+		if err := uc.subscriptionRepo.FindById(ctx, tx, &sub, req.SubscriptionID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return helper.NewNotFound("Langganan")
+			}
 			return err
 		}
-		if user == nil {
-			return helper.NewNotFound("Member")
+
+		if sub.TelegramUserID != userID {
+			return helper.NewNotFound("Langganan")
+		}
+		if sub.ClientID != clientID {
+			return helper.NewNotFound("Langganan")
+		}
+		if sub.Status != "active" {
+			return helper.NewBadRequest("Hanya langganan aktif yang dapat diperpanjang")
 		}
 
-		subs, err := uc.subscriptionRepo.FindActiveByTelegramUserID(ctx, tx, user.TelegramUserID, clientID)
-		if err != nil {
+		oldExpiry := sub.ExpiredAt
+		sub.ExpiredAt = sub.ExpiredAt.AddDate(0, 0, req.AdditionalDays)
+		if err := uc.subscriptionRepo.Update(ctx, tx, &sub); err != nil {
 			return err
 		}
-		if len(subs) == 0 {
-			return helper.NewBadRequest("Member tidak memiliki langganan aktif")
+
+		auditLogMeta, _ := sonic.Marshal(map[string]interface{}{
+			"subscription_id":  sub.ID.String(),
+			"additional_days":  req.AdditionalDays,
+			"old_expiry":       oldExpiry.Format(time.RFC3339),
+			"new_expiry":       sub.ExpiredAt.Format(time.RFC3339),
+		})
+		auditLog := entity.AuditLog{
+			ClientID:   &clientID,
+			EntityType: "subscription",
+			EntityID:   sub.ID,
+			Action:     "extend_expiry",
+			ActorType:  "system",
+			ActorID:    "system",
+			Metadata:   datatypes.JSON(auditLogMeta),
 		}
-
-		// Update expiry on all active subscriptions for this client
-		for i := range subs {
-			sub := &subs[i]
-			oldExpiry := sub.ExpiredAt
-
-			if newExpiryAt.Before(oldExpiry) {
-				return helper.NewBadRequest("Tanggal kadaluarsa baru tidak boleh kurang dari tanggal kadaluarsa saat ini")
-			}
-
-			sub.ExpiredAt = newExpiryAt
-			if err := uc.subscriptionRepo.Update(ctx, tx, sub); err != nil {
-				return err
-			}
-
-			auditLogMeta, _ := sonic.Marshal(map[string]interface{}{
-				"old_expiry": oldExpiry.Format(time.RFC3339),
-				"new_expiry": newExpiryAt.Format(time.RFC3339),
-			})
-			auditLog := entity.AuditLog{
-				ClientID:   &clientID,
-				EntityType: "subscription",
-				EntityID:   sub.ID,
-				Action:     "extend_expiry",
-				ActorType:  "system",
-				ActorID:    "system",
-				Metadata:   datatypes.JSON(auditLogMeta),
-			}
-			if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
-				log.Warn("failed to create audit log for extend", zap.Error(err))
-			}
+		if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
+			log.Warn("failed to create audit log for extend", zap.Error(err))
 		}
 		return nil
 	})
@@ -349,6 +345,7 @@ func (uc *memberUseCase) ResendLink(ctx context.Context, clientID uuid.UUID, use
 				"subscription_id":  sub.ID,
 				"package_id":       sub.PackageID,
 				"client_id":        clientID,
+				"is_resend":        true,
 			}
 			payloadBytes, _ := sonic.Marshal(payload)
 

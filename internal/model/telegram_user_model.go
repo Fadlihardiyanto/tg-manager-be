@@ -114,7 +114,8 @@ type AuditLogFilterRequest struct {
 	Offset     int       `json:"offset" validate:"omitempty,min=0"`
 }
 
-// ExtendMemberRequest holds the payload for manual expiry extension.
+// ExtendMemberRequest holds the payload for extending a specific subscription by N days.
 type ExtendMemberRequest struct {
-	NewExpiryAt time.Time `json:"new_expiry_at" validate:"required"`
+	SubscriptionID uuid.UUID `json:"subscription_id" validate:"required"`
+	AdditionalDays int       `json:"additional_days" validate:"required,min=1"`
 }

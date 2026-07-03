@@ -44,6 +44,7 @@ type TenantAuthUseCase struct {
 	redis          *redis.Client
 	jwtConfig      *pkg_jwt.JWTConfig
 	frontendURL    string
+	bcryptCost     int
 }
 
 func NewTenantAuthUseCase(
@@ -57,6 +58,7 @@ func NewTenantAuthUseCase(
 	redis *redis.Client,
 	jwtConfig *pkg_jwt.JWTConfig,
 	frontendURL string,
+	bcryptCost int,
 ) ITenantAuthUseCase {
 	return &TenantAuthUseCase{
 		db:             db,
@@ -69,6 +71,7 @@ func NewTenantAuthUseCase(
 		redis:          redis,
 		jwtConfig:      jwtConfig,
 		frontendURL:    frontendURL,
+		bcryptCost:     bcryptCost,
 	}
 }
 
@@ -88,7 +91,7 @@ func (uc *TenantAuthUseCase) Register(ctx context.Context, req *model.TenantRegi
 	}
 
 	// 2. Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), uc.bcryptCost)
 	if err != nil {
 		log.Error("tenant auth register hash password failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to hash password: %w", err)
@@ -169,6 +172,17 @@ func (uc *TenantAuthUseCase) Register(ctx context.Context, req *model.TenantRegi
 func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRequest) (*model.TenantLoginResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("tenant auth login start", zap.String("email", req.Email))
+
+	// Rate limiting: max 5 attempts per email per minute
+	rateLimitKey := fmt.Sprintf("auth:rate_limit:tenant_login:%s", req.Email)
+	count, err := uc.redis.Incr(ctx, rateLimitKey).Result()
+	if err == nil && count == 1 {
+		uc.redis.Expire(ctx, rateLimitKey, 1*time.Minute)
+	}
+	if count > 5 {
+		log.Warn("tenant auth login rate limited", zap.String("email", req.Email))
+		return nil, helper.NewTooManyRequestsError("Terlalu banyak percobaan login. Silakan coba lagi nanti.")
+	}
 
 	// 1. Find user by email and preload client data
 	user, err := uc.userRepo.FindByEmailWithClient(ctx, uc.db.Gorm, req.Email)
@@ -260,8 +274,8 @@ func (uc *TenantAuthUseCase) Refresh(ctx context.Context, refreshToken string) (
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("tenant auth refresh request")
 
-	// 1. Parse token
-	claims, err := pkg_jwt.ParseTenantToken(refreshToken, uc.jwtConfig.TenantSecretKey)
+	// 1. Parse token (uses separate parser that handles jwt.RegisteredClaims)
+	claims, err := pkg_jwt.ParseTenantRefreshToken(refreshToken, uc.jwtConfig.TenantSecretKey)
 	if err != nil {
 		log.Warn("tenant auth refresh invalid token", zap.Error(err))
 		return nil, helper.NewUnauthorized("Sesi tidak valid atau telah kedaluwarsa")
@@ -278,6 +292,13 @@ func (uc *TenantAuthUseCase) Refresh(ctx context.Context, refreshToken string) (
 	if !isRefresh {
 		log.Warn("tenant auth refresh token used invalid audience")
 		return nil, helper.NewUnauthorized("Token tidak valid untuk operasi ini")
+	}
+
+	// Check if blacklisted (JTI revocation)
+	isBlacklisted, err := uc.redis.Exists(ctx, "auth:blacklist:"+claims.ID).Result()
+	if err == nil && isBlacklisted > 0 {
+		log.Warn("tenant auth refresh token blacklisted")
+		return nil, helper.NewUnauthorized("Token telah dibatalkan")
 	}
 
 	// 2. Find user

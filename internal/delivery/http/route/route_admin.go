@@ -3,6 +3,7 @@ package route
 import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/controller"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/ratelimit"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/google/uuid"
@@ -12,6 +13,9 @@ import (
 type AdminRouteConfig struct {
 	App *fiber.App
 	Log *zap.Logger
+
+	// Rate Limiter
+	AdminAuthRateLimiter *ratelimit.RateLimiter
 
 	// Auth
 	AdminAuthController *controller.AdminAuthController
@@ -55,11 +59,11 @@ func (c *AdminRouteConfig) setupPublicRoutes(admin fiber.Router) {
 	})
 
 	auth := admin.Group("/auth")
+	auth.Use(c.AdminAuthRateLimiter.Middleware())
 	auth.Post("/login", c.AdminAuthController.Login)
 	auth.Post("/otp/verify", c.AdminAuthController.VerifyOTP)
 	auth.Post("/otp/resend", c.AdminAuthController.ResendOTP)
 	auth.Post("/refresh", c.AdminAuthController.RefreshToken)
-	auth.Post("/register", c.AdminAuthController.Register)
 	auth.Get("/verify-email", c.AdminAuthController.VerifyEmail)
 
 }

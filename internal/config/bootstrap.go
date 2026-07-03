@@ -19,6 +19,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/otp"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/pdf"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rabbitmq"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/ratelimit"
 	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	"github.com/go-playground/validator/v10"
@@ -249,6 +250,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	customCommandRepo := repository.NewCustomCommandRepository()
 	broadcastRepo := repository.NewBroadcastRepository()
 	tenantAnalyticsRepo := repository.NewTenantAnalyticsRepository()
+	migrationMemberRepo := repository.NewMigrationMemberRepository()
 
 	adminUserRepo := repository.NewAdminUserRepository(config.Log)
 	adminPermissionRepo := repository.NewAdminPermissionRepository(config.Log)
@@ -260,18 +262,18 @@ func BootstrapWeb(config *BootstrapConfig) {
 	tenantPermissionRepo := repository.NewTenantPermissionRepository(config.Log)
 
 	// Usecases
-	adminAuthUC := usecase.NewAdminAuthUseCase(config.DB, adminUserRepo, adminPermissionRepo, config.Log, config.Redis, config.OtpService, config.Mailer, outboxRepo, config.Jwt, config.Config.App.FrontendURL)
+	adminAuthUC := usecase.NewAdminAuthUseCase(config.DB, adminUserRepo, adminPermissionRepo, config.Log, config.Redis, config.OtpService, config.Mailer, outboxRepo, config.Jwt, config.Config.App.FrontendURL, config.Config.App.BcryptCost)
 	adminPermissionUC := usecase.NewAdminPermissionUseCase(config.DB, adminPermissionRepo, config.Log)
 	adminRoleUC := usecase.NewAdminRoleUseCase(config.DB, adminRoleRepo, adminPermissionRepo, config.Log)
-	adminUserMgmtUC := usecase.NewAdminUserManagementUseCase(config.DB, adminUserRepo, adminRoleRepo, config.Log)
-	adminTenantUC := usecase.NewAdminTenantUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log)
-	adminTenantUserUC := usecase.NewAdminTenantUserUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log)
+	adminUserMgmtUC := usecase.NewAdminUserManagementUseCase(config.DB, adminUserRepo, adminRoleRepo, config.Log, config.Config.App.BcryptCost)
+	adminTenantUC := usecase.NewAdminTenantUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log, config.Config.App.BcryptCost)
+	adminTenantUserUC := usecase.NewAdminTenantUserUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log, config.Config.App.BcryptCost)
 	planUC := usecase.NewPlatformPlanUseCase(config.DB, planRepo, billingRepo, config.Log)
 	platformDiscountUC := usecase.NewPlatformDiscountUseCase(config.DB, platformDiscountRepo, config.Log)
 	memberDiscountUC := usecase.NewMemberDiscountUseCase(config.DB, discountRepo, config.Log)
 	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, config.Midtrans, config.Redis, config.Log)
 	memberOrderUC := usecase.NewMemberOrderUseCase(config.DB, orderRepo, subscriptionRepo, packageRepo, telegramUserRepo, clientRepo, billingRepo, discountRepo, memberDiscountUC, outboxRepo, config.Redis, config.Log, config.Config.App.EncryptionKey, config.Config.Midtrans.BaseURL, config.Config.Midtrans.SnapURL)
-	tenantAuthUC := usecase.NewTenantAuthUseCase(config.DB, userRepo, clientRepo, clientUserRepo, tenantPermissionRepo, outboxRepo, config.Log, config.Redis, config.Jwt, config.Config.App.FrontendURL)
+	tenantAuthUC := usecase.NewTenantAuthUseCase(config.DB, userRepo, clientRepo, clientUserRepo, tenantPermissionRepo, outboxRepo, config.Log, config.Redis, config.Jwt, config.Config.App.FrontendURL, config.Config.App.BcryptCost)
 	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, tenantAnalyticsRepo, config.Log)
 	auditLogUC := usecase.NewAuditLogUseCase(config.DB.Gorm, auditLogRepo, config.Log)
 	botUC := usecase.NewTelegramBotUseCase(config.DB, botRepo, billingRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey, config.Config.Telegram.WebhookBaseURL, config.Config.Telegram.WebhookSecret)
@@ -283,6 +285,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	tenantTransactionUC := usecase.NewTenantTransactionUseCase(config.DB, orderRepo, config.S3, config.Log)
 	uploadUC := usecase.NewUploadUseCase(config.S3, config.Log)
 	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepo, botRepo, groupRepo, outboxRepo, billingRepo, config.Log)
+	migrationMemberUC := usecase.NewMigrationMemberUseCase(config.DB, migrationMemberRepo, packageRepo, config.Log)
 
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
@@ -291,6 +294,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	mySubHandler := handler.NewMySubHandler(config.DB, subscriptionRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	statusHandler := handler.NewStatusAliasHandler(mySubHandler) // /status → same logic as /mysub
 	myOrdersHandler := handler.NewMyOrdersHandler(config.DB, orderRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	migrationMemberCmdHandler := handler.NewMigrationMemberHandler(config.DB, migrationMemberRepo, packageRepo, subscriptionRepo, telegramUserRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 
 	cmdRegistry := handler.NewRegistry()
 	cmdRegistry.Register(startHandler)
@@ -298,6 +302,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	cmdRegistry.Register(mySubHandler)
 	cmdRegistry.Register(statusHandler)
 	cmdRegistry.Register(myOrdersHandler)
+	cmdRegistry.Register(migrationMemberCmdHandler)
 	cmdRegistry.RegisterCallback(packageSelectHandler)
 
 	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, customCommandRepo, cmdRegistry, config.TelegramFactory, config.Redis, config.Config.App.EncryptionKey, config.Log)
@@ -326,10 +331,43 @@ func BootstrapWeb(config *BootstrapConfig) {
 	tenantTransactionCtrl := controller.NewTenantTransactionController(tenantTransactionUC, config.Log)
 	uploadCtrl := controller.NewUploadController(uploadUC, config.Log, config.Validate)
 	broadcastCtrl := controller.NewBroadcastController(broadcastUC, config.Log, config.Validate)
+	migrationMemberCtrl := controller.NewMigrationMemberController(migrationMemberUC, config.Log, config.Validate)
+
+	// Rate Limiters
+	globalLimiter := ratelimit.New(config.Redis, ratelimit.Config{
+		Capacity:   2000,
+		RefillRate: 2000,
+		KeyPrefix:  "rl:global",
+		Next:       ratelimit.SkipUnprotectedPaths,
+	})
+	ipLimiter := ratelimit.New(config.Redis, ratelimit.Config{
+		Capacity:   100,
+		RefillRate: 10,
+		KeyPrefix:  "rl:ip:",
+		KeyFunc:    func(c fiber.Ctx) string { return ratelimit.ClientIP(c) },
+		Next:       ratelimit.SkipUnprotectedPaths,
+	})
+	adminAuthLimiter := ratelimit.New(config.Redis, ratelimit.Config{
+		Capacity:   20,
+		RefillRate: 2,
+		KeyPrefix:  "rl:auth:admin:",
+		KeyFunc:    func(c fiber.Ctx) string { return ratelimit.ClientIP(c) },
+	})
+	tenantAuthLimiter := ratelimit.New(config.Redis, ratelimit.Config{
+		Capacity:   20,
+		RefillRate: 2,
+		KeyPrefix:  "rl:auth:tenant:",
+		KeyFunc:    func(c fiber.Ctx) string { return ratelimit.ClientIP(c) },
+	})
+
+	config.App.Use(globalLimiter.Middleware())
+	config.App.Use(ipLimiter.Middleware())
+
 	// Routes
 	adminRoute := &route.AdminRouteConfig{
 		App:                       config.App,
 		Log:                       config.Log,
+		AdminAuthRateLimiter:      adminAuthLimiter,
 		AdminAuthController:       adminAuthCtrl,
 		AdminRoleController:       adminRoleCtrl,
 		AdminPermissionController: adminPermissionCtrl,
@@ -346,6 +384,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	tenantRoute := &route.TenantRouteConfig{
 		App:                         config.App,
 		Log:                         config.Log,
+		TenantAuthRateLimiter:       tenantAuthLimiter,
 		TenantAuthController:        tenantAuthCtrl,
 		TelegramBotController:       botCtrl,
 		TelegramGroupController:     groupCtrl,
@@ -360,6 +399,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 		CustomCommandController:     customCommandCtrl,
 		UploadController:            uploadCtrl,
 		BroadcastController:         broadcastCtrl,
+		MigrationMemberController:   migrationMemberCtrl,
 		TenantAuthMiddleware:        middleware.TenantAuth(config.Jwt),
 	}
 	tenantRoute.Setup()

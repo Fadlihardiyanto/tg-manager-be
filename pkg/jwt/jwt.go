@@ -122,6 +122,26 @@ func ParseAdminToken(tokenString, secretKey string) (*AdminClaims, error) {
 	return claims, nil
 }
 
+// ParseAdminRefreshToken validates and extracts AdminClaims from a refresh token string.
+// Does NOT check the Type claim since refresh tokens use jwt.RegisteredClaims.
+func ParseAdminRefreshToken(tokenString, secretKey string) (*AdminClaims, error) {
+	parsed, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, jwt.ErrTokenSignatureInvalid
+		}
+		return []byte(secretKey), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := parsed.Claims.(*AdminClaims)
+	if !ok || !parsed.Valid {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+	return claims, nil
+}
+
 // =============================================================================
 // Claims — Tenant (Client Dashboard Users)
 // =============================================================================
@@ -203,6 +223,26 @@ func ParseTenantToken(tokenString, secretKey string) (*TenantClaims, error) {
 	}
 	if claims.Type != TokenTypeTenant {
 		return nil, fmt.Errorf("expected token type %q, got %q", TokenTypeTenant, claims.Type)
+	}
+	return claims, nil
+}
+
+// ParseTenantRefreshToken validates and extracts TenantClaims from a refresh token string.
+// Does NOT check the Type claim since refresh tokens use jwt.RegisteredClaims.
+func ParseTenantRefreshToken(tokenString, secretKey string) (*TenantClaims, error) {
+	parsed, err := jwt.ParseWithClaims(tokenString, &TenantClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, jwt.ErrTokenSignatureInvalid
+		}
+		return []byte(secretKey), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := parsed.Claims.(*TenantClaims)
+	if !ok || !parsed.Valid {
+		return nil, jwt.ErrTokenInvalidClaims
 	}
 	return claims, nil
 }

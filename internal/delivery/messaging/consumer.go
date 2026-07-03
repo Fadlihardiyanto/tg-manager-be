@@ -199,7 +199,20 @@ func (mc *MessageConsumer) processDeliveries(ctx context.Context, queue string, 
 			msgCtx := trace.WithMessageID(ctx, d.MessageId)
 			msgCtx = trace.WithCorrelationID(msgCtx, d.CorrelationId)
 			start := time.Now()
-			err := handler(msgCtx, d.Body)
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						mc.logger.Error("consumer: handler panicked",
+							zap.String("queue", queue),
+							zap.Any("panic", r),
+						)
+						err = fmt.Errorf("handler panicked: %v", r)
+						metrics.MessagesConsumed.WithLabelValues(queue, "panic").Inc()
+					}
+				}()
+				err = handler(msgCtx, d.Body)
+			}()
 			metrics.MessageProcessingDuration.WithLabelValues(queue).Observe(time.Since(start).Seconds())
 			if err != nil {
 				mc.logger.Warn("consumer: handler failed, sending to DLQ",

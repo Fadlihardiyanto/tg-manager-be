@@ -28,9 +28,11 @@ type AppConfig struct {
 	Debug         bool
 	Port          int
 	Timezone      string
-	EncryptionKey string // 32-bytes key for AES-256
-	BaseURL       string
-	FrontendURL   string
+	EncryptionKey  string // 32-bytes key for AES-256
+	BaseURL        string
+	FrontendURL    string
+	AllowedOrigin  string
+	BcryptCost     int
 }
 
 // DatabaseConfig holds PostgreSQL connection settings.
@@ -155,6 +157,8 @@ func LoadConfig() (*Config, error) {
 			EncryptionKey: viper.GetString("APP_ENCRYPTION_KEY"),
 			BaseURL:       viper.GetString("APP_BASE_URL"),
 			FrontendURL:   viper.GetString("APP_FRONTEND_URL"),
+			AllowedOrigin: viper.GetString("ALLOWED_ORIGIN"),
+			BcryptCost:    viper.GetInt("BCRYPT_COST"),
 		},
 		Database: DatabaseConfig{
 			Host:            viper.GetString("DB_HOST"),
@@ -231,8 +235,11 @@ func LoadConfig() (*Config, error) {
 	if cfg.App.Port == 0 {
 		cfg.App.Port = 8080
 	}
+	if cfg.App.BcryptCost == 0 {
+		cfg.App.BcryptCost = 12
+	}
 	if cfg.App.EncryptionKey == "" {
-		cfg.App.EncryptionKey = "change_me_to_32_byte_secret_key!!"
+		return nil, fmt.Errorf("APP_ENCRYPTION_KEY tidak dikonfigurasi — wajib di-set di environment")
 	}
 	if cfg.Database.Port == 0 {
 		cfg.Database.Port = 5432
@@ -270,7 +277,7 @@ func LoadConfig() (*Config, error) {
 
 	// JWT Defaults
 	if cfg.JWT.AdminSecretKey == "" {
-		cfg.JWT.AdminSecretKey = "change_me_admin_jwt_secret_32_chars!!"
+		return nil, fmt.Errorf("ADMIN_JWT_SECRET tidak dikonfigurasi — wajib di-set di environment")
 	}
 	if cfg.JWT.AdminAccessExpiry == 0 {
 		cfg.JWT.AdminAccessExpiry = 15 * time.Minute
@@ -279,7 +286,7 @@ func LoadConfig() (*Config, error) {
 		cfg.JWT.AdminRefreshExpiry = 24 * time.Hour
 	}
 	if cfg.JWT.TenantSecretKey == "" {
-		cfg.JWT.TenantSecretKey = "change_me_tenant_jwt_secret_32_chars!!"
+		return nil, fmt.Errorf("JWT_SECRET (tenant) tidak dikonfigurasi — wajib di-set di environment")
 	}
 	if cfg.JWT.TenantAccessExpiry == 0 {
 		cfg.JWT.TenantAccessExpiry = 24 * time.Hour

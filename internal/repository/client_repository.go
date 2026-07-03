@@ -90,10 +90,10 @@ func applyClientListFilters(db *gorm.DB, req *model.AdminListAllClientsRequest) 
 		}
 	}
 	if name := strings.TrimSpace(req.Name); name != "" {
-		db = db.Where("name ILIKE ?", "%"+name+"%")
+		db = db.Where("name ILIKE ?", "%"+escapeLike(name)+"%")
 	}
 	if slug := strings.TrimSpace(req.Slug); slug != "" {
-		db = db.Where("slug ILIKE ?", "%"+slug+"%")
+		db = db.Where("slug ILIKE ?", "%"+escapeLike(slug)+"%")
 	}
 	if tier := strings.TrimSpace(req.SubscriptionTier); tier != "" {
 		db = db.Where("subscription_tier = ?", tier)

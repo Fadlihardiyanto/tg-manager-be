@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"net/mail"
 	"net/smtp"
 	"strings"
 )
@@ -71,8 +72,29 @@ func (m *Mailer) SendTenantVerificationEmail(to, name, verificationLink string) 
 	return m.send(to, subject, body)
 }
 
-// send dispatches an email via SMTP.
+func sanitizeHeader(val string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(val, "\r", ""), "\n", "")
+}
+
+func validateEmailAddress(email string) error {
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return fmt.Errorf("invalid email address: %w", err)
+	}
+	cleaned := addr.Address
+	if strings.ContainsAny(cleaned, "\r\n") {
+		return fmt.Errorf("invalid email address: contains newline")
+	}
+	if cleaned != email {
+		return fmt.Errorf("invalid email address: contains display name")
+	}
+	return nil
+}
 func (m *Mailer) send(to, subject, htmlBody string) error {
+	if err := validateEmailAddress(to); err != nil {
+		return fmt.Errorf("mailer: %w", err)
+	}
+
 	from := m.config.FromEmail
 	if m.config.FromName != "" {
 		from = fmt.Sprintf("%s <%s>", m.config.FromName, m.config.FromEmail)
@@ -82,7 +104,7 @@ func (m *Mailer) send(to, subject, htmlBody string) error {
 	var msg strings.Builder
 	msg.WriteString(fmt.Sprintf("From: %s\r\n", from))
 	msg.WriteString(fmt.Sprintf("To: %s\r\n", to))
-	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", sanitizeHeader(subject)))
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
 	msg.WriteString("\r\n")

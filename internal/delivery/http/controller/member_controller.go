@@ -174,16 +174,16 @@ func (c *MemberController) Extend(ctx fiber.Ctx) error {
 	}
 
 	var req model.ExtendMemberRequest
-	if err := ctx.Bind().Body(&req); err != nil {
+	if err := ctx.Bind().JSON(&req); err != nil {
 		log.Warn("member controller extend invalid body", zap.Error(err))
 		return helper.BadRequest(ctx, "Format request tidak valid")
 	}
 
-	if errs := helper.ValidateStruct(c.validator, &req); errs != nil {
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
 		return helper.UnprocessableEntity(ctx, errs)
 	}
 
-	if err := c.memberUC.ExtendMember(ctx.Context(), clientID, userID, req.NewExpiryAt); err != nil {
+	if err := c.memberUC.ExtendMember(ctx.Context(), clientID, userID, &req); err != nil {
 		log.Error("member controller extend failed", zap.Error(err))
 		return err
 	}

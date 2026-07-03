@@ -754,3 +754,29 @@ CREATE TABLE broadcasts (
 );
 
 CREATE INDEX idx_broadcasts_client_bot ON broadcasts(client_id, bot_id);
+
+-- ==========================================
+-- 14. MIGRATION MEMBERS (Hybrid Migration System)
+-- ==========================================
+CREATE TABLE migration_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    package_id UUID NOT NULL REFERENCES packages(id), -- Paket yang akan diberikan
+    
+    -- Username tanpa '@' (akan di-sanitize saat insert)
+    username VARCHAR(255) NOT NULL, 
+    expired_at TIMESTAMP NOT NULL,
+    
+    status VARCHAR(20) NOT NULL DEFAULT 'pending', -- 'pending', 'claimed', 'failed'
+    
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    claimed_at TIMESTAMP
+);
+
+-- Mencegah Tenant mengunggah username yang sama 2x untuk paket yang sama jika masih pending
+-- Multi-paket: user bisa punya pending claim untuk package berbeda
+-- Jika old index (client_id, username) sudah ada, DROP dulu:
+-- DROP INDEX IF EXISTS uq_migration_members_pending;
+CREATE UNIQUE INDEX uq_migration_members_pending 
+ON migration_members(client_id, package_id, username) 
+WHERE status = 'pending';

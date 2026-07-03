@@ -26,6 +26,7 @@ type PackageResponse struct {
 	IsActive     bool            `json:"is_active"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
+	Groups       []GroupResponse `json:"groups,omitempty"`
 }
 
 type PackageUpdateRequest struct {

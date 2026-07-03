@@ -73,6 +73,7 @@ type SubscriptionActivatedPayload struct {
 	PackageID      string `json:"package_id"`
 	ClientID       string `json:"client_id"`
 	OrderID        string `json:"order_id"`
+	IsResend       bool   `json:"is_resend"`
 }
 
 func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
@@ -169,21 +170,21 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	}
 
 	if len(inviteLinks) == 0 {
-		err := fmt.Errorf("telegram action handler: failed to generate any invite links")
-		h.logger.Error("telegram action handler: failed to generate any invite links",
+		h.logger.Warn("telegram action handler: no invite links generated, user will be notified via DM",
 			append(logFields,
 				zap.String("subscription_id", payload.SubscriptionID),
 				zap.String("package_id", payload.PackageID),
-				zap.Error(err),
 			)...,
 		)
-		return err
+		// Continue to send DM — user gets a message explaining the issue (no DLQ)
 	}
 
-	// 5. Generate Receipt PDF and Upload to S3 (non-blocking)
+	// 5. Generate Receipt PDF and Upload to S3 (skip for resend link — no order data)
 	var receiptPDFBytes []byte
 	var receiptURL string
-	receiptPDFBytes, receiptURL, _ = h.generateReceipt(ctx, payload, pkg, logFields)
+	if !payload.IsResend {
+		receiptPDFBytes, receiptURL, _ = h.generateReceipt(ctx, payload, pkg, logFields)
+	}
 
 	// 6. Fetch Subscription for Expiration Date
 	subID, err := uuid.Parse(payload.SubscriptionID)
@@ -201,8 +202,22 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	expiredStr := sub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
 
-	// 7. Send DM to User FIRST (welcome text + invite links + receipt URL link)
-	message := fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\nBerikut adalah link khusus untuk masuk ke grup:\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, expiredStr, strings.Join(inviteLinks, "\n"))
+	// 7. Build DM message
+	var message string
+	if payload.IsResend {
+		if len(inviteLinks) == 0 {
+			message = fmt.Sprintf("⚠️ Mohon maaf, kami mengalami kendala teknis saat membuat link akses untuk paket <b>%s</b>.\nSilakan hubungi Admin untuk bantuan lebih lanjut.", pkg.Name)
+		} else {
+			message = fmt.Sprintf("👋 Halo!\n\nBerikut adalah link akses ulang Anda untuk masuk ke grup paket <b>%s</b>.\n\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, strings.Join(inviteLinks, "\n"))
+		}
+	} else {
+		if len(inviteLinks) == 0 {
+			message = fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\n⚠️ Mohon maaf, kami mengalami kendala teknis saat membuat link akses grup.\nSilakan hubungi Admin untuk bantuan lebih lanjut.", pkg.Name, expiredStr)
+		} else {
+			message = fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\nBerikut adalah link khusus untuk masuk ke grup:\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, expiredStr, strings.Join(inviteLinks, "\n"))
+		}
+	}
+
 	if receiptURL != "" {
 		message = fmt.Sprintf("%s\n\n📄 <a href=\"%s\">Download Kwitansi Pembayaran</a>", message, receiptURL)
 	}

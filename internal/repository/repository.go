@@ -2,9 +2,16 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"gorm.io/gorm"
 )
+
+// escapeLike sanitizes user input for use in SQL ILIKE/LIKE patterns.
+// It escapes % and _ wildcards to prevent blind data enumeration via crafted search queries.
+func escapeLike(s string) string {
+	return strings.NewReplacer("%", "\\%", "_", "\\_").Replace(s)
+}
 
 // IRepository is the base generic interface for all repositories
 type IRepository[T any] interface {

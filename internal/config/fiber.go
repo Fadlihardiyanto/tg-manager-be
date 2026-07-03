@@ -17,13 +17,32 @@ func NewFiber(cfg *AppConfig) *fiber.App {
 		ErrorHandler: NewErrorHandler(),
 		JSONEncoder:  sonic.Marshal,
 		JSONDecoder:  sonic.Unmarshal,
+		BodyLimit:    1 * 1024 * 1024,
 	})
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"*"},
+		AllowOriginsFunc: func(origin string) bool {
+			if cfg.Name == "development" {
+				return true
+			}
+			return origin == cfg.AllowedOrigin
+		},
 		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
 	}))
+
+	app.Use(func(c fiber.Ctx) error {
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		c.Set("X-XSS-Protection", "0")
+		if c.Protocol() == "https" {
+			c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		c.Set("Content-Security-Policy", "default-src 'self'")
+		return c.Next()
+	})
 
 	return app
 }

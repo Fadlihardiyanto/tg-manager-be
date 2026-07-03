@@ -89,18 +89,19 @@ func (p *RabbitMQPublisher) publish(ctx context.Context, exchange, routingKey st
 			Body:          body,
 		},
 	)
-	p.mu.Unlock()
 
 	if err != nil {
+		p.mu.Unlock()
 		metrics.MessagesPublished.WithLabelValues(exchange, routingKey, "error").Inc()
 		return fmt.Errorf("publisher: failed to publish to %s/%s: %w", exchange, routingKey, err)
 	}
 
-	// Wait for broker confirmation
 	if !confirm.Wait() {
+		p.mu.Unlock()
 		metrics.MessagesPublished.WithLabelValues(exchange, routingKey, "nack").Inc()
 		return fmt.Errorf("publisher: message to %s/%s was nacked by broker", exchange, routingKey)
 	}
+	p.mu.Unlock()
 	metrics.MessagesPublished.WithLabelValues(exchange, routingKey, "success").Inc()
 
 	p.logger.Debug("publisher: message published and confirmed",

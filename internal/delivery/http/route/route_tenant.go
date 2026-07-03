@@ -3,6 +3,7 @@ package route
 import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/controller"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/ratelimit"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/google/uuid"
@@ -12,6 +13,9 @@ import (
 type TenantRouteConfig struct {
 	App *fiber.App
 	Log *zap.Logger
+
+	// Rate Limiter
+	TenantAuthRateLimiter *ratelimit.RateLimiter
 
 	// Auth
 	TenantAuthController *controller.TenantAuthController
@@ -49,6 +53,9 @@ type TenantRouteConfig struct {
 	// Broadcast
 	BroadcastController *controller.BroadcastController
 
+	// Migration
+	MigrationMemberController *controller.MigrationMemberController
+
 	// Middleware
 	TenantAuthMiddleware fiber.Handler // JWT validation for tenant
 }
@@ -69,6 +76,7 @@ func (c *TenantRouteConfig) Setup() {
 
 func (c *TenantRouteConfig) setupPublicRoutes(api fiber.Router) {
 	auth := api.Group("/auth")
+	auth.Use(c.TenantAuthRateLimiter.Middleware())
 	auth.Post("/register", c.TenantAuthController.Register)
 	auth.Post("/login", c.TenantAuthController.Login)
 	auth.Post("/refresh", c.TenantAuthController.Refresh)
@@ -152,10 +160,10 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 
 	// ── Analytics & Audit ────────────────────────────────────────────────────
 	analytics := protected.Group("/analytics")
-	analytics.Get("/overview", c.TenantAnalyticsController.GetOverview)
+	analytics.Get("/overview", middleware.TenantRequirePermission("analytics.read"), c.TenantAnalyticsController.GetOverview)
 
 	audit := protected.Group("/audit-logs")
-	audit.Get("/", c.AuditLogController.ListTenantLogs)
+	audit.Get("/", middleware.TenantRequirePermission("analytics.read"), c.AuditLogController.ListTenantLogs)
 
 	// ── Settings ─────────────────────────────────────────────────────────────
 	settings := protected.Group("/settings")
@@ -164,8 +172,8 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 
 	// ── Billing (Self-Service) ────────────────────────────────────────────
 	billing := protected.Group("/billing")
-	billing.Get("/active", c.ClientBillingController.ClientGetActiveBilling)
-	billing.Post("/checkout", c.ClientBillingController.ClientCheckout)
+	billing.Get("/active", middleware.TenantRequirePermission("billing.read"), c.ClientBillingController.ClientGetActiveBilling)
+	billing.Post("/checkout", middleware.TenantRequirePermission("billing.manage"), c.ClientBillingController.ClientCheckout)
 
 	// ── Uploads ──────────────────────────────────────────────────────────
 	protected.Post("/upload/presign", c.UploadController.GetPresignedURL)
@@ -174,6 +182,13 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	broadcasts := protected.Group("/bots/:bot_id/broadcasts", middleware.TenantRequirePermission("bots.write"))
 	broadcasts.Post("/", c.BroadcastController.Create)
 	broadcasts.Get("/", middleware.TenantRequirePermission("bots.read"), c.BroadcastController.List)
+
+	// ── Migration Members ─────────────────────────────────────────────
+	migration := protected.Group("/migration-members")
+	migration.Get("/template", middleware.TenantRequirePermission("packages.read"), c.MigrationMemberController.DownloadTemplate)
+	migration.Post("/import", middleware.TenantRequirePermission("packages.create"), c.MigrationMemberController.Import)
+	migration.Get("/export", middleware.TenantRequirePermission("packages.read"), c.MigrationMemberController.ExportCSV)
+	migration.Get("/", middleware.TenantRequirePermission("packages.read"), c.MigrationMemberController.List)
 
 	// ── Team ─────────────────────────────────────────────────────────
 	// TODO: Wire team management routes here

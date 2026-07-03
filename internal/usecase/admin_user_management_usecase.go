@@ -30,10 +30,11 @@ type IAdminUserManagementUseCase interface {
 }
 
 type adminUserManagementUseCase struct {
-	db        *entity.Database
-	adminRepo repository.IAdminUserRepository
-	roleRepo  repository.IAdminRoleRepository
-	log       *zap.Logger
+	db          *entity.Database
+	adminRepo   repository.IAdminUserRepository
+	roleRepo    repository.IAdminRoleRepository
+	log         *zap.Logger
+	bcryptCost  int
 }
 
 func NewAdminUserManagementUseCase(
@@ -41,12 +42,14 @@ func NewAdminUserManagementUseCase(
 	adminRepo repository.IAdminUserRepository,
 	roleRepo repository.IAdminRoleRepository,
 	log *zap.Logger,
+	bcryptCost int,
 ) IAdminUserManagementUseCase {
 	return &adminUserManagementUseCase{
-		db:        db,
-		adminRepo: adminRepo,
-		roleRepo:  roleRepo,
-		log:       log,
+		db:         db,
+		adminRepo:  adminRepo,
+		roleRepo:   roleRepo,
+		log:        log,
+		bcryptCost: bcryptCost,
 	}
 }
 
@@ -124,7 +127,7 @@ func (uc *adminUserManagementUseCase) CreateAdmin(ctx context.Context, req *mode
 		return nil, helper.NewConflict("email already exists")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), uc.bcryptCost)
 	if err != nil {
 		log.Error("admin user management create hash failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to hash password: %w", err)

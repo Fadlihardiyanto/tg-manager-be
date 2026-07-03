@@ -120,7 +120,7 @@ func applyTenantUserListFilters(db *gorm.DB, req *model.AdminTenantUserListReque
 		}
 	}
 	if email := strings.TrimSpace(req.Email); email != "" {
-		db = db.Where("users.email ILIKE ?", "%"+email+"%")
+		db = db.Where("users.email ILIKE ?", "%"+escapeLike(email)+"%")
 	}
 	if role := strings.TrimSpace(req.Role); role != "" {
 		db = db.Where("client_users.role = ?", role)

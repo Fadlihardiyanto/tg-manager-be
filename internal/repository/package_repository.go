@@ -42,6 +42,7 @@ func (r *PackageRepository) FindByClientID(ctx context.Context, tx *gorm.DB, cli
 	var packages []entity.Package
 	offset := (page - 1) * limit
 	err := tx.WithContext(ctx).
+		Preload("Groups").
 		Where("client_id = ? AND deleted_at IS NULL", clientID).
 		Offset(offset).
 		Limit(limit).
@@ -76,10 +77,10 @@ func (r *PackageRepository) FindPackages(ctx context.Context, tx *gorm.DB, clien
 	}
 	offset := (page - 1) * limit
 
-	query := tx.WithContext(ctx).Where("client_id = ? AND deleted_at IS NULL", clientID)
+	query := tx.WithContext(ctx).Preload("Groups").Where("client_id = ? AND deleted_at IS NULL", clientID)
 
 	if filter.Search != "" {
-		searchPattern := "%" + filter.Search + "%"
+		searchPattern := "%" + escapeLike(filter.Search) + "%"
 		query = query.Where("name ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
 	}
 
@@ -109,7 +110,7 @@ func (r *PackageRepository) CountPackages(ctx context.Context, tx *gorm.DB, clie
 	query := tx.WithContext(ctx).Model(&entity.Package{}).Where("client_id = ? AND deleted_at IS NULL", clientID)
 
 	if filter.Search != "" {
-		searchPattern := "%" + filter.Search + "%"
+		searchPattern := "%" + escapeLike(filter.Search) + "%"
 		query = query.Where("name ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
 	}
 

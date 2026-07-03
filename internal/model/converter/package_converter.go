@@ -11,6 +11,14 @@ func PackageToResponse(pkg *entity.Package) *model.PackageResponse {
 		return nil
 	}
 
+	var groupResponses []model.GroupResponse
+	if len(pkg.Groups) > 0 {
+		groupResponses = make([]model.GroupResponse, len(pkg.Groups))
+		for i, g := range pkg.Groups {
+			groupResponses[i] = *GroupToResponse(&g)
+		}
+	}
+
 	return &model.PackageResponse{
 		ID:           pkg.ID,
 		ClientID:     pkg.ClientID,
@@ -22,6 +30,7 @@ func PackageToResponse(pkg *entity.Package) *model.PackageResponse {
 		IsActive:     pkg.IsActive,
 		CreatedAt:    pkg.CreatedAt,
 		UpdatedAt:    pkg.UpdatedAt,
+		Groups:       groupResponses,
 	}
 }
 

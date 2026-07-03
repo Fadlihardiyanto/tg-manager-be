@@ -14,7 +14,6 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	pkg_jwt "github.com/Fadlihardiyanto/telegram-management-app/pkg/jwt"
-	token "github.com/Fadlihardiyanto/telegram-management-app/pkg/jwt" // package name is token
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/mailer"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/otp"
@@ -71,8 +70,9 @@ type AdminAuthUseCase struct {
 	otpService          *otp.EmailOTPService
 	mailer              mailer.Sender
 	outboxRepo          repository.IOutboxRepository
-	jwtConfig           *token.JWTConfig
+	jwtConfig           *pkg_jwt.JWTConfig
 	frontendURL         string
+	bcryptCost          int
 }
 
 func NewAdminAuthUseCase(
@@ -84,8 +84,9 @@ func NewAdminAuthUseCase(
 	otpService *otp.EmailOTPService,
 	mailer mailer.Sender,
 	outboxRepo repository.IOutboxRepository,
-	jwtConfig *token.JWTConfig,
+	jwtConfig *pkg_jwt.JWTConfig,
 	frontendURL string,
+	bcryptCost int,
 ) IAdminAuthUseCase {
 	return &AdminAuthUseCase{
 		db:                  db,
@@ -98,6 +99,7 @@ func NewAdminAuthUseCase(
 		outboxRepo:          outboxRepo,
 		jwtConfig:           jwtConfig,
 		frontendURL:         frontendURL,
+		bcryptCost:          bcryptCost,
 	}
 }
 
@@ -126,9 +128,8 @@ func (uc *AdminAuthUseCase) Login(ctx context.Context, req *model.AdminLoginRequ
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
 		log.Warn("admin auth login password mismatch", zap.String("email", req.Email))
 		uc.adminRepo.IncrementFailedLogin(ctx, uc.db.Gorm, admin.ID)
-
-		// If failed attempts > threshold (e.g. 5), lock account for 15 mins
-		if admin.FailedLoginCount+1 >= 5 {
+		admin, err := uc.adminRepo.FindByEmail(ctx, uc.db.Gorm, req.Email)
+		if err == nil && admin.FailedLoginCount >= 5 {
 			uc.adminRepo.LockAccount(ctx, uc.db.Gorm, admin.ID, time.Now().Add(15*time.Minute))
 		}
 		return nil, helper.NewUnauthorized("invalid email or password")
@@ -306,8 +307,8 @@ func (uc *AdminAuthUseCase) RefreshToken(ctx context.Context, req *model.AdminRe
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin auth refresh token start")
 
-	// Parse refresh token
-	claims, err := token.ParseAdminToken(req.RefreshToken, uc.jwtConfig.AdminSecretKey)
+	// Parse refresh token (uses separate parser that handles jwt.RegisteredClaims)
+	claims, err := pkg_jwt.ParseAdminRefreshToken(req.RefreshToken, uc.jwtConfig.AdminSecretKey)
 	if err != nil {
 		log.Warn("admin auth refresh token invalid")
 		return nil, helper.NewUnauthorized("invalid refresh token")
@@ -341,7 +342,7 @@ func (uc *AdminAuthUseCase) Logout(ctx context.Context, req *model.AdminLogoutRe
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin auth logout start")
 
-	claims, err := token.ParseAdminToken(req.AccessToken, uc.jwtConfig.AdminSecretKey)
+	claims, err := pkg_jwt.ParseAdminToken(req.AccessToken, uc.jwtConfig.AdminSecretKey)
 	if err != nil {
 		log.Warn("admin auth logout parse token failed", zap.Error(err))
 		return err
@@ -416,7 +417,7 @@ func (uc *AdminAuthUseCase) Register(ctx context.Context, req *model.AdminUserCr
 	}
 
 	// 3. Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), uc.bcryptCost)
 	if err != nil {
 		log.Error("admin auth register hash password failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to hash password: %w", err)

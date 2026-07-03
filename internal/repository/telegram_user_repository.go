@@ -57,7 +57,7 @@ func (r *TelegramUserRepository) applyMemberScope(query *gorm.DB, clientID uuid.
 
 	// Free-text search across username, first_name, last_name
 	if filter.Search != "" {
-		search := "%" + filter.Search + "%"
+		search := "%" + escapeLike(filter.Search) + "%"
 		q = q.Where("telegram_users.username ILIKE ? OR telegram_users.first_name ILIKE ? OR telegram_users.last_name ILIKE ?", search, search, search)
 	}
 

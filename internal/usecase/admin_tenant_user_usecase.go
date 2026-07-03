@@ -34,6 +34,7 @@ type adminTenantUserUseCase struct {
 	userRepo       repository.IUserRepository
 	clientUserRepo repository.IClientUserRepository
 	log            *zap.Logger
+	bcryptCost     int
 }
 
 func NewAdminTenantUserUseCase(
@@ -42,6 +43,7 @@ func NewAdminTenantUserUseCase(
 	userRepo repository.IUserRepository,
 	clientUserRepo repository.IClientUserRepository,
 	log *zap.Logger,
+	bcryptCost int,
 ) IAdminTenantUserUseCase {
 	return &adminTenantUserUseCase{
 		db:             db,
@@ -49,6 +51,7 @@ func NewAdminTenantUserUseCase(
 		userRepo:       userRepo,
 		clientUserRepo: clientUserRepo,
 		log:            log,
+		bcryptCost:     bcryptCost,
 	}
 }
 
@@ -123,7 +126,7 @@ func (uc *adminTenantUserUseCase) CreateTenantUser(ctx context.Context, req *mod
 		return nil, helper.NewConflict("email already exists")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), uc.bcryptCost)
 	if err != nil {
 		log.Error("admin tenant user create hash failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to hash password: %w", err)

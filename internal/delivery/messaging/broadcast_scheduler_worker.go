@@ -48,11 +48,13 @@ func (w *BroadcastSchedulerWorker) Start(ctx context.Context, interval time.Dura
 }
 
 func (w *BroadcastSchedulerWorker) Process(ctx context.Context) {
-	start := time.Now()
-	// Record metrics if available
 	defer func() {
-		// Ignore metric failures if not initialized
-		defer func() { recover() }()
+		if r := recover(); r != nil {
+			w.log.Error("broadcast scheduler worker: panicked", zap.Any("panic", r))
+		}
+	}()
+	start := time.Now()
+	defer func() {
 		metrics.WorkerCycleDuration.WithLabelValues("broadcast_scheduler").Observe(time.Since(start).Seconds())
 	}()
 
