@@ -17,6 +17,7 @@ import (
 type EnforcerHandler struct {
 	db              *gorm.DB
 	botRepo         repository.ITelegramBotRepository
+	subscriptionRepo repository.ISubscriptionRepository
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
 	logger          *zap.Logger
@@ -25,6 +26,7 @@ type EnforcerHandler struct {
 func NewEnforcerHandler(
 	db *gorm.DB,
 	botRepo repository.ITelegramBotRepository,
+	subscriptionRepo repository.ISubscriptionRepository,
 	telegramFactory telegram.BotFactory,
 	encryptionKey string,
 	logger *zap.Logger,
@@ -32,6 +34,7 @@ func NewEnforcerHandler(
 	return &EnforcerHandler{
 		db:              db,
 		botRepo:         botRepo,
+		subscriptionRepo: subscriptionRepo,
 		telegramFactory: telegramFactory,
 		encryptionKey:   encryptionKey,
 		logger:          logger,
@@ -58,6 +61,22 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 			zap.Int64("chat_id", payload.TelegramChatID),
 		)...,
 	)
+
+	// Double-check: skip kick if user still has another active subscription covering this group
+	hasAccess, err := h.subscriptionRepo.HasActiveSubscriptionForGroup(ctx, h.db, payload.TelegramUserID, payload.TelegramChatID)
+	if err != nil {
+		h.logger.Error("enforcer handler: failed to check group access", append(logFields, zap.Error(err))...)
+		return err
+	}
+	if hasAccess {
+		h.logger.Info("skip kick, user still has active subscription covering this group",
+			append(logFields,
+				zap.Int64("chat_id", payload.TelegramChatID),
+				zap.Int64("user_id", payload.TelegramUserID),
+			)...,
+		)
+		return nil
+	}
 
 	// Get Bot Credentials
 	bot, err := h.botRepo.FindByID(ctx, h.db, payload.BotID)

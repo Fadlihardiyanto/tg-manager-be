@@ -83,6 +83,14 @@ func DefaultTopology() TopologyConfig {
 				},
 			},
 			{
+				Name:    QueueTelegramActionHigh,
+				Durable: true,
+				Args: amqp.Table{
+					"x-dead-letter-exchange":    ExchangeDLX,
+					"x-dead-letter-routing-key": RoutingKeyTelegramActionHigh,
+				},
+			},
+			{
 				Name:    QueuePaymentWebhook,
 				Durable: true,
 				Args: amqp.Table{
@@ -137,6 +145,15 @@ func DefaultTopology() TopologyConfig {
 				},
 			},
 			{
+				Name:    QueueTelegramActionHighDLQ,
+				Durable: true,
+				Args: amqp.Table{
+					"x-message-ttl":             int32(60000),
+					"x-dead-letter-exchange":    ExchangeTelegram,
+					"x-dead-letter-routing-key": RoutingKeyTelegramActionHigh,
+				},
+			},
+			{
 				Name:    QueuePaymentWebhookDLQ,
 				Durable: true,
 				Args: amqp.Table{
@@ -185,6 +202,7 @@ func DefaultTopology() TopologyConfig {
 		Bindings: []BindingConfig{
 			// Main queue bindings
 			{QueueName: QueueTelegramAction, RoutingKey: RoutingKeyTelegramAction, ExchangeName: ExchangeTelegram},
+			{QueueName: QueueTelegramActionHigh, RoutingKey: RoutingKeyTelegramActionHigh, ExchangeName: ExchangeTelegram},
 			{QueueName: QueuePaymentWebhook, RoutingKey: RoutingKeyPaymentWebhook, ExchangeName: ExchangePayment},
 			{QueueName: QueueNotification, RoutingKey: RoutingKeyNotification, ExchangeName: ExchangeNotification},
 			{QueueName: QueueGatekeeping, RoutingKey: RoutingKeyGatekeeping, ExchangeName: ExchangeTelegram},
@@ -193,6 +211,7 @@ func DefaultTopology() TopologyConfig {
 			{QueueName: QueueBroadcast, RoutingKey: RoutingKeyBroadcast, ExchangeName: ExchangeTelegram},
 			// DLQ bindings
 			{QueueName: QueueTelegramActionDLQ, RoutingKey: RoutingKeyTelegramAction, ExchangeName: ExchangeDLX},
+			{QueueName: QueueTelegramActionHighDLQ, RoutingKey: RoutingKeyTelegramActionHigh, ExchangeName: ExchangeDLX},
 			{QueueName: QueuePaymentWebhookDLQ, RoutingKey: RoutingKeyPaymentWebhook, ExchangeName: ExchangeDLX},
 			{QueueName: QueueGatekeepingDLQ, RoutingKey: RoutingKeyGatekeeping, ExchangeName: ExchangeDLX},
 			{QueueName: QueueEnforcerDLQ, RoutingKey: RoutingKeyEnforcer, ExchangeName: ExchangeDLX},

@@ -775,8 +775,15 @@ CREATE TABLE migration_members (
 
 -- Mencegah Tenant mengunggah username yang sama 2x untuk paket yang sama jika masih pending
 -- Multi-paket: user bisa punya pending claim untuk package berbeda
--- Jika old index (client_id, username) sudah ada, DROP dulu:
--- DROP INDEX IF EXISTS uq_migration_members_pending;
 CREATE UNIQUE INDEX uq_migration_members_pending 
 ON migration_members(client_id, package_id, username) 
 WHERE status = 'pending';
+
+-- ==========================================
+-- MIGRATION: Feature Gating & Quota Management
+-- ==========================================
+ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_media_broadcast BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_discount_system BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_reports_export BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_high_priority BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS transaction_limit INT NOT NULL DEFAULT -1;

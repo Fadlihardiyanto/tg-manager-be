@@ -271,7 +271,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 	planUC := usecase.NewPlatformPlanUseCase(config.DB, planRepo, billingRepo, config.Log)
 	platformDiscountUC := usecase.NewPlatformDiscountUseCase(config.DB, platformDiscountRepo, config.Log)
 	memberDiscountUC := usecase.NewMemberDiscountUseCase(config.DB, discountRepo, config.Log)
-	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, config.Midtrans, config.Redis, config.Log)
+	featureGateUC := usecase.NewFeatureGateUseCase(config.DB, billingRepo, botRepo, groupRepo, packageRepo, customCommandRepo, broadcastRepo, tenantAnalyticsRepo, config.Log)
+	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, featureGateUC, config.Midtrans, config.Redis, config.Log)
 	memberOrderUC := usecase.NewMemberOrderUseCase(config.DB, orderRepo, subscriptionRepo, packageRepo, telegramUserRepo, clientRepo, billingRepo, discountRepo, memberDiscountUC, outboxRepo, config.Redis, config.Log, config.Config.App.EncryptionKey, config.Config.Midtrans.BaseURL, config.Config.Midtrans.SnapURL)
 	tenantAuthUC := usecase.NewTenantAuthUseCase(config.DB, userRepo, clientRepo, clientUserRepo, tenantPermissionRepo, outboxRepo, config.Log, config.Redis, config.Jwt, config.Config.App.FrontendURL, config.Config.App.BcryptCost)
 	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, tenantAnalyticsRepo, config.Log)
@@ -285,7 +286,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	tenantTransactionUC := usecase.NewTenantTransactionUseCase(config.DB, orderRepo, config.S3, config.Log)
 	uploadUC := usecase.NewUploadUseCase(config.S3, config.Log)
 	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepo, botRepo, groupRepo, outboxRepo, billingRepo, config.Log)
-	migrationMemberUC := usecase.NewMigrationMemberUseCase(config.DB, migrationMemberRepo, packageRepo, config.Log)
+	migrationMemberUC := usecase.NewMigrationMemberUseCase(config.DB, migrationMemberRepo, packageRepo, featureGateUC, config.Log)
 
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
@@ -294,7 +295,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	mySubHandler := handler.NewMySubHandler(config.DB, subscriptionRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	statusHandler := handler.NewStatusAliasHandler(mySubHandler) // /status → same logic as /mysub
 	myOrdersHandler := handler.NewMyOrdersHandler(config.DB, orderRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
-	migrationMemberCmdHandler := handler.NewMigrationMemberHandler(config.DB, migrationMemberRepo, packageRepo, subscriptionRepo, telegramUserRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	migrationMemberCmdHandler := handler.NewMigrationMemberHandler(config.DB, migrationMemberRepo, packageRepo, subscriptionRepo, telegramUserRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, featureGateUC.CheckQuota, config.Log)
 
 	cmdRegistry := handler.NewRegistry()
 	cmdRegistry.Register(startHandler)
@@ -401,6 +402,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 		BroadcastController:         broadcastCtrl,
 		MigrationMemberController:   migrationMemberCtrl,
 		TenantAuthMiddleware:        middleware.TenantAuth(config.Jwt),
+		FeatureGateUseCase:          featureGateUC,
 	}
 	tenantRoute.Setup()
 
@@ -437,9 +439,10 @@ func BootstrapWorker(config *BootstrapConfig) {
 		orderRepo, clientRepo, telegramUserRepo, pdfClient, config.S3,
 	)
 	gatekeepingHandler := deliveryMsg.NewGatekeepingHandler(config.DB.Gorm, subscriptionRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
-	enforcerHandler := deliveryMsg.NewEnforcerHandler(config.DB.Gorm, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	enforcerHandler := deliveryMsg.NewEnforcerHandler(config.DB.Gorm, botRepo, subscriptionRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 
 	config.Consumer.RegisterHandler(rabbitmq.QueueTelegramAction, telegramActionHandler.Handle)
+	config.Consumer.RegisterHandler(rabbitmq.QueueTelegramActionHigh, telegramActionHandler.Handle)
 	config.Consumer.RegisterHandler(rabbitmq.QueueNotification, notificationHandler.Handle)
 	config.Consumer.RegisterHandler(rabbitmq.QueueGatekeeping, gatekeepingHandler.Handle)
 	config.Consumer.RegisterHandler(rabbitmq.QueueEnforcer, enforcerHandler.Handle)

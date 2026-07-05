@@ -120,10 +120,29 @@ func (r *TelegramUserRepository) FindMembersByClientID(ctx context.Context, tx *
 			telegram_users.phone,
 			telegram_users.created_at,
 			bool_or(s.status = 'active' AND s.deleted_at IS NULL) as global_status,
-			COALESCE(json_agg(p.name) FILTER (WHERE s.status = 'active' AND s.deleted_at IS NULL), '[]') as active_packages,
-			MIN(s.expired_at) FILTER (WHERE s.status = 'active' AND s.deleted_at IS NULL) as nearest_expiry
+			COALESCE(
+				json_agg(
+					json_build_object(
+						'id', s.id,
+						'package_id', s.package_id,
+						'package_name', p.name,
+						'status', s.status,
+						'activated_at', s.activated_at::timestamptz,
+						'expired_at', s.expired_at::timestamptz,
+						'auto_renew', s.auto_renew,
+						'kicked_at', s.kicked_at::timestamptz
+					)
+				) FILTER (WHERE s.id IS NOT NULL),
+				'[]'
+			) as subscriptions
 		`).
-		Joins("LEFT JOIN subscriptions s ON s.telegram_user_id = telegram_users.id AND s.client_id = ?", clientID).
+		Joins(`
+			LEFT JOIN (
+				SELECT *, ROW_NUMBER() OVER (PARTITION BY telegram_user_id, package_id ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, expired_at DESC) as rn
+				FROM subscriptions
+				WHERE client_id = ? AND deleted_at IS NULL
+			) s ON s.telegram_user_id = telegram_users.id AND s.rn = 1
+		`, clientID).
 		Joins("LEFT JOIN packages p ON p.id = s.package_id").
 		Group("telegram_users.id").
 		Order("telegram_users.created_at DESC").

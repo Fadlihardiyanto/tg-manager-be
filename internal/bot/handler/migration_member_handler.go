@@ -17,6 +17,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// CheckQuotaFunc is a function signature that avoids importing usecase (breaks cycle: bot/handler ↔ usecase).
+type CheckQuotaFunc func(ctx context.Context, clientID uuid.UUID, resourceType string) (allowed bool, current int64, limit int, err error)
+
 type MigrationMemberHandler struct {
 	db                  *entity.Database
 	migrationMemberRepo repository.IMigrationMemberRepository
@@ -26,6 +29,7 @@ type MigrationMemberHandler struct {
 	telegramGroupRepo   repository.ITelegramGroupRepository
 	telegramFactory     telegram.BotFactory
 	encryptionKey       string
+	checkQuota          CheckQuotaFunc
 	log                 *zap.Logger
 }
 
@@ -38,6 +42,7 @@ func NewMigrationMemberHandler(
 	telegramGroupRepo repository.ITelegramGroupRepository,
 	telegramFactory telegram.BotFactory,
 	encryptionKey string,
+	checkQuota CheckQuotaFunc,
 	log *zap.Logger,
 ) *MigrationMemberHandler {
 	return &MigrationMemberHandler{
@@ -49,6 +54,7 @@ func NewMigrationMemberHandler(
 		telegramGroupRepo:   telegramGroupRepo,
 		telegramFactory:     telegramFactory,
 		encryptionKey:       encryptionKey,
+		checkQuota:          checkQuota,
 		log:                 log,
 	}
 }
@@ -102,6 +108,16 @@ func (h *MigrationMemberHandler) Execute(ctx context.Context, bot *entity.Telegr
 
 	if len(claims) == 0 {
 		return replyHTML(ctx, botClient, msg.Chat.ID, "❌ Tidak ada data migrasi yang tertunda untuk username Anda.\n\nSilakan hubungi admin grup jika Anda merasa seharusnya mendapatkan akses.")
+	}
+
+	if h.checkQuota != nil {
+		_, current, limit, err := h.checkQuota(ctx, claims[0].ClientID, "members")
+		if err == nil && limit != -1 && current+int64(len(claims)) > int64(limit) {
+			return replyHTML(ctx, botClient, msg.Chat.ID, fmt.Sprintf(
+				"❌ Kuota member paket Anda sudah penuh (%d/%d).\n\nSilakan hubungi admin untuk upgrade paket.",
+				current, limit,
+			))
+		}
 	}
 
 	var allAccessGroups []entity.Group

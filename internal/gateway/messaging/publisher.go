@@ -121,6 +121,15 @@ func (p *RabbitMQPublisher) PublishTelegramAction(ctx context.Context, payload i
 	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyTelegramAction, body)
 }
 
+// PublishTelegramActionHigh publishes a high-priority telegram action task.
+func (p *RabbitMQPublisher) PublishTelegramActionHigh(ctx context.Context, payload interface{}) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("publisher: failed to marshal telegram action high payload: %w", err)
+	}
+	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyTelegramActionHigh, body)
+}
+
 // PublishPaymentWebhook publishes a payment webhook task to the payment exchange.
 func (p *RabbitMQPublisher) PublishPaymentWebhook(ctx context.Context, payload interface{}) error {
 	body, err := json.Marshal(payload)

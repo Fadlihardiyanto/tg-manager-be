@@ -7,6 +7,7 @@ import (
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/model/converter"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/midtrans"
@@ -46,6 +47,7 @@ type clientBillingUseCase struct {
 	platformDiscountRepo repository.IPlatformDiscountRepository
 
 	platformDiscountUC IPlatformDiscountUseCase
+	featureGateUC      IFeatureGateUseCase
 
 	midtransClient *midtrans.Client
 	redis          *redis.Client
@@ -59,6 +61,7 @@ func NewClientBillingUseCase(
 	clientRepo repository.IClientRepository,
 	platformDiscountRepo repository.IPlatformDiscountRepository,
 	platformDiscountUC IPlatformDiscountUseCase,
+	featureGateUC IFeatureGateUseCase,
 	midtransClient *midtrans.Client,
 	redisClient *redis.Client,
 	log *zap.Logger,
@@ -70,6 +73,7 @@ func NewClientBillingUseCase(
 		clientRepo:           clientRepo,
 		platformDiscountRepo: platformDiscountRepo,
 		platformDiscountUC:   platformDiscountUC,
+		featureGateUC:        featureGateUC,
 		midtransClient:       midtransClient,
 		redis:                redisClient,
 		log:                  log,
@@ -577,6 +581,14 @@ func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID u
 		return nil, nil
 	}
 	resp := toBillingResponse(billing)
+	if uc.featureGateUC != nil {
+		usage, err := uc.featureGateUC.GetUsage(ctx, clientID)
+		if err != nil {
+			uc.log.Warn("failed to get usage for active billing", zap.Error(err))
+		} else {
+			resp.Usage = usage
+		}
+	}
 	return &resp, nil
 }
 
@@ -624,20 +636,7 @@ func toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {
 		IsManual:       b.IsManual,
 		Note:           b.Note,
 		CreatedAt:      b.CreatedAt,
-		Plan: model.PlatformPlanResponse{
-			ID:           b.Plan.ID,
-			Name:         b.Plan.Name,
-			DisplayName:  b.Plan.DisplayName,
-			PriceMonthly: b.Plan.PriceMonthly,
-			PriceYearly:  b.Plan.PriceYearly,
-			MaxBots:      b.Plan.MaxBots,
-			MaxGroups:    b.Plan.MaxGroups,
-			MaxPackages:  b.Plan.MaxPackages,
-			MaxMembers:   b.Plan.MaxMembers,
-			IsActive:     b.Plan.IsActive,
-			CreatedAt:    b.Plan.CreatedAt,
-			UpdatedAt:    b.Plan.UpdatedAt,
-		},
+		Plan:           *converter.PlatformPlanToResponse(&b.Plan),
 		Client: model.ClientBriefResponse{
 			ID:   b.Client.ID,
 			Name: b.Client.Name,

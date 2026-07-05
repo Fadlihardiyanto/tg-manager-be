@@ -641,6 +641,12 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				tgID = tgUser.TelegramUserID
 			}
 
+			highPriority := false
+			billing, _ := uc.billingRepo.FindActiveByClientID(ctx, tx, order.ClientID)
+			if billing != nil {
+				highPriority = billing.Plan.AllowHighPriority
+			}
+
 			eventPayload := map[string]any{
 				"subscription_id":  subID.String(),
 				"telegram_user_id": tgID,
@@ -651,6 +657,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				"amount":           order.Amount,
 				"activated_at":     activatedAt.Format(time.RFC3339),
 				"expired_at":       expiredAt.Format(time.RFC3339),
+				"high_priority":    highPriority,
 			}
 
 			payloadBytes, err := json.Marshal(eventPayload)

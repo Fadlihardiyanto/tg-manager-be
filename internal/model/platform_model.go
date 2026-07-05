@@ -24,11 +24,19 @@ type PlatformPlanResponse struct {
 	MaxPackages       int                   `json:"max_packages"`
 	MaxMembers        int                   `json:"max_members"`
 	MaxCustomCommands int                   `json:"max_custom_commands"`
+	MaxBroadcasts     int                   `json:"max_broadcasts"`
 	Features          []PlatformPlanFeature `json:"features"`
 	IsActive          bool                  `json:"is_active"`
 	IsLandingPage     bool                  `json:"is_landing_page"`
-	CreatedAt         time.Time             `json:"created_at"`
-	UpdatedAt         time.Time             `json:"updated_at"`
+
+	AllowMediaBroadcast bool `json:"allow_media_broadcast"`
+	AllowDiscountSystem bool `json:"allow_discount_system"`
+	AllowReportsExport  bool `json:"allow_reports_export"`
+	AllowHighPriority   bool `json:"allow_high_priority"`
+	TransactionLimit    int  `json:"transaction_limit"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type CreatePlatformPlanRequest struct {
@@ -41,6 +49,12 @@ type CreatePlatformPlanRequest struct {
 	MaxPackages       int                   `json:"max_packages" validate:"gte=-1"`
 	MaxMembers        int                   `json:"max_members" validate:"gte=-1"`
 	MaxCustomCommands int                   `json:"max_custom_commands" validate:"gte=-1"`
+	MaxBroadcasts     int                   `json:"max_broadcasts" validate:"gte=-1"`
+	AllowMediaBroadcast bool                `json:"allow_media_broadcast"`
+	AllowDiscountSystem bool                `json:"allow_discount_system"`
+	AllowReportsExport  bool                `json:"allow_reports_export"`
+	AllowHighPriority   bool                `json:"allow_high_priority"`
+	TransactionLimit    int                 `json:"transaction_limit" validate:"gte=-1"`
 	Features          []PlatformPlanFeature `json:"features" validate:"dive"`
 	IsActive          bool                  `json:"is_active"`
 	IsLandingPage     bool                  `json:"is_landing_page"`
@@ -55,6 +69,12 @@ type UpdatePlatformPlanRequest struct {
 	MaxPackages       *int                  `json:"max_packages" validate:"omitempty,gte=-1"`
 	MaxMembers        *int                  `json:"max_members" validate:"omitempty,gte=-1"`
 	MaxCustomCommands *int                  `json:"max_custom_commands" validate:"omitempty,gte=-1"`
+	MaxBroadcasts     *int                  `json:"max_broadcasts" validate:"omitempty,gte=-1"`
+	AllowMediaBroadcast *bool               `json:"allow_media_broadcast"`
+	AllowDiscountSystem *bool               `json:"allow_discount_system"`
+	AllowReportsExport  *bool               `json:"allow_reports_export"`
+	AllowHighPriority   *bool               `json:"allow_high_priority"`
+	TransactionLimit    *int                `json:"transaction_limit" validate:"omitempty,gte=-1"`
 	Features          []PlatformPlanFeature `json:"features" validate:"omitempty,dive"`
 	IsActive          *bool                 `json:"is_active"`
 	IsLandingPage     *bool                 `json:"is_landing_page"`
@@ -73,4 +93,14 @@ type PlatformPlanLimits struct {
 	MaxPackages       int `json:"max_packages"`
 	MaxMembers        int `json:"max_members"`
 	MaxCustomCommands int `json:"max_custom_commands"`
+	MaxBroadcasts     int `json:"max_broadcasts"`
+}
+
+type PlatformPlanUsage struct {
+	Bots           int `json:"bots"`
+	Groups         int `json:"groups"`
+	Packages       int `json:"packages"`
+	Members        int `json:"members"`
+	CustomCommands int `json:"custom_commands"`
+	Broadcasts     int `json:"broadcasts"`
 }

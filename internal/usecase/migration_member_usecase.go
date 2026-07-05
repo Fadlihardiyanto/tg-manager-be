@@ -30,23 +30,26 @@ type IMigrationMemberUseCase interface {
 }
 
 type MigrationMemberUseCase struct {
-	db          *entity.Database
+	db            *entity.Database
 	migrationRepo repository.IMigrationMemberRepository
 	packageRepo   repository.IPackageRepository
-	log         *zap.Logger
+	featureGateUC IFeatureGateUseCase
+	log           *zap.Logger
 }
 
 func NewMigrationMemberUseCase(
 	db *entity.Database,
 	migrationRepo repository.IMigrationMemberRepository,
 	packageRepo repository.IPackageRepository,
+	featureGateUC IFeatureGateUseCase,
 	log *zap.Logger,
 ) IMigrationMemberUseCase {
 	return &MigrationMemberUseCase{
-		db:          db,
+		db:            db,
 		migrationRepo: migrationRepo,
-		packageRepo: packageRepo,
-		log:         log,
+		packageRepo:   packageRepo,
+		featureGateUC: featureGateUC,
+		log:           log,
 	}
 }
 
@@ -162,6 +165,18 @@ func (uc *MigrationMemberUseCase) ImportMembers(ctx context.Context, clientID uu
 
 	imported := 0
 	if len(toInsert) > 0 {
+		if uc.featureGateUC != nil {
+			_, current, limit, err := uc.featureGateUC.CheckQuota(ctx, clientID, "members")
+			if err != nil {
+				log.Warn("migration member import quota check failed", zap.Error(err))
+			} else if limit != -1 && current+int64(len(toInsert)) > int64(limit) {
+				return nil, helper.NewBadRequest(fmt.Sprintf(
+					"Jumlah member yang diimpor melebihi batas maksimum paket Anda (Sisa kuota: %d member). Silakan upgrade paket.",
+					limit-int(current),
+				))
+			}
+		}
+
 		if err := uc.migrationRepo.BulkInsert(ctx, uc.db.Gorm, toInsert); err != nil {
 			log.Error("migration member import bulk insert failed", zap.Error(err))
 			return nil, fmt.Errorf("Gagal menyimpan data migrasi")

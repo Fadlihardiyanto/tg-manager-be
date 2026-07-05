@@ -17,7 +17,9 @@ const (
 // Queue names
 const (
 	QueueTelegramAction      = "task.telegram_action"
+	QueueTelegramActionHigh  = "task.telegram_action.high"
 	QueueTelegramActionDLQ   = "task.telegram_action.dlq"
+	QueueTelegramActionHighDLQ = "task.telegram_action.high.dlq"
 	QueueNotification        = "task.notification"
 	QueuePaymentWebhook      = "task.payment_webhook"
 	QueuePaymentWebhookDLQ   = "task.payment_webhook.dlq"
@@ -33,13 +35,14 @@ const (
 
 // Routing keys
 const (
-	RoutingKeyTelegramAction = "telegram.action"
-	RoutingKeyPaymentWebhook = "payment.webhook"
-	RoutingKeyNotification   = "notification.send"
-	RoutingKeyGatekeeping    = "telegram.gatekeeping"
-	RoutingKeyEnforcer       = "telegram.enforcer"
-	RoutingKeyExpiryReminder = "telegram.expiry_reminder"
-	RoutingKeyBroadcast      = "telegram.broadcast"
+	RoutingKeyTelegramAction     = "telegram.action"
+	RoutingKeyTelegramActionHigh = "telegram.action.high"
+	RoutingKeyPaymentWebhook     = "payment.webhook"
+	RoutingKeyNotification       = "notification.send"
+	RoutingKeyGatekeeping        = "telegram.gatekeeping"
+	RoutingKeyEnforcer           = "telegram.enforcer"
+	RoutingKeyExpiryReminder     = "telegram.expiry_reminder"
+	RoutingKeyBroadcast          = "telegram.broadcast"
 )
 
 // ExchangeConfig holds the configuration for declaring an exchange.

@@ -99,12 +99,12 @@ func MembersToResponse(users []model.AggregatedMemberRow, orderCounts map[string
 	for i := range users {
 		count := orderCounts[users[i].ID.String()]
 		
-		var activePackages []string
-		if len(users[i].ActivePackages) > 0 && string(users[i].ActivePackages) != "null" {
-			_ = json.Unmarshal(users[i].ActivePackages, &activePackages)
+		var subscriptions []model.MemberSubscriptionBrief
+		if len(users[i].Subscriptions) > 0 && string(users[i].Subscriptions) != "null" {
+			_ = json.Unmarshal(users[i].Subscriptions, &subscriptions)
 		}
-		if activePackages == nil {
-			activePackages = []string{}
+		if subscriptions == nil {
+			subscriptions = []model.MemberSubscriptionBrief{}
 		}
 
 		res := model.MemberResponse{
@@ -115,8 +115,7 @@ func MembersToResponse(users []model.AggregatedMemberRow, orderCounts map[string
 			LastName:       users[i].LastName,
 			Phone:          users[i].Phone,
 			GlobalStatus:   users[i].GlobalStatus,
-			ActivePackages: activePackages,
-			NearestExpiry:  users[i].NearestExpiry,
+			Subscriptions:  subscriptions,
 			TotalOrders:    count,
 			CreatedAt:      users[i].CreatedAt,
 		}

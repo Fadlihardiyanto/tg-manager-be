@@ -54,6 +54,7 @@ type ClientBillingResponse struct {
 	ID             uuid.UUID            `json:"id"`
 	Client         ClientBriefResponse  `json:"client"`
 	Plan           PlatformPlanResponse `json:"plan"`
+	Usage          *PlatformPlanUsage   `json:"usage,omitempty"`
 	Status         string               `json:"status"`
 	BillingCycle   string               `json:"billing_cycle"`
 	OriginalAmount decimal.Decimal      `json:"original_amount"`

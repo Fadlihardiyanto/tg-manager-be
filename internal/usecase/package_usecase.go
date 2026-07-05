@@ -78,6 +78,7 @@ func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *m
 		ID:           uuid.New(),
 		ClientID:     clientID,
 		Name:         req.Name,
+		Description:  req.Description,
 		Price:        req.Price,
 		DurationDays: req.DurationDays,
 		IsAllAccess:  req.IsAllAccess,
@@ -154,8 +155,12 @@ func (uc *PackageUseCase) Update(ctx context.Context, clientID uuid.UUID, packag
 	if req.Name != "" {
 		pkg.Name = req.Name
 	}
-	if req.Price.GreaterThanOrEqual(req.Price.Sub(req.Price)) { // Simple check since minimum is 0 in validation
-		pkg.Price = req.Price
+	if req.Description != nil {
+		pkg.Description = *req.Description
+	}
+
+	if req.Price != nil {
+		pkg.Price = *req.Price
 	}
 	if req.DurationDays > 0 {
 		pkg.DurationDays = req.DurationDays

@@ -146,6 +146,12 @@ func (uc *platformPlanUseCase) Create(ctx context.Context, req *model.CreatePlat
 		MaxPackages:  req.MaxPackages,
 		MaxMembers:   req.MaxMembers,
 		MaxCustomCommands: req.MaxCustomCommands,
+		MaxBroadcasts:     req.MaxBroadcasts,
+		AllowMediaBroadcast: req.AllowMediaBroadcast,
+		AllowDiscountSystem: req.AllowDiscountSystem,
+		AllowReportsExport:  req.AllowReportsExport,
+		AllowHighPriority:   req.AllowHighPriority,
+		TransactionLimit:    req.TransactionLimit,
 		Features:     features,
 		IsActive:     req.IsActive,
 		IsLandingPage: req.IsLandingPage,
@@ -199,6 +205,24 @@ func (uc *platformPlanUseCase) Update(ctx context.Context, id uuid.UUID, req *mo
 	}
 	if req.MaxCustomCommands != nil {
 		plan.MaxCustomCommands = *req.MaxCustomCommands
+	}
+	if req.MaxBroadcasts != nil {
+		plan.MaxBroadcasts = *req.MaxBroadcasts
+	}
+	if req.AllowMediaBroadcast != nil {
+		plan.AllowMediaBroadcast = *req.AllowMediaBroadcast
+	}
+	if req.AllowDiscountSystem != nil {
+		plan.AllowDiscountSystem = *req.AllowDiscountSystem
+	}
+	if req.AllowReportsExport != nil {
+		plan.AllowReportsExport = *req.AllowReportsExport
+	}
+	if req.AllowHighPriority != nil {
+		plan.AllowHighPriority = *req.AllowHighPriority
+	}
+	if req.TransactionLimit != nil {
+		plan.TransactionLimit = *req.TransactionLimit
 	}
 	if req.Features != nil {
 		features := make(entity.JSONFeatureList, len(req.Features))

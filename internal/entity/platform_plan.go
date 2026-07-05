@@ -22,6 +22,12 @@ type PlatformPlan struct {
 	MaxCustomCommands   int `gorm:"not null;default:5"`
 	MaxBroadcasts       int `gorm:"not null;default:3"`
 
+	AllowMediaBroadcast bool `gorm:"not null;default:false"`
+	AllowDiscountSystem bool `gorm:"not null;default:false"`
+	AllowReportsExport  bool `gorm:"not null;default:false"`
+	AllowHighPriority   bool `gorm:"not null;default:false"`
+	TransactionLimit    int  `gorm:"not null;default:-1"`
+
 	Features  JSONFeatureList   `gorm:"type:jsonb;not null;default:'[]';column:features"`
 	IsActive  bool      `gorm:"default:true"`
 	IsLandingPage bool  `gorm:"default:true"`

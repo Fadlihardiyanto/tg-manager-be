@@ -3,6 +3,7 @@ package route
 import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/controller"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/ratelimit"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
@@ -58,6 +59,7 @@ type TenantRouteConfig struct {
 
 	// Middleware
 	TenantAuthMiddleware fiber.Handler // JWT validation for tenant
+	FeatureGateUseCase   usecase.IFeatureGateUseCase
 }
 
 func (c *TenantRouteConfig) Setup() {
@@ -105,7 +107,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	bots := protected.Group("/bots")
 	bots.Get("/", middleware.TenantRequirePermission("bots.read"), c.TelegramBotController.List)
 	bots.Get("/:id", middleware.TenantRequirePermission("bots.read"), c.TelegramBotController.Get)
-	bots.Post("/", middleware.TenantRequirePermission("bots.create"), c.TelegramBotController.Create)
+	bots.Post("/", middleware.TenantRequirePermission("bots.create"), middleware.EnforceQuota(c.FeatureGateUseCase, "bots"), c.TelegramBotController.Create)
 	bots.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.TelegramBotController.Update)
 	bots.Delete("/:id", middleware.TenantRequirePermission("bots.delete"), c.TelegramBotController.Delete)
 	bots.Post("/:bot_id/groups/connect-token", middleware.TenantRequirePermission("groups.create"), c.TelegramGroupController.GenerateConnectToken)
@@ -115,7 +117,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	commands := protected.Group("/commands")
 	commands.Get("/", middleware.TenantRequirePermission("bots.read"), c.CustomCommandController.List)
 	commands.Get("/:id", middleware.TenantRequirePermission("bots.read"), c.CustomCommandController.Get)
-	commands.Post("/", middleware.TenantRequirePermission("bots.create"), c.CustomCommandController.Create)
+	commands.Post("/", middleware.TenantRequirePermission("bots.create"), middleware.EnforceQuota(c.FeatureGateUseCase, "custom_commands"), c.CustomCommandController.Create)
 	commands.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.CustomCommandController.Update)
 	commands.Delete("/:id", middleware.TenantRequirePermission("bots.delete"), c.CustomCommandController.Delete)
 
@@ -141,9 +143,9 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Discounts ────────────────────────────────────────────────────
 	discounts := protected.Group("/discounts")
 	discounts.Get("/", middleware.TenantRequirePermission("packages.read"), c.MemberDiscountController.List)
-	discounts.Post("/", middleware.TenantRequirePermission("packages.create"), c.MemberDiscountController.Create)
-	discounts.Put("/:id", middleware.TenantRequirePermission("packages.update"), c.MemberDiscountController.Update)
-	discounts.Delete("/:id", middleware.TenantRequirePermission("packages.delete"), c.MemberDiscountController.Delete)
+	discounts.Post("/", middleware.TenantRequirePermission("packages.create"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.Create)
+	discounts.Put("/:id", middleware.TenantRequirePermission("packages.update"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.Update)
+	discounts.Delete("/:id", middleware.TenantRequirePermission("packages.delete"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.Delete)
 
 	// ── Members ──────────────────────────────────────────────────────
 	members := protected.Group("/members")
@@ -180,14 +182,14 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 
 	// ── Broadcasts ────────────────────────────────────────────────────────
 	broadcasts := protected.Group("/bots/:bot_id/broadcasts", middleware.TenantRequirePermission("bots.write"))
-	broadcasts.Post("/", c.BroadcastController.Create)
+	broadcasts.Post("/", middleware.EnforceFeature(c.FeatureGateUseCase, "allow_media_broadcast"), middleware.EnforceQuota(c.FeatureGateUseCase, "broadcasts"), c.BroadcastController.Create)
 	broadcasts.Get("/", middleware.TenantRequirePermission("bots.read"), c.BroadcastController.List)
 
 	// ── Migration Members ─────────────────────────────────────────────
 	migration := protected.Group("/migration-members")
 	migration.Get("/template", middleware.TenantRequirePermission("packages.read"), c.MigrationMemberController.DownloadTemplate)
 	migration.Post("/import", middleware.TenantRequirePermission("packages.create"), c.MigrationMemberController.Import)
-	migration.Get("/export", middleware.TenantRequirePermission("packages.read"), c.MigrationMemberController.ExportCSV)
+	migration.Get("/export", middleware.TenantRequirePermission("packages.read"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_reports_export"), c.MigrationMemberController.ExportCSV)
 	migration.Get("/", middleware.TenantRequirePermission("packages.read"), c.MigrationMemberController.List)
 
 	// ── Team ─────────────────────────────────────────────────────────

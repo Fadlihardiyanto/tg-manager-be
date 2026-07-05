@@ -18,6 +18,7 @@ type ISubscriptionRepository interface {
 	FindExpiredSubscriptions(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Subscription, error)
 	FindExpiringSoon(ctx context.Context, tx *gorm.DB, withinHours int, limit int) ([]entity.Subscription, error)
 	FindActiveByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID) ([]entity.Subscription, error)
+	FindActiveByIdWithPackage(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Subscription, error)
 	Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	CountActiveUniqueUsersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
@@ -133,6 +134,23 @@ func (r *SubscriptionRepository) FindActiveByTelegramUserID(ctx context.Context,
 		Order("subscriptions.expired_at ASC").
 		Find(&subscriptions).Error
 	return subscriptions, err
+}
+
+// FindActiveByIdWithPackage fetches a single active subscription by its ID
+// with Package + Package.Groups preloaded.
+func (r *SubscriptionRepository) FindActiveByIdWithPackage(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Subscription, error) {
+	var sub entity.Subscription
+	err := tx.WithContext(ctx).
+		Preload("Package", func(db *gorm.DB) *gorm.DB {
+			return db.Unscoped()
+		}).
+		Preload("Package.Groups").
+		Where("id = ? AND status = 'active' AND deleted_at IS NULL", id).
+		First(&sub).Error
+	if err != nil {
+		return nil, err
+	}
+	return &sub, nil
 }
 
 func (r *SubscriptionRepository) Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error {

@@ -151,7 +151,17 @@ func (c *MemberController) Kick(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "ID member tidak valid")
 	}
 
-	if err := c.memberUC.KickMember(ctx.Context(), clientID, userID); err != nil {
+	var subscriptionID *uuid.UUID
+	if sid := ctx.Query("subscription_id", ""); sid != "" {
+		parsed, err := uuid.Parse(sid)
+		if err != nil {
+			log.Warn("member controller kick invalid subscription_id", zap.String("subscription_id", sid))
+			return helper.BadRequest(ctx, "subscription_id tidak valid")
+		}
+		subscriptionID = &parsed
+	}
+
+	if err := c.memberUC.KickMember(ctx.Context(), clientID, userID, subscriptionID); err != nil {
 		log.Error("member controller kick failed", zap.Error(err))
 		return err
 	}

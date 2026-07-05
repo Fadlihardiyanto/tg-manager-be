@@ -10,6 +10,7 @@ import (
 // Package Models
 type PackageCreateRequest struct {
 	Name         string          `json:"name" validate:"required,min=3"`
+	Description  string          `json:"description" validate:"omitempty"`
 	Price        decimal.Decimal `json:"price" validate:"required,min=0"`
 	DurationDays int             `json:"duration_days" validate:"required,min=1"`
 	IsAllAccess  bool            `json:"is_all_access" validate:"omitempty"`
@@ -30,11 +31,12 @@ type PackageResponse struct {
 }
 
 type PackageUpdateRequest struct {
-	Name         string          `json:"name" validate:"omitempty,min=3"`
-	Price        decimal.Decimal `json:"price" validate:"omitempty,min=0"`
-	DurationDays int             `json:"duration_days" validate:"omitempty,min=1"`
-	IsAllAccess  *bool           `json:"is_all_access" validate:"omitempty"`
-	IsActive     *bool           `json:"is_active" validate:"omitempty"`
+	Name         string           `json:"name" validate:"omitempty,min=3"`
+	Description  *string          `json:"description" validate:"omitempty"`
+	Price        *decimal.Decimal `json:"price" validate:"omitempty,min=0"`
+	DurationDays int              `json:"duration_days" validate:"omitempty,min=1"`
+	IsAllAccess  *bool            `json:"is_all_access" validate:"omitempty"`
+	IsActive     *bool            `json:"is_active" validate:"omitempty"`
 }
 
 // Package-Group Association

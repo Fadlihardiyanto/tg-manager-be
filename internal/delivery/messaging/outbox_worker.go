@@ -87,7 +87,11 @@ func (w *OutboxWorker) processEvent(ctx context.Context, event *entity.Outbox) {
 	// 2. Publish to RabbitMQ based on event type
 	switch event.EventType {
 	case "subscription.activated", "subscription.expired", "subscription.cancelled":
-		pubErr = w.publisher.PublishTelegramAction(ctx, payloadMap)
+		if isHighPriority(payloadMap) {
+			pubErr = w.publisher.PublishTelegramActionHigh(ctx, payloadMap)
+		} else {
+			pubErr = w.publisher.PublishTelegramAction(ctx, payloadMap)
+		}
 	case "notification.send":
 		pubErr = w.publisher.PublishNotification(ctx, payloadMap)
 	case "enforcer.kick":
@@ -98,7 +102,11 @@ func (w *OutboxWorker) processEvent(ctx context.Context, event *entity.Outbox) {
 		pubErr = w.publisher.PublishBroadcast(ctx, payloadMap)
 	default:
 		// Default to telegram action for compatibility
-		pubErr = w.publisher.PublishTelegramAction(ctx, payloadMap)
+		if isHighPriority(payloadMap) {
+			pubErr = w.publisher.PublishTelegramActionHigh(ctx, payloadMap)
+		} else {
+			pubErr = w.publisher.PublishTelegramAction(ctx, payloadMap)
+		}
 	}
 
 	// 3. Update status in DB based on publish result
@@ -171,4 +179,13 @@ func (w *OutboxWorker) markAsFailed(ctx context.Context, event *entity.Outbox, e
 	}
 
 	metrics.OutboxEventsProcessed.WithLabelValues(status).Inc()
+}
+
+func isHighPriority(payload map[string]interface{}) bool {
+	if hp, ok := payload["high_priority"]; ok {
+		if v, ok := hp.(bool); ok {
+			return v
+		}
+	}
+	return false
 }

@@ -27,8 +27,10 @@ type IMemberUseCase interface {
 	// FindByID returns the full detail of a single member including all subscription history.
 	FindByID(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) (*model.MemberDetailResponse, error)
 
-	// KickMember cancels active subscription and sends an outbox event to kick the user from Telegram groups.
-	KickMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error
+	// KickMember cancels active subscription(s) and sends outbox events to kick the user from Telegram groups.
+	// If subscriptionID is non-nil, only that specific subscription is cancelled (selective kick).
+	// If nil, all active subscriptions are cancelled (global kick).
+	KickMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, subscriptionID *uuid.UUID) error
 
 	// ExtendMember adds N days to a specific subscription's expiry.
 	ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, req *model.ExtendMemberRequest) error
@@ -133,13 +135,13 @@ func (uc *memberUseCase) FindByID(ctx context.Context, clientID uuid.UUID, userI
 	return converter.MemberDetailToResponse(user, totalOrders), nil
 }
 
-// KickMember cancels the active subscription and queues an outbox event.
-func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error {
+// KickMember cancels active subscription(s) and queues outbox events.
+// subscriptionID=nil → global kick (all active), non-nil → selective kick (single subscription).
+func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, subscriptionID *uuid.UUID) error {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("member usecase KickMember start", zap.String("user_id", userID.String()))
 
 	return uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Find user to get telegram_user_id
 		user, err := uc.tgUserRepo.FindMemberDetailByID(ctx, tx, userID, clientID)
 		if err != nil {
 			return err
@@ -148,47 +150,50 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 			return helper.NewNotFound("Member")
 		}
 
-		// 2. Find active subscriptions for this user & client
-		subs, err := uc.subscriptionRepo.FindActiveByTelegramUserID(ctx, tx, user.TelegramUserID, clientID)
-		if err != nil {
-			return err
-		}
-		if len(subs) == 0 {
-			return helper.NewBadRequest("Member tidak memiliki langganan aktif")
-		}
-
 		now := time.Now()
-		for i := range subs {
-			sub := &subs[i]
-			// Update subscription status
+
+		if subscriptionID != nil {
+			// ── Selective kick: cancel only the specified subscription ──
+			sub, err := uc.subscriptionRepo.FindActiveByIdWithPackage(ctx, tx, *subscriptionID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return helper.NewBadRequest("Langganan tidak ditemukan atau sudah tidak aktif")
+				}
+				return err
+			}
+			if sub.TelegramUserID != user.ID || sub.ClientID != clientID {
+				return helper.NewBadRequest("Langganan tidak ditemukan atau sudah tidak aktif")
+			}
+
 			sub.Status = "cancelled"
 			sub.KickedAt = &now
 			if err := uc.subscriptionRepo.Update(ctx, tx, sub); err != nil {
 				return err
 			}
 
-			// For each group in the package, create an outbox event
-			if sub.Package.ID != uuid.Nil {
-				for _, group := range sub.Package.Groups {
-					payload := map[string]interface{}{
-						"telegram_user_id": user.TelegramUserID,
-						"telegram_chat_id": group.TelegramChatID,
-						"reason":           "manual_kick",
-					}
-					payloadBytes, _ := sonic.Marshal(payload)
+			if err := createKickOutboxEvents(ctx, tx, uc.outboxRepo, sub, user.TelegramUserID, now); err != nil {
+				return err
+			}
+		} else {
+			// ── Global kick: cancel all active subscriptions (existing behavior) ──
+			subs, err := uc.subscriptionRepo.FindActiveByTelegramUserID(ctx, tx, user.TelegramUserID, clientID)
+			if err != nil {
+				return err
+			}
+			if len(subs) == 0 {
+				return helper.NewBadRequest("Member tidak memiliki langganan aktif")
+			}
 
-					outbox := entity.Outbox{
-						AggregateType: "subscription",
-						AggregateID:   sub.ID,
-						EventType:     "member.kick",
-						Payload:       datatypes.JSON(payloadBytes),
-						Status:        "pending",
-						ProcessAfter:  now,
-						RetryCount:    0,
-					}
-					if err := uc.outboxRepo.Create(ctx, tx, &outbox); err != nil {
-						return err
-					}
+			for i := range subs {
+				sub := &subs[i]
+				sub.Status = "cancelled"
+				sub.KickedAt = &now
+				if err := uc.subscriptionRepo.Update(ctx, tx, sub); err != nil {
+					return err
+				}
+
+				if err := createKickOutboxEvents(ctx, tx, uc.outboxRepo, sub, user.TelegramUserID, now); err != nil {
+					return err
 				}
 			}
 		}
@@ -199,7 +204,7 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 			EntityType: "member",
 			EntityID:   userID,
 			Action:     "kick_member",
-			ActorType:  "system", // Ideally user ID from ctx
+			ActorType:  "system",
 			ActorID:    "system",
 			Metadata:   datatypes.JSON(auditLogMeta),
 		}
@@ -209,6 +214,39 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 
 		return nil
 	})
+}
+
+// createKickOutboxEvents creates enforcer.kick outbox events for every group in the subscription's package.
+// ponytail: extracted to deduplicate between global and selective kick paths.
+func createKickOutboxEvents(ctx context.Context, tx *gorm.DB, outboxRepo repository.IOutboxRepository, sub *entity.Subscription, telegramUserID int64, now time.Time) error {
+	if sub.Package.ID == uuid.Nil {
+		return nil
+	}
+	for _, group := range sub.Package.Groups {
+		payload := map[string]interface{}{
+			"telegram_user_id": telegramUserID,
+			"telegram_chat_id": group.TelegramChatID,
+			"bot_id":           group.BotUUID.String(),
+		}
+		payloadBytes, err := sonic.Marshal(payload)
+		if err != nil {
+			return err
+		}
+
+		outbox := entity.Outbox{
+			AggregateType: "subscription",
+			AggregateID:   sub.ID,
+			EventType:     "enforcer.kick",
+			Payload:       datatypes.JSON(payloadBytes),
+			Status:        "pending",
+			ProcessAfter:  now,
+			RetryCount:    0,
+		}
+		if err := outboxRepo.Create(ctx, tx, &outbox); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ExtendMember adds N days to the expiry of a specific subscription.
