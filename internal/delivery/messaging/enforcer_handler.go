@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	json "github.com/bytedance/sonic"
@@ -102,6 +103,12 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 	// then explicitly unban to produce "soft kick" behavior.
 	untilDate := time.Now().Add(35 * time.Second)
 	if err := botClient.KickChatMember(ctx, payload.TelegramChatID, payload.TelegramUserID, untilDate); err != nil {
+		if strings.Contains(err.Error(), "USER_NOT_PARTICIPANT") {
+			h.logger.Warn("enforcer handler: user is not a participant of the group, skipping eviction",
+				append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Int64("chat_id", payload.TelegramChatID))...
+			)
+			return nil // ignore this error, successfully consumed
+		}
 		h.logger.Error("enforcer handler: failed to kick chat member", append(logFields, zap.Error(err))...)
 		return err
 	}

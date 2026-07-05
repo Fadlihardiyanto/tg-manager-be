@@ -39,7 +39,7 @@ type IMemberUseCase interface {
 	SyncMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error
 
 	// ResendLink creates a resend_link outbox event for the user's active subscriptions.
-	ResendLink(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error
+	ResendLink(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, subscriptionID *uuid.UUID) error
 }
 
 type memberUseCase struct {
@@ -354,7 +354,7 @@ func (uc *memberUseCase) SyncMember(ctx context.Context, clientID uuid.UUID, use
 }
 
 // ResendLink creates a resend_link outbox event for the user's active subscriptions.
-func (uc *memberUseCase) ResendLink(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error {
+func (uc *memberUseCase) ResendLink(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, subscriptionID *uuid.UUID) error {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("member usecase ResendLink start", zap.String("user_id", userID.String()))
 
@@ -366,10 +366,27 @@ func (uc *memberUseCase) ResendLink(ctx context.Context, clientID uuid.UUID, use
 		return helper.NewNotFound("Member")
 	}
 
-	subs, err := uc.subscriptionRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, user.TelegramUserID, clientID)
-	if err != nil {
-		return err
+	var subs []entity.Subscription
+	if subscriptionID != nil {
+		sub, err := uc.subscriptionRepo.FindActiveByIdWithPackage(ctx, uc.db.Gorm, *subscriptionID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return helper.NewNotFound("Langganan aktif tidak ditemukan")
+			}
+			return err
+		}
+		if sub.ClientID != clientID || sub.TelegramUserID != user.ID {
+			return helper.NewNotFound("Langganan aktif tidak ditemukan")
+		}
+		subs = append(subs, *sub)
+	} else {
+		var err error
+		subs, err = uc.subscriptionRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, user.TelegramUserID, clientID)
+		if err != nil {
+			return err
+		}
 	}
+
 	if len(subs) == 0 {
 		return helper.NewBadRequest("Member tidak memiliki langganan aktif")
 	}

@@ -52,6 +52,8 @@ type clientBillingUseCase struct {
 	midtransClient *midtrans.Client
 	redis          *redis.Client
 	log            *zap.Logger
+	appBaseURL     string
+	appFrontendURL string
 }
 
 func NewClientBillingUseCase(
@@ -65,6 +67,8 @@ func NewClientBillingUseCase(
 	midtransClient *midtrans.Client,
 	redisClient *redis.Client,
 	log *zap.Logger,
+	appBaseURL string,
+	appFrontendURL string,
 ) IClientBillingUseCase {
 	return &clientBillingUseCase{
 		db:                   db,
@@ -77,6 +81,8 @@ func NewClientBillingUseCase(
 		midtransClient:       midtransClient,
 		redis:                redisClient,
 		log:                  log,
+		appBaseURL:           appBaseURL,
+		appFrontendURL:       appFrontendURL,
 	}
 }
 
@@ -199,6 +205,10 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 			Duration: 24,
 			Unit:     "hour",
 		},
+		Callbacks: &midtrans.SnapCallbacks{
+			Finish: fmt.Sprintf("%s/dashboard/billing?status=success", uc.appFrontendURL),
+		},
+		NotificationURL: fmt.Sprintf("%s/webhooks/midtrans", uc.appBaseURL),
 	}
 
 	// Append discount line item jika ada diskon

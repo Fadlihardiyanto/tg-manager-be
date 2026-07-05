@@ -237,7 +237,17 @@ func (c *MemberController) ResendLink(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "ID member tidak valid")
 	}
 
-	if err := c.memberUC.ResendLink(ctx.Context(), clientID, userID); err != nil {
+	var subscriptionID *uuid.UUID
+	if subIDStr := ctx.Query("subscription_id"); subIDStr != "" {
+		id, err := uuid.Parse(subIDStr)
+		if err != nil {
+			log.Warn("member controller resend link invalid subscription_id", zap.Error(err))
+			return helper.BadRequest(ctx, "ID langganan tidak valid")
+		}
+		subscriptionID = &id
+	}
+
+	if err := c.memberUC.ResendLink(ctx.Context(), clientID, userID, subscriptionID); err != nil {
 		log.Error("member controller resend link failed", zap.Error(err))
 		return err
 	}

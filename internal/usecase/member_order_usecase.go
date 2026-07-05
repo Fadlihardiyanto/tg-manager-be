@@ -45,6 +45,8 @@ type memberOrderUseCase struct {
 	encryptionKey    string
 	midtransBaseURL  string
 	midtransSnapURL  string
+	appBaseURL       string
+	appFrontendURL   string
 }
 
 func NewMemberOrderUseCase(
@@ -63,6 +65,8 @@ func NewMemberOrderUseCase(
 	encryptionKey string,
 	midtransBaseURL string,
 	midtransSnapURL string,
+	appBaseURL string,
+	appFrontendURL string,
 ) IMemberOrderUseCase {
 	return &memberOrderUseCase{
 		db:               db,
@@ -80,6 +84,8 @@ func NewMemberOrderUseCase(
 		encryptionKey:    encryptionKey,
 		midtransBaseURL:  midtransBaseURL,
 		midtransSnapURL:  midtransSnapURL,
+		appBaseURL:       appBaseURL,
+		appFrontendURL:   appFrontendURL,
 	}
 }
 
@@ -334,6 +340,10 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 			Duration: expiryDuration,
 			Unit:     "hour",
 		},
+		Callbacks: &midtrans.SnapCallbacks{
+			Finish: fmt.Sprintf("%s/checkout/success?slug=%s&order_id=%s", uc.appFrontendURL, client.Slug, externalID),
+		},
+		NotificationURL: fmt.Sprintf("%s/webhooks/midtrans", uc.appBaseURL),
 	}
 
 	if discountAmount.GreaterThan(decimal.Zero) && appliedDiscountID != nil {
