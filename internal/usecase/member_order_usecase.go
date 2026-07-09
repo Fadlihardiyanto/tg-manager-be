@@ -192,18 +192,9 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 	var customerName string
 	var customerPhone string
 	if tgUser == nil {
-		userUUID = uuid.New()
-		customerName = req.FirstName
-		if req.LastName != "" {
-			customerName = fmt.Sprintf("%s %s", req.FirstName, req.LastName)
-		}
-		if customerName == "" {
-			customerName = req.Username
-		}
-		if customerName == "" {
-			customerName = fmt.Sprintf("User-%d", req.TelegramUserID)
-		}
-		customerPhone = req.Phone
+	userUUID = uuid.New()
+	customerName = buildCustomerName(req.FirstName, req.LastName, req.Username, req.TelegramUserID)
+	customerPhone = req.Phone
 
 		newUser := &entity.TelegramUser{
 			ID:             userUUID,
@@ -221,18 +212,9 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 			return nil, fmt.Errorf("gagal mendaftarkan user baru")
 		}
 	} else {
-		userUUID = tgUser.ID
-		customerName = tgUser.FirstName
-		if tgUser.LastName != "" {
-			customerName = fmt.Sprintf("%s %s", tgUser.FirstName, tgUser.LastName)
-		}
-		if customerName == "" {
-			customerName = tgUser.Username
-		}
-		if customerName == "" {
-			customerName = fmt.Sprintf("User-%d", tgUser.TelegramUserID)
-		}
-		customerPhone = tgUser.Phone
+	userUUID = tgUser.ID
+	customerName = buildCustomerName(tgUser.FirstName, tgUser.LastName, tgUser.Username, tgUser.TelegramUserID)
+	customerPhone = tgUser.Phone
 	}
 
 	// 4. Check for existing pending orders for this package to prevent duplicate links
@@ -495,18 +477,8 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 
 	// 6. Translate Midtrans Status
 	log.Info("member order webhook translating status", zap.String("order_id", req.OrderID), zap.String("transaction_status", req.TransactionStatus))
-	var newStatus string
-	switch {
-	case notification.IsSuccess():
-		log.Info("member order webhook transaction successful", zap.String("order_id", req.OrderID))
-		newStatus = "paid"
-	case notification.IsExpired():
-		log.Info("member order webhook transaction expired", zap.String("order_id", req.OrderID))
-		newStatus = "expired"
-	case notification.IsFailed():
-		log.Info("member order webhook transaction failed", zap.String("order_id", req.OrderID))
-		newStatus = "failed"
-	default:
+	newStatus, handled := mapMemberOrderWebhookStatus(notification)
+	if !handled {
 		log.Info("member order webhook unhandled status, skipping", zap.String("order_id", req.OrderID), zap.String("transaction_status", req.TransactionStatus))
 		return nil
 	}
@@ -599,27 +571,17 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 			var expiredAt time.Time
 
 			if existingSub != nil {
-				log.Info("member order webhook found existing subscription", zap.String("sub_id", existingSub.ID.String()))
-				// STACKING LOGIC: Extend expiration date of active subscription
-				subID = existingSub.ID
-				activatedAt = existingSub.ActivatedAt
-				expiredAt = existingSub.ExpiredAt.AddDate(0, 0, pkg.DurationDays)
-
+				log.Info("member order webhook found existing subscription, stacking", zap.String("sub_id", existingSub.ID.String()))
+				subID, activatedAt, expiredAt = calculateMemberSubscriptionDates(existingSub, pkg.DurationDays, now)
 				existingSub.ExpiredAt = expiredAt
 				existingSub.OrderID = &order.ID
 				existingSub.UpdatedAt = now
-
 				if err := uc.subRepo.Update(ctx, tx, existingSub); err != nil {
 					return err
 				}
-				log.Info("member order webhook stacking subscription extended", zap.String("sub_id", subID.String()), zap.Time("new_expiry", expiredAt))
 			} else {
-				// ACTIVATION LOGIC: Create new subscription
-				log.Info("member order webhook no existing subscription, creating new one", zap.String("telegram_user_id", order.TelegramUserID.String()), zap.String("package_id", order.PackageID.String()))
-				subID = uuid.New()
-				activatedAt = now
-				expiredAt = now.AddDate(0, 0, pkg.DurationDays)
-
+				log.Info("member order webhook no existing subscription, creating new one")
+				subID, activatedAt, expiredAt = calculateMemberSubscriptionDates(nil, pkg.DurationDays, now)
 				newSub := &entity.Subscription{
 					ID:               subID,
 					TelegramUserID:   order.TelegramUserID,
@@ -839,4 +801,43 @@ func (uc *memberOrderUseCase) acquireMemberLock(ctx context.Context, telegramUse
 	}
 
 	return unlockFn, nil
+}
+
+func buildCustomerName(firstName, lastName, username string, telegramUserID int64) string {
+	name := firstName
+	if lastName != "" {
+		if firstName != "" {
+			name = firstName + " " + lastName
+		} else {
+			name = lastName
+		}
+	}
+	if name == "" {
+		name = username
+	}
+	if name == "" {
+		name = fmt.Sprintf("User-%d", telegramUserID)
+	}
+	return name
+}
+
+func mapMemberOrderWebhookStatus(n *midtrans.WebhookNotification) (string, bool) {
+	switch {
+	case n.IsSuccess():
+		return "paid", true
+	case n.IsExpired():
+		return "expired", true
+	case n.IsFailed():
+		return "failed", true
+	default:
+		return "", false
+	}
+}
+
+func calculateMemberSubscriptionDates(existingSub *entity.Subscription, durationDays int, now time.Time) (uuid.UUID, time.Time, time.Time) {
+	if existingSub != nil {
+		return existingSub.ID, existingSub.ActivatedAt, existingSub.ExpiredAt.AddDate(0, 0, durationDays)
+	}
+	subID := uuid.New()
+	return subID, now, now.AddDate(0, 0, durationDays)
 }

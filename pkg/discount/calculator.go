@@ -88,7 +88,7 @@ func validate(d *Discount, amount decimal.Decimal) error {
 	}
 
 	if amount.LessThan(d.MinPurchase) {
-		return fmt.Errorf("minimum pembelian Rp%.0f untuk menggunakan diskon ini", d.MinPurchase)
+		return fmt.Errorf("minimum pembelian Rp%s untuk menggunakan diskon ini", d.MinPurchase.String())
 	}
 
 	return nil

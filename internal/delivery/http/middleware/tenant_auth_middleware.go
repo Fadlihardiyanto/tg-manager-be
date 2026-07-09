@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
@@ -26,7 +25,6 @@ func TenantAuth(jwtConfig *pkg_jwt.JWTConfig) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		authHeader := ctx.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			fmt.Println("Authorization header missing or does not start with Bearer")
 			return helper.NewUnauthorized("Token autentikasi diperlukan")
 		}
 

@@ -376,15 +376,8 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 	}
 
 	// 5. Tentukan status baru berdasarkan notifikasi Midtrans
-	var newStatus string
-	switch {
-	case notification.IsSuccess():
-		newStatus = "active"
-	case notification.IsExpired():
-		newStatus = "past_due"
-	case notification.IsFailed():
-		newStatus = "cancelled"
-	default:
+	newStatus, handled := mapClientBillingWebhookStatus(notification)
+	if !handled {
 		// Status tidak dikenal (e.g. 'pending', 'authorize') — skip, tunggu webhook berikutnya
 		uc.log.Info("client billing webhook: unhandled transaction status, skipping",
 			zap.String("order_id", req.OrderID),
@@ -669,11 +662,7 @@ func (uc *clientBillingUseCase) GetBillingHistory(ctx context.Context, clientID 
 
 // calculateBilling menghitung amount dan expired_at berdasarkan billing cycle
 func (uc *clientBillingUseCase) calculateBilling(plan *entity.PlatformPlan, cycle string) (decimal.Decimal, time.Time) {
-	now := time.Now()
-	if cycle == "yearly" {
-		return plan.PriceYearly, now.AddDate(1, 0, 0)
-	}
-	return plan.PriceMonthly, now.AddDate(0, 1, 0)
+	return calculateBillingAt(plan, cycle, time.Now())
 }
 
 // calculateBillingWithTransition menghitung amount, startedAt, dan expiredAt
@@ -906,4 +895,24 @@ func (uc *clientBillingUseCase) acquireBillingLock(ctx context.Context, clientID
 	}
 
 	return unlockFn, nil
+}
+
+func mapClientBillingWebhookStatus(n *midtrans.WebhookNotification) (string, bool) {
+	switch {
+	case n.IsSuccess():
+		return "active", true
+	case n.IsExpired():
+		return "past_due", true
+	case n.IsFailed():
+		return "cancelled", true
+	default:
+		return "", false
+	}
+}
+
+func calculateBillingAt(plan *entity.PlatformPlan, cycle string, now time.Time) (decimal.Decimal, time.Time) {
+	if cycle == "yearly" {
+		return plan.PriceYearly, now.AddDate(1, 0, 0)
+	}
+	return plan.PriceMonthly, now.AddDate(0, 1, 0)
 }

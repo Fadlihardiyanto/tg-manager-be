@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"fmt"
-
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -14,7 +12,6 @@ import (
 func Authorize(permission string) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		roles := GetAdminRoles(ctx)
-		fmt.Printf("Authorizing permission '%s' for admin with roles %v\n", permission, roles)
 
 		// Superadmin bypass semua permission check
 		if rbac.IsSuperAdmin(roles) {

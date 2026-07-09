@@ -91,10 +91,12 @@ func RequireAnyPermission(permissions ...string) fiber.Handler {
 func RequireRole(roles ...string) fiber.Handler {
 	return func(ctx fiber.Ctx) error {
 		adminRoles := getAdminRoles(ctx)
-		if !rbac.HasAnyPermission(adminRoles, roles...) {
-			return fiber.NewError(fiber.StatusForbidden, "forbidden: insufficient role")
+		for _, r := range roles {
+			if rbac.HasRole(adminRoles, r) {
+				return ctx.Next()
+			}
 		}
-		return ctx.Next()
+		return fiber.NewError(fiber.StatusForbidden, "forbidden: insufficient role")
 	}
 }
 
