@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
@@ -15,6 +14,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"golang.org/x/text/language"
@@ -31,6 +31,7 @@ type PackageSelectHandler struct {
 	memberOrderUC   IMemberOrderUseCase
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
+	redisClient     *redis.Client
 	log             *zap.Logger
 }
 
@@ -38,12 +39,14 @@ func NewPackageSelectHandler(
 	memberOrderUC IMemberOrderUseCase,
 	factory telegram.BotFactory,
 	encKey string,
+	redisClient *redis.Client,
 	log *zap.Logger,
 ) *PackageSelectHandler {
 	return &PackageSelectHandler{
 		memberOrderUC:   memberOrderUC,
 		telegramFactory: factory,
 		encryptionKey:   encKey,
+		redisClient:     redisClient,
 		log:             log,
 	}
 }
@@ -57,9 +60,9 @@ func (h *PackageSelectHandler) AllowedRoles() []string {
 }
 
 func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.TelegramBot, query *tgbotapi.CallbackQuery) error {
-	h.log.Info("executing package select callback", zap.Int64("user_id", query.From.ID), zap.String("bot_id", bot.ID.String()))
+	userID := query.From.ID
+	h.log.Info("executing package select callback", zap.Int64("user_id", userID), zap.String("bot_id", bot.ID.String()))
 
-	// Initialize Telegram Client
 	token, err := crypto.Decrypt(bot.Token, h.encryptionKey)
 	if err != nil {
 		h.log.Error("failed to decrypt token", zap.Error(err))
@@ -72,16 +75,17 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 		return err
 	}
 
-	// 1. Answer Callback Query to stop loading animation
-	callbackCfg := tgbotapi.NewCallback(query.ID, "")
-	if _, err := botClient.Request(ctx, callbackCfg); err != nil {
-		h.log.Warn("failed to answer callback query", zap.Error(err))
+	chatID := int64(0)
+	messageID := 0
+	if query.Message != nil {
+		chatID = query.Message.Chat.ID
+		messageID = query.Message.MessageID
 	}
 
-	// 2. Check for cancel action
+	// 1. Cancel action — no lock needed
 	if query.Data == h.Prefix()+"cancel" {
 		if query.Message != nil {
-			delMsg := tgbotapi.NewDeleteMessage(query.Message.Chat.ID, query.Message.MessageID)
+			delMsg := tgbotapi.NewDeleteMessage(chatID, messageID)
 			if _, err := botClient.Request(ctx, delMsg); err != nil {
 				h.log.Warn("failed to delete message on cancel", zap.Error(err))
 			}
@@ -89,19 +93,52 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 		return nil
 	}
 
-	// 3. Extract Package ID
-	// Data format: "pkg_sel:uuid" or "pkg_sel:uuid:1" (forced)
+	// 2. Redis lock — prevent spam clicks
+	lockKey := fmt.Sprintf("lock:tg_checkout:%d", userID)
+	lockTTL := 10 * time.Second
+
+	var acquired bool
+	if h.redisClient != nil {
+		acquired, err = h.redisClient.SetNX(ctx, lockKey, "1", lockTTL).Result()
+		if err != nil {
+			h.log.Warn("redis lock error, proceeding without lock", zap.Error(err))
+			acquired = true
+		}
+	} else {
+		acquired = true
+	}
+
+	if !acquired {
+		alert := tgbotapi.NewCallback(query.ID, "Mohon tunggu, pesanan Anda sedang diproses...")
+		alert.ShowAlert = true
+		if _, err := botClient.Request(ctx, alert); err != nil {
+			h.log.Warn("failed to answer callback with alert", zap.Error(err))
+		}
+		return nil
+	}
+	defer func() {
+		if h.redisClient != nil {
+			h.redisClient.Del(ctx, lockKey)
+		}
+	}()
+
+	// 3. Answer callback — stop loading spinner
+	callbackCfg := tgbotapi.NewCallback(query.ID, "")
+	if _, err := botClient.Request(ctx, callbackCfg); err != nil {
+		h.log.Warn("failed to answer callback query", zap.Error(err))
+	}
+
+	// 4. Extract package ID
 	parts := strings.Split(query.Data, ":")
 	if len(parts) < 2 {
 		h.log.Error("invalid callback data format", zap.String("data", query.Data))
-		return fmt.Errorf("invalid callback data format")
+		return nil
 	}
 
-	packageIDStr := parts[1]
-	packageID, err := uuid.Parse(packageIDStr)
+	packageID, err := uuid.Parse(parts[1])
 	if err != nil {
-		h.log.Error("invalid package ID in callback data", zap.String("package_id", packageIDStr))
-		return fmt.Errorf("invalid package id")
+		h.log.Error("invalid package ID in callback data", zap.String("package_id", parts[1]))
+		return nil
 	}
 
 	isForced := false
@@ -109,15 +146,12 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 		isForced = true
 	}
 
-	// 2.5. Check for active subscription
+	// 5. Check active subscription — edit original message with confirmation
 	if !isForced {
-		checkResult, err := h.memberOrderUC.CheckActiveSubscriptions(ctx, query.From.ID, packageID)
+		checkResult, err := h.memberOrderUC.CheckActiveSubscriptions(ctx, userID, packageID)
 		if err != nil {
 			h.log.Error("failed to check active subscriptions", zap.Error(err))
-			// fallback: continue to checkout if checking fails
 		} else if checkResult != nil && (checkResult.SamePackage != nil || checkResult.AllAccess != nil) {
-			h.log.Info("active subscription found, asking for confirmation")
-
 			loc, _ := time.LoadLocation("Asia/Jakarta")
 			var replyText string
 
@@ -126,7 +160,7 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 				expiredStr := activeSub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
 				pkgName := activeSub.Package.Name
 				if pkgName == "" {
-					pkgName = "ini" // fallback if preload failed
+					pkgName = "ini"
 				}
 				replyText = fmt.Sprintf("⚠️ <b>Perhatian!</b>\n\nAnda saat ini sudah memiliki paket <b>%s</b> yang masih aktif dan baru akan kedaluwarsa pada <b>%s</b>.\n\nApakah Anda tetap ingin melanjutkan pembelian? (Masa aktif akan otomatis diakumulasikan/diperpanjang).", pkgName, expiredStr)
 			} else if checkResult.AllAccess != nil {
@@ -139,46 +173,46 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 				replyText = fmt.Sprintf("⚠️ <b>Perhatian!</b>\n\nAnda saat ini sudah memiliki paket <b>%s</b> (Akses Semua Grup) yang masih aktif sampai <b>%s</b>.\n\nPaket yang sedang Anda pilih saat ini mungkin tidak berguna karena Anda sudah memiliki akses ke semua grup.\n\nApakah Anda YAKIN tetap ingin melanjutkan pembelian?", pkgName, expiredStr)
 			}
 
-			var chatID int64
-			if query.Message != nil {
-				chatID = query.Message.Chat.ID
-			} else {
-				chatID = query.From.ID
-			}
-
-			replyMsg := tgbotapi.NewMessage(chatID, replyText)
-			replyMsg.ParseMode = tgbotapi.ModeHTML
-
 			confirmData := fmt.Sprintf("%s%s:1", h.Prefix(), packageID.String())
 			keyboard := tgbotapi.NewInlineKeyboardMarkup(
 				tgbotapi.NewInlineKeyboardRow(
 					tgbotapi.NewInlineKeyboardButtonData("✅ Ya, Tetap Lanjut", confirmData),
 				),
 				tgbotapi.NewInlineKeyboardRow(
-					// Menghapus pesan konfirmasi jika batal
 					tgbotapi.NewInlineKeyboardButtonData("❌ Batal", h.Prefix()+"cancel"),
 				),
 			)
-			replyMsg.ReplyMarkup = keyboard
 
-			if _, err := botClient.Send(ctx, replyMsg); err != nil {
-				h.log.Error("failed to send confirmation message", zap.Error(err))
-				return err
+			if chatID != 0 && messageID != 0 {
+				editMsg := tgbotapi.NewEditMessageText(chatID, messageID, replyText)
+				editMsg.ParseMode = tgbotapi.ModeHTML
+				editMsg.ReplyMarkup = &keyboard
+				if _, err := botClient.Send(ctx, editMsg); err != nil {
+					h.log.Error("failed to edit message for confirmation", zap.Error(err))
+				}
 			}
 			return nil
 		}
 	}
 
-	// 3. Prepare Checkout Request
+	// 6. Show processing message — edit original message in-place
+	if chatID != 0 && messageID != 0 {
+		processingMsg := tgbotapi.NewEditMessageText(chatID, messageID, "⏳ <b>Sedang memproses pesanan...</b>\n\nMohon tunggu sebentar, kami sedang membuat link pembayaran Anda.")
+		processingMsg.ParseMode = tgbotapi.ModeHTML
+		if _, err := botClient.Send(ctx, processingMsg); err != nil {
+			h.log.Warn("failed to show processing message", zap.Error(err))
+		}
+	}
+
+	// 7. Call Checkout
 	checkoutReq := &model.MemberCheckoutRequest{
 		PackageID:      packageID,
-		TelegramUserID: query.From.ID,
+		TelegramUserID: userID,
 		Username:       query.From.UserName,
 		FirstName:      query.From.FirstName,
 		LastName:       query.From.LastName,
 	}
 
-	// 4. Call Checkout UseCase
 	h.log.Info("initiating checkout", zap.String("package_id", packageID.String()), zap.Bool("is_forced", isForced))
 	checkoutResp, err := h.memberOrderUC.Checkout(ctx, checkoutReq)
 
@@ -190,24 +224,16 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 		replyText = buildCheckoutSuccessMessage(checkoutResp)
 	}
 
-	// 5. Send new message with payment link (Reply to the original message chat)
-	var chatID int64
-	if query.Message != nil {
-		chatID = query.Message.Chat.ID
-	} else {
-		// Fallback if message is somehow missing (e.g., inline bot), though rare for our flow
-		chatID = query.From.ID
+	// 8. Edit original message with result
+	if chatID != 0 && messageID != 0 {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, replyText)
+		editMsg.ParseMode = tgbotapi.ModeHTML
+		if _, err := botClient.Send(ctx, editMsg); err != nil {
+			h.log.Warn("failed to edit message with result", zap.Error(err))
+		}
 	}
 
-	replyMsg := tgbotapi.NewMessage(chatID, replyText)
-	replyMsg.ParseMode = tgbotapi.ModeHTML
-
-	if _, err := botClient.Send(ctx, replyMsg); err != nil {
-		h.log.Error("failed to send payment reply", zap.Error(err))
-		return err
-	}
-
-	h.log.Info("successfully replied with payment link")
+	h.log.Info("successfully processed package selection")
 	return nil
 }
 

@@ -55,6 +55,9 @@ func (c *MemberOrderController) Webhook(ctx fiber.Ctx) error {
 		c.log.Warn("member webhook: invalid request body", zap.Error(err))
 		return helper.BadRequest(ctx, "Format request tidak valid")
 	}
+	if rawBody, ok := ctx.Locals("midtrans_raw_body").(string); ok {
+		req.RawNotification = rawBody
+	}
 
 	if err := c.orderUC.HandleWebhook(ctx.Context(), &req); err != nil {
 		c.log.Error("member webhook: handle failed", zap.Error(err), zap.String("order_id", req.OrderID))

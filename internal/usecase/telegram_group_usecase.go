@@ -30,6 +30,7 @@ type ITelegramGroupUseCase interface {
 	Delete(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
 	GenerateConnectToken(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (string, string, error)
 	CheckConnectStatus(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, token string) (string, error)
+	SyncMemberCounts(ctx context.Context) error
 }
 
 type TelegramGroupUseCase struct {
@@ -41,6 +42,7 @@ type TelegramGroupUseCase struct {
 	redisClient     *redis.Client
 	log             *zap.Logger
 	encryptionKey   string
+	syncFunc        func(ctx context.Context)
 }
 
 func NewTelegramGroupUseCase(
@@ -52,6 +54,7 @@ func NewTelegramGroupUseCase(
 	redisClient *redis.Client,
 	log *zap.Logger,
 	encryptionKey string,
+	syncFunc func(ctx context.Context),
 ) ITelegramGroupUseCase {
 	return &TelegramGroupUseCase{
 		db:              db,
@@ -62,6 +65,7 @@ func NewTelegramGroupUseCase(
 		redisClient:     redisClient,
 		log:             log,
 		encryptionKey:   encryptionKey,
+		syncFunc:        syncFunc,
 	}
 }
 
@@ -343,4 +347,13 @@ func (uc *TelegramGroupUseCase) CheckConnectStatus(ctx context.Context, clientID
 	}
 
 	return "pending", nil
+}
+
+func (uc *TelegramGroupUseCase) SyncMemberCounts(ctx context.Context) error {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("group usecase sync member counts start")
+
+	go uc.syncFunc(context.Background())
+
+	return nil
 }

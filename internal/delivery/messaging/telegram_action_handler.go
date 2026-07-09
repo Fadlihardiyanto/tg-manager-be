@@ -76,6 +76,11 @@ type SubscriptionActivatedPayload struct {
 	IsResend       bool   `json:"is_resend"`
 }
 
+type groupInvite struct {
+	Name string
+	URL  string
+}
+
 func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	messageID := trace.MessageIDFromContext(ctx)
 	correlationID := trace.CorrelationIDFromContext(ctx)
@@ -132,7 +137,7 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	}
 
 	// 4. Generate Invite Links for each group using the correct bot.
-	var inviteLinks []string
+	var inviteLinks []groupInvite
 	var failedGroups []string
 	var dmClient telegram.BotClient
 	subIDPrefix := payload.SubscriptionID
@@ -184,7 +189,7 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 				failedGroups = append(failedGroups, group.Name)
 				continue
 			}
-			inviteLinks = append(inviteLinks, fmt.Sprintf("• %s: %s", group.Name, inviteLink))
+			inviteLinks = append(inviteLinks, groupInvite{Name: group.Name, URL: inviteLink})
 		}
 	}
 
@@ -198,14 +203,7 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		// Continue to send DM — user gets a message explaining the issue (no DLQ)
 	}
 
-	// 5. Generate Receipt PDF and Upload to S3 (skip for resend link — no order data)
-	var receiptPDFBytes []byte
-	var receiptURL string
-	if !payload.IsResend {
-		receiptPDFBytes, receiptURL, _ = h.generateReceipt(ctx, payload, pkg, logFields)
-	}
-
-	// 6. Fetch Subscription for Expiration Date
+	// 5. Fetch Subscription for Expiration Date
 	subID, err := uuid.Parse(payload.SubscriptionID)
 	if err != nil {
 		h.logger.Error("telegram action handler: invalid subscription id", append(logFields, zap.String("subscription_id", payload.SubscriptionID))...)
@@ -218,34 +216,50 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		return fmt.Errorf("failed to fetch subscription: %w", err)
 	}
 
+	// 6. Generate Receipt PDF and Upload to S3 (skip for resend link — no order data)
+	var receiptPDFBytes []byte
+	if !payload.IsResend {
+		receiptPDFBytes, _, _ = h.generateReceipt(ctx, payload, pkg, sub.ExpiredAt, logFields)
+	}
+
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	expiredStr := sub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
 
-	// 7. Build DM message
+	// 7. Build DM message text (no links — links are inline buttons)
 	var message string
 	if payload.IsResend {
 		if len(inviteLinks) == 0 {
 			message = fmt.Sprintf("⚠️ Mohon maaf, kami mengalami kendala teknis saat membuat link akses untuk paket <b>%s</b>.\nSilakan hubungi Admin untuk bantuan lebih lanjut.", pkg.Name)
 		} else {
-			message = fmt.Sprintf("👋 Halo!\n\nBerikut adalah link akses ulang Anda untuk masuk ke grup paket <b>%s</b>.\n\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, strings.Join(inviteLinks, "\n"))
+			message = fmt.Sprintf("👋 Halo!\n\nBerikut adalah link akses ulang Anda untuk masuk ke grup paket <b>%s</b>.\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name)
 		}
 	} else {
 		if len(inviteLinks) == 0 {
 			message = fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\n⚠️ Mohon maaf, kami mengalami kendala teknis saat membuat link akses grup.\nSilakan hubungi Admin untuk bantuan lebih lanjut.", pkg.Name, expiredStr)
 		} else {
-			message = fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\nBerikut adalah link khusus untuk masuk ke grup:\n%s\n\n<i>Link ini hanya berlaku untuk 1 kali pakai.</i>", pkg.Name, expiredStr, strings.Join(inviteLinks, "\n"))
+			message = fmt.Sprintf("🎉 Pembayaran Berhasil!\n\nTerima kasih telah berlangganan paket <b>%s</b>.\nPaket Anda aktif sampai: <b>%s</b>\n\nSilakan klik tombol di bawah untuk masuk ke grup:", pkg.Name, expiredStr)
 		}
 	}
 
-	if receiptURL != "" {
-		message = fmt.Sprintf("%s\n\n📄 <a href=\"%s\">Download Kwitansi Pembayaran</a>", message, receiptURL)
-	}
 	if len(failedGroups) > 0 {
 		message = fmt.Sprintf("%s\n\n⚠️ Gagal membuat link untuk: %s. Silakan hubungi admin.", message, strings.Join(failedGroups, ", "))
 	}
 
+	// 8. Build inline keyboard from invite links
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, invite := range inviteLinks {
+		btn := tgbotapi.NewInlineKeyboardButtonURL("🔗 Gabung: "+invite.Name, invite.URL)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(btn))
+	}
+
+	// 9. Send message with inline keyboard
 	if dmClient != nil {
-		if err := dmClient.SendMessage(ctx, payload.TelegramUserID, message); err != nil {
+		msg := tgbotapi.NewMessage(payload.TelegramUserID, message)
+		msg.ParseMode = "HTML"
+		if len(rows) > 0 {
+			msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+		}
+		if _, err := dmClient.Send(ctx, msg); err != nil {
 			h.logger.Error("telegram action handler: failed to send dm", append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Error(err))...)
 			return fmt.Errorf("failed to send dm: %w", err)
 		}
@@ -256,10 +270,10 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	// 8. Send PDF document AFTER text DM (so user reads the welcome message first)
 	if receiptPDFBytes != nil && dmClient != nil {
 		doc := tgbotapi.NewDocument(payload.TelegramUserID, tgbotapi.FileBytes{
-			Name:  "kwitansi.pdf",
+			Name:  "bukti pembayaran.pdf",
 			Bytes: receiptPDFBytes,
 		})
-		doc.Caption = fmt.Sprintf("Kwitansi pembayaran paket %s", pkg.Name)
+		doc.Caption = fmt.Sprintf("Bukti Pembayaran Paket %s", pkg.Name)
 		if _, err := dmClient.SendDocument(ctx, doc); err != nil {
 			h.logger.Warn("telegram action handler: failed to send receipt document", append(logFields, zap.Error(err))...)
 			// non-fatal — text DM with receipt URL link already delivered
@@ -277,6 +291,7 @@ func (h *TelegramActionHandler) generateReceipt(
 	ctx context.Context,
 	payload SubscriptionActivatedPayload,
 	pkg *entity.Package,
+	subExpiredAt time.Time,
 	logFields []zap.Field,
 ) ([]byte, string, error) {
 	// 1. Fetch Order via repository
@@ -343,9 +358,18 @@ func (h *TelegramActionHandler) generateReceipt(
 		paidAt = *order.PaidAt
 	}
 
+	durationText := fmt.Sprintf("%d Hari", pkg.DurationDays)
+
+	oldExpiry := subExpiredAt.AddDate(0, 0, -pkg.DurationDays)
+	remainingDays := int(time.Until(oldExpiry).Hours() / 24)
+	if remainingDays > 0 {
+		durationText += fmt.Sprintf("\nSisa Langganan sebelumnya: %d Hari", remainingDays)
+	}
+	durationText += fmt.Sprintf("\nAktif s.d. %s", subExpiredAt.In(loc).Format("02 Jan 2006"))
+
 	receiptData := &pdf.ReceiptData{
 		MerchantName:    client.Name,
-		OrderID:         order.ID.String(),
+		OrderID:         order.ExternalID,
 		TransactionID:   order.ExternalID,
 		TransactionTime: paidAt.In(loc).Format("02 Januari 2006, 15:04 WIB"),
 		PaymentMethod:   order.PaymentMethod,
@@ -362,7 +386,7 @@ func (h *TelegramActionHandler) generateReceipt(
 		Items: []pdf.ReceiptItem{
 			{
 				Name:     pkg.Name,
-				Duration: fmt.Sprintf("%d Hari", pkg.DurationDays),
+				Duration: durationText,
 				Qty:      1,
 				Price:    pkg.Price,
 				Subtotal: pkg.Price,

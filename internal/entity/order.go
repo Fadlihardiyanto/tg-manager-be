@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"gorm.io/datatypes"
 )
 
 type Order struct {
@@ -22,8 +23,9 @@ type Order struct {
 	ClientID       uuid.UUID  `gorm:"type:uuid;index;not null"`
 	SubscriptionID *uuid.UUID `gorm:"type:uuid"`
 	PaymentURL     string     `gorm:"type:varchar(500)"`
-	ReceiptURL     string     `gorm:"type:varchar(500);column:receipt_url"`
-	ExpiredAt      *time.Time
+	ReceiptURL       string         `gorm:"type:varchar(500);column:receipt_url"`
+	RawNotification  datatypes.JSON `gorm:"type:jsonb;column:raw_notification"`
+	ExpiredAt        *time.Time
 	CreatedAt      time.Time `gorm:"default:CURRENT_TIMESTAMP"`
 	UpdatedAt      time.Time `gorm:"default:CURRENT_TIMESTAMP"`
 	DeletedAt      *time.Time

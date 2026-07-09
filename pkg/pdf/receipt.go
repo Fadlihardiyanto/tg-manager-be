@@ -1,221 +1,451 @@
+//go:build oldreceipt
+
 package pdf
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 	"time"
 
-	"github.com/shopspring/decimal"
+	"github.com/johnfercher/maroto/v2"
+	"github.com/johnfercher/maroto/v2/pkg/components/col"
+	"github.com/johnfercher/maroto/v2/pkg/components/image"
+	"github.com/johnfercher/maroto/v2/pkg/components/line"
+	"github.com/johnfercher/maroto/v2/pkg/components/row"
+	"github.com/johnfercher/maroto/v2/pkg/components/text"
+	"github.com/johnfercher/maroto/v2/pkg/config"
+	"github.com/johnfercher/maroto/v2/pkg/consts/align"
+	"github.com/johnfercher/maroto/v2/pkg/consts/border"
+	"github.com/johnfercher/maroto/v2/pkg/consts/extension"
+	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
+	"github.com/johnfercher/maroto/v2/pkg/consts/linestyle"
+	"github.com/johnfercher/maroto/v2/pkg/core"
+	"github.com/johnfercher/maroto/v2/pkg/props"
+	"go.uber.org/zap"
 )
 
-// ─────────────────────────────────────────────────────────────
-// Domain Models
-// ─────────────────────────────────────────────────────────────
-
-// ReceiptItem represents a single line item on the receipt.
-type ReceiptItem struct {
-	Name     string          // e.g. "Premium Plan"
-	Duration string          // e.g. "30 Hari"
-	Qty      int             // quantity (usually 1 for subscriptions)
-	Price    decimal.Decimal // unit price
-	Subtotal decimal.Decimal // Qty * Price
+type Config struct {
+	LogoData []byte
+	LogoExt  string
 }
 
-// ReceiptData holds all information required to render a payment receipt.
-// Construct it from entity.Order, entity.Package, entity.TelegramUser,
-// entity.Client, and Midtrans webhook data.
-type ReceiptData struct {
-	// ── Merchant / Brand ────────────────────────────────────────
-	MerchantName    string // displayed prominently in the header
-	MerchantAddress string // optional, shown below merchant name
-	MerchantLogo    []byte // optional override; falls back to Config.LogoData
-	MerchantLogoExt string // "png" or "jpg" (required when MerchantLogo is set)
-
-	// ── Transaction ─────────────────────────────────────────────
-	OrderID         string    // e.g. "ORD-20260622-ABCD12"
-	TransactionID   string    // Midtrans transaction_id
-	TransactionTime string    // formatted date, e.g. "22 Juni 2026, 14:30 WIB"
-	PaymentType     string    // e.g. "bank_transfer", "gopay", "credit_card"
-	PaymentMethod   string    // display label, e.g. "BCA Virtual Account"
-	Status          string    // "paid", "pending", "expired", "failed"
-	PaidAt          time.Time // when payment was confirmed
-
-	// ── Customer ────────────────────────────────────────────────
-	CustomerName     string // full name
-	CustomerEmail    string
-	CustomerTelegram string // @username
-	CustomerPhone    string
-
-	// ── Line Items ──────────────────────────────────────────────
-	Items []ReceiptItem
-
-	// ── Payment Summary ─────────────────────────────────────────
-	Subtotal       decimal.Decimal // sum of item subtotals
-	DiscountAmount decimal.Decimal // discount applied (0 if none)
-	DiscountLabel  string          // e.g. "Diskon Early Bird (10%)"
-	TotalPaid      decimal.Decimal // final amount paid
-
-	// ── Optional Fields ─────────────────────────────────────────
-	Notes         string    // free-form notes rendered at the bottom
-	GeneratedAt   time.Time // stamped automatically if zero
-	ReceiptNumber string    // optional custom receipt number
-
-	// ── Currency ────────────────────────────────────────────────
-	CurrencyCode string // "IDR" (default), "USD", etc.
+type Client struct {
+	config *Config
+	logger *zap.Logger
 }
 
-// ─────────────────────────────────────────────────────────────
-// Validation
-// ─────────────────────────────────────────────────────────────
+type receiptPDF struct {
+	m      core.Maroto
+	cfg    *Config
+	logger *zap.Logger
+}
 
-// Validate checks that the minimum required fields are present.
-func (d *ReceiptData) Validate() error {
-	if d.OrderID == "" {
-		return fmt.Errorf("order_id is required")
+func NewClient(cfg *Config, logger *zap.Logger) *Client {
+	if cfg == nil {
+		cfg = &Config{}
 	}
-	if d.MerchantName == "" {
-		return fmt.Errorf("merchant_name is required")
+	if logger == nil {
+		logger = zap.NewNop()
 	}
-	if d.CustomerName == "" {
-		return fmt.Errorf("customer_name is required")
+	return &Client{config: cfg, logger: logger}
+}
+
+func (c *Client) GenerateReceipt(data *ReceiptData) ([]byte, error) {
+	pdfBytes, err := GenerateReceipt(data, c.config, c.logger)
+	if err != nil {
+		return nil, err
 	}
-	if len(d.Items) == 0 {
-		return fmt.Errorf("at least one item is required")
+	c.logger.Info("pdf: receipt generated",
+		zap.String("order_id", data.OrderID),
+		zap.Int("bytes", len(pdfBytes)),
+	)
+	return pdfBytes, nil
+}
+
+func (c *Client) GenerateReceiptFile(data *ReceiptData, filePath string) error {
+	if err := GenerateReceiptToFile(data, c.config, c.logger, filePath); err != nil {
+		return err
 	}
-	if d.TotalPaid.IsNegative() {
-		return fmt.Errorf("total_paid must not be negative")
-	}
+	c.logger.Info("pdf: receipt saved to file",
+		zap.String("order_id", data.OrderID),
+		zap.String("path", filePath),
+	)
 	return nil
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
-
-// StatusLabel returns a human-readable Indonesian label for the given status.
-func StatusLabel(status string) string {
-	switch status {
-	case "paid", "settlement":
-		return "LUNAS"
-	case "pending":
-		return "MENUNGGU"
-	case "expired":
-		return "KEDALUWARSA"
-	case "failed", "deny", "cancel", "failure":
-		return "GAGAL"
-	default:
-		return status
-	}
+func newReceiptPDF(cfg *Config, logger *zap.Logger) *receiptPDF {
+	m := maroto.New(config.NewBuilder().
+		WithLeftMargin(14).
+		WithTopMargin(0).
+		WithRightMargin(14).
+		WithBottomMargin(14).
+		Build())
+	return &receiptPDF{m: m, cfg: cfg, logger: logger}
 }
 
-// FormatCurrency formats a decimal amount as Indonesian Rupiah by default,
-// or using the provided currency code.
-// IDR: dot as thousand separator, no decimals (e.g. "Rp 150.000").
-// Non-IDR: comma as thousand separator, dot for decimals (e.g. "USD 1,250.50").
-func FormatCurrency(amount decimal.Decimal, currencyCode string) string {
-	if currencyCode == "" {
-		currencyCode = "IDR"
+func GenerateReceipt(data *ReceiptData, cfg *Config, logger *zap.Logger) ([]byte, error) {
+	if data == nil {
+		return nil, fmt.Errorf("pdf: receipt data is required")
+	}
+	if err := data.Validate(); err != nil {
+		return nil, fmt.Errorf("pdf: invalid receipt data: %w", err)
+	}
+	if data.GeneratedAt.IsZero() {
+		data.GeneratedAt = time.Now()
 	}
 
-	// IDR has no sub-unit — use dot as thousand separator.
-	if currencyCode == "IDR" {
-		intVal := amount.IntPart()
-		if intVal < 0 {
-			return fmt.Sprintf("-%s %s", currencyCode, formatThousandSeparator(-intVal))
+	r := newReceiptPDF(cfg, logger)
+	if err := r.render(data); err != nil {
+		return nil, fmt.Errorf("pdf render: %w", err)
+	}
+	doc, err := r.m.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("pdf generate: %w", err)
+	}
+	return doc.GetBytes(), nil
+}
+
+func GenerateReceiptToWriter(data *ReceiptData, cfg *Config, logger *zap.Logger, w io.Writer) error {
+	b, err := GenerateReceipt(data, cfg, logger)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, bytes.NewReader(b))
+	return err
+}
+
+func GenerateReceiptToFile(data *ReceiptData, cfg *Config, logger *zap.Logger, path string) error {
+	b, err := GenerateReceipt(data, cfg, logger)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
+}
+
+func (r *receiptPDF) render(data *ReceiptData) error {
+	r.renderHeader(data)
+	r.renderStatusBanner(data.Status)
+	r.renderTransactionSection(data)
+	r.renderCustomerSection(data)
+	r.renderItemsSection(data)
+	r.renderSummarySection(data)
+	if data.Notes != "" {
+		r.renderNotesSection(data.Notes)
+	}
+	return r.registerFooter(data)
+}
+
+func (r *receiptPDF) renderHeader(data *ReceiptData) {
+	logoBytes, logoExt := resolveLogo(data, r.cfg)
+	ext, hasLogo := imageExt(logoExt)
+
+	logoCol := col.New(2)
+	if hasLogo && len(logoBytes) > 0 {
+		logoCol = image.NewFromBytesCol(2, logoBytes, ext, props.Rect{
+			Center:  true,
+			Percent: 75,
+		})
+	}
+
+	titleCol := col.New(10).Add(
+		text.New(strings.ToUpper(sanitize(firstNonEmpty(data.MerchantName, "Receipt"))), props.Text{
+			Top:   6,
+			Size:  9,
+			Style: fontstyle.Bold,
+			Color: mutedLight,
+			Align: align.Right,
+		}),
+		text.New("Bukti Pembayaran", props.Text{
+			Top:   11,
+			Size:  16,
+			Style: fontstyle.Bold,
+			Color: white,
+			Align: align.Right,
+		}),
+	)
+	if data.MerchantAddress != "" {
+		titleCol.Add(text.New(sanitize(data.MerchantAddress), props.Text{
+			Top:   22,
+			Size:  7,
+			Color: mutedLight,
+			Align: align.Right,
+		}))
+	}
+
+	r.m.AddRow(30, logoCol, titleCol).WithStyle(&props.Cell{BackgroundColor: navyHeader})
+
+	cur := firstNonEmpty(data.CurrencyCode, "IDR")
+	r.m.AddRow(22,
+		col.New(6).Add(
+			text.New("TOTAL PEMBAYARAN", props.Text{
+				Top:   5,
+				Left:  4,
+				Size:  7,
+				Style: fontstyle.Bold,
+				Color: mutedLight,
+			}),
+			text.New(FormatCurrency(data.TotalPaid, cur), props.Text{
+				Top:   10,
+				Left:  4,
+				Size:  20,
+				Style: fontstyle.Bold,
+				Color: white,
+			}),
+		),
+		col.New(6).Add(
+			text.New("ORDER ID", props.Text{
+				Top:   5,
+				Size:  7,
+				Style: fontstyle.Bold,
+				Color: mutedLight,
+				Align: align.Right,
+			}),
+			text.New(sanitize(data.OrderID), props.Text{
+				Top:   10,
+				Size:  8,
+				Color: white,
+				Align: align.Right,
+				Style: fontstyle.Bold,
+			}),
+			text.New(sanitize(firstNonEmpty(
+				data.TransactionTime,
+				generatedAt(data.PaidAt).Format("02 Jan 2006, 15:04 WIB"),
+			)), props.Text{
+				Top:   17,
+				Size:  7,
+				Color: mutedLight,
+				Align: align.Right,
+			}),
+		),
+	).WithStyle(&props.Cell{BackgroundColor: navyMid})
+}
+
+func (r *receiptPDF) renderStatusBanner(status string) {
+	bg, fg, label := statusColors(status)
+	r.m.AddRow(8,
+		text.NewCol(12, label, props.Text{
+			Top:   2,
+			Size:  9,
+			Style: fontstyle.Bold,
+			Align: align.Center,
+			Color: fg,
+		}),
+	).WithStyle(&props.Cell{BackgroundColor: bg})
+}
+
+func (r *receiptPDF) renderSectionLabel(title string) {
+	r.m.AddRow(7,
+		text.NewCol(12, strings.ToUpper(title), props.Text{
+			Top:   2,
+			Left:  3,
+			Size:  8,
+			Style: fontstyle.Bold,
+			Color: blue,
+		}),
+	).WithStyle(&props.Cell{BackgroundColor: surfaceGray})
+	r.m.AddRows(line.NewRow(1, props.Line{
+		Color:     borderGray,
+		Thickness: 0.3,
+		Style:     linestyle.Solid,
+	}))
+}
+
+func (r *receiptPDF) renderInfoRow(label, value string) {
+	if value == "" {
+		return
+	}
+	r.m.AddRow(6,
+		text.NewCol(4, label, props.Text{Top: 1.5, Size: 8, Color: muted}),
+		text.NewCol(8, sanitize(value), props.Text{
+			Top:   1.5,
+			Size:  8,
+			Color: slate,
+			Style: fontstyle.Bold,
+		}),
+	)
+}
+
+func (r *receiptPDF) renderInfoRowAccent(label, value string) {
+	if value == "" {
+		return
+	}
+	r.m.AddRow(6,
+		text.NewCol(4, label, props.Text{Top: 1.5, Size: 8, Color: muted}),
+		text.NewCol(8, sanitize(value), props.Text{
+			Top:   1.5,
+			Size:  8,
+			Color: blue,
+			Style: fontstyle.Bold,
+		}),
+	)
+}
+
+func (r *receiptPDF) renderTransactionSection(data *ReceiptData) {
+	r.renderSectionLabel("Detail Transaksi")
+	r.renderInfoRow("No. Pesanan", data.OrderID)
+	r.renderInfoRow("ID Transaksi", data.TransactionID)
+	r.renderInfoRow("No. Kwitansi", data.ReceiptNumber)
+	r.renderInfoRow("Tanggal", firstNonEmpty(
+		data.TransactionTime,
+		generatedAt(data.PaidAt).Format("02 Januari 2006, 15:04 WIB"),
+	))
+	r.renderInfoRow("Metode Pembayaran", firstNonEmpty(data.PaymentMethod, PaymentTypeLabel(data.PaymentType)))
+	r.m.AddRows(row.New(3))
+}
+
+func (r *receiptPDF) renderCustomerSection(data *ReceiptData) {
+	r.renderSectionLabel("Detail Pelanggan")
+	r.renderInfoRow("Nama", data.CustomerName)
+	r.renderInfoRowAccent("Telegram", data.CustomerTelegram)
+	r.renderInfoRow("Email", data.CustomerEmail)
+	r.renderInfoRow("Telepon", data.CustomerPhone)
+	r.m.AddRows(row.New(3))
+}
+
+func (r *receiptPDF) renderItemsSection(data *ReceiptData) {
+	r.renderSectionLabel("Item Pesanan")
+	r.m.AddRow(7,
+		text.NewCol(5, "ITEM", props.Text{
+			Top: 2, Left: 2, Size: 7, Style: fontstyle.Bold, Color: white,
+		}),
+		text.NewCol(3, "DURASI", props.Text{
+			Top: 2, Size: 7, Style: fontstyle.Bold, Align: align.Center, Color: white,
+		}),
+		text.NewCol(1, "QTY", props.Text{
+			Top: 2, Size: 7, Style: fontstyle.Bold, Align: align.Center, Color: white,
+		}),
+		text.NewCol(3, "SUBTOTAL", props.Text{
+			Top: 2, Size: 7, Style: fontstyle.Bold, Align: align.Right, Color: white,
+		}),
+	).WithStyle(&props.Cell{BackgroundColor: navyHeader})
+
+	cur := firstNonEmpty(data.CurrencyCode, "IDR")
+	for i, item := range data.Items {
+		bg := white
+		if i%2 == 1 {
+			bg = surfaceGray
 		}
-		return fmt.Sprintf("%s %s", currencyCode, formatThousandSeparator(intVal))
+		r.m.AddRow(10,
+			col.New(5).Add(
+				text.New(sanitize(truncate(item.Name, 36)), props.Text{
+					Top: 1.5, Left: 2, Size: 8, Style: fontstyle.Bold, Color: slate,
+				}),
+				text.New(FormatCurrency(item.Price, cur)+"/unit", props.Text{
+					Top: 6.5, Left: 2, Size: 7, Color: mutedLight,
+				}),
+			),
+			text.NewCol(3, sanitize(item.Duration), props.Text{
+				Top: 3, Size: 8, Align: align.Center, Color: muted,
+			}),
+			text.NewCol(1, fmt.Sprintf("%d", item.Qty), props.Text{
+				Top: 3, Size: 8, Align: align.Center, Color: slate,
+			}),
+			text.NewCol(3, FormatCurrency(item.Subtotal, cur), props.Text{
+				Top: 3, Size: 8, Style: fontstyle.Bold, Align: align.Right, Color: slate,
+			}),
+		).WithStyle(&props.Cell{BackgroundColor: bg})
 	}
-
-	// Non-IDR currencies: comma as thousand separator, dot for decimals.
-	inCents := amount.Mul(decimal.NewFromInt(100)).IntPart()
-	negative := inCents < 0
-	if negative {
-		inCents = -inCents
-	}
-
-	whole := inCents / 100
-	cents := inCents % 100
-	formatted := fmt.Sprintf("%s.%02d", formatThousandSepComma(whole), cents)
-
-	if negative {
-		return fmt.Sprintf("-%s %s", currencyCode, formatted)
-	}
-	return fmt.Sprintf("%s %s", currencyCode, formatted)
+	r.m.AddRows(row.New(2))
 }
 
-// formatThousandSeparator inserts dots as thousand separators (Indonesian style).
-// Used for IDR currency.
-func formatThousandSeparator(n int64) string {
-	return insertDots(fmt.Sprintf("%d", n))
+func (r *receiptPDF) renderSummarySection(data *ReceiptData) {
+	cur := firstNonEmpty(data.CurrencyCode, "IDR")
+	r.m.AddRow(7,
+		col.New(6),
+		text.NewCol(3, "Subtotal", props.Text{
+			Top: 2, Size: 8, Align: align.Right, Color: muted,
+		}),
+		text.NewCol(3, FormatCurrency(data.Subtotal, cur), props.Text{
+			Top: 2, Size: 8, Align: align.Right, Color: slate,
+		}),
+	)
+
+	if data.DiscountAmount.IsPositive() {
+		label := firstNonEmpty(data.DiscountLabel, "Diskon")
+		r.m.AddRow(7,
+			col.New(6),
+			text.NewCol(3, sanitize(label), props.Text{
+				Top: 2, Size: 8, Align: align.Right, Color: muted,
+			}),
+			text.NewCol(3, "-"+FormatCurrency(data.DiscountAmount, cur), props.Text{
+				Top:   2,
+				Size:  8,
+				Style: fontstyle.Bold,
+				Align: align.Right,
+				Color: greenText,
+			}),
+		)
+	}
+
+	r.m.AddRows(line.NewRow(2, props.Line{
+		Color:     borderGray,
+		Thickness: 0.3,
+		Style:     linestyle.Solid,
+	}))
+	r.m.AddRow(14,
+		col.New(6).Add(text.New("TOTAL PEMBAYARAN", props.Text{
+			Top: 5, Left: 4, Size: 7, Style: fontstyle.Bold, Color: mutedLight,
+		})),
+		col.New(6).Add(text.New(FormatCurrency(data.TotalPaid, cur), props.Text{
+			Top: 3, Size: 16, Style: fontstyle.Bold, Align: align.Right, Color: white,
+		})),
+	).WithStyle(&props.Cell{
+		BackgroundColor: navyHeader,
+		BorderType:      border.Full,
+		BorderColor:     navyHeader,
+	})
+	r.m.AddRows(row.New(4))
 }
 
-// formatThousandSepComma inserts commas as thousand separators (international style).
-// Used for non-IDR currencies (e.g. USD 1,250.50).
-func formatThousandSepComma(n int64) string {
-	return insertCommas(fmt.Sprintf("%d", n))
+func (r *receiptPDF) renderNotesSection(notes string) {
+	r.renderSectionLabel("Catatan")
+	r.m.AddRows(text.NewAutoRow(sanitize(notes), props.Text{
+		Size: 8, Color: muted, Bottom: 4,
+	}))
 }
 
-// insertDots adds thousand-separator dots to a numeric string.
-func insertDots(s string) string {
-	if len(s) <= 3 {
-		return s
-	}
-
-	remainder := len(s) % 3
-	var result []byte
-	result = append(result, s[:remainder]...)
-	for i := remainder; i < len(s); i += 3 {
-		if len(result) > 0 {
-			result = append(result, '.')
-		}
-		result = append(result, s[i:i+3]...)
-	}
-	return string(result)
+func (r *receiptPDF) registerFooter(data *ReceiptData) error {
+	ts := generatedAt(data.GeneratedAt).Format("02 Januari 2006, 15:04 WIB")
+	return r.m.RegisterFooter(
+		row.New(1).Add(col.New(12).Add(line.New(props.Line{
+			Color:     borderGray,
+			Thickness: 0.3,
+		}))),
+		row.New(10).Add(col.New(12).Add(
+			text.New("Terima kasih telah menggunakan layanan kami.", props.Text{
+				Top: 2, Size: 8, Align: align.Center, Color: muted,
+			}),
+			text.New("Dokumen ini sah tanpa tanda tangan.", props.Text{
+				Top: 6, Size: 7, Align: align.Center, Style: fontstyle.Italic, Color: mutedLight,
+			}),
+			text.New("Digenerate otomatis pada "+ts, props.Text{
+				Top: 10, Size: 7, Align: align.Center, Style: fontstyle.Italic, Color: mutedLight,
+			}),
+		)),
+	)
 }
 
-// insertCommas adds thousand-separator commas to a numeric string.
-func insertCommas(s string) string {
-	if len(s) <= 3 {
-		return s
+func resolveLogo(data *ReceiptData, cfg *Config) ([]byte, string) {
+	if len(data.MerchantLogo) > 0 && data.MerchantLogoExt != "" {
+		return data.MerchantLogo, data.MerchantLogoExt
 	}
-
-	remainder := len(s) % 3
-	var result []byte
-	result = append(result, s[:remainder]...)
-	for i := remainder; i < len(s); i += 3 {
-		if len(result) > 0 {
-			result = append(result, ',')
-		}
-		result = append(result, s[i:i+3]...)
+	if cfg != nil {
+		return cfg.LogoData, cfg.LogoExt
 	}
-	return string(result)
+	return nil, ""
 }
 
-// PaymentTypeLabel returns a display-friendly label for Midtrans payment types.
-func PaymentTypeLabel(paymentType string) string {
-	switch paymentType {
-	case "bank_transfer":
-		return "Transfer Bank"
-	case "credit_card":
-		return "Kartu Kredit"
-	case "gopay":
-		return "GoPay"
-	case "shopeepay":
-		return "ShopeePay"
-	case "qris":
-		return "QRIS"
-	case "cstore":
-		return "Convenience Store"
-	case "echannel":
-		return "Mandiri Bill Payment"
-	case "bca_klikbca", "bca_klikpay":
-		return "BCA KlikPay"
-	case "bri_epay":
-		return "BRI e-Pay"
-	case "danamon_online":
-		return "Danamon Online"
-	case "akulaku":
-		return "Akulaku"
-	default:
-		return paymentType
+func imageExt(ext string) (extension.Type, bool) {
+	switch strings.ToLower(strings.TrimPrefix(ext, ".")) {
+	case "jpg":
+		return extension.Jpg, true
+	case "jpeg":
+		return extension.Jpeg, true
+	case "png":
+		return extension.Png, true
 	}
+	return "", false
 }

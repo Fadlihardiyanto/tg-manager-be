@@ -128,10 +128,11 @@ func (r *clientBillingRepository) FindByExternalID(ctx context.Context, db *gorm
 
 func (r *clientBillingRepository) FindActiveByClientID(ctx context.Context, db *gorm.DB, clientID uuid.UUID) (*entity.ClientBilling, error) {
 	var billing entity.ClientBilling
+	now := time.Now()
 	err := db.WithContext(ctx).
 		Preload("Plan").
 		Preload("Client").
-		Where("client_id = ? AND status = 'active' AND expired_at > ?", clientID, time.Now()).
+		Where("client_id = ? AND status = 'active' AND started_at <= ? AND expired_at > ?", clientID, now, now).
 		Order("expired_at DESC").
 		First(&billing).Error
 	if err != nil {

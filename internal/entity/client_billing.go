@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"gorm.io/datatypes"
 )
 
 // ClientBilling represents billing history for a client
@@ -23,7 +24,10 @@ type ClientBilling struct {
 
 	ExternalID string     `gorm:"type:varchar(255);uniqueIndex;column:external_id"`
 	PaymentURL string     `gorm:"type:varchar(500);column:payment_url"`
-	PaidAt     *time.Time `gorm:"column:paid_at"`
+	PaidAt          *time.Time     `gorm:"column:paid_at"`
+	PaymentMethod   string         `gorm:"type:varchar(50);column:payment_method"`
+	ReceiptURL      string         `gorm:"type:varchar(500);column:receipt_url"`
+	RawNotification datatypes.JSON `gorm:"type:jsonb;column:raw_notification"`
 
 	IsManual  bool       `gorm:"default:false"`
 	Note      string     `gorm:"type:text"`

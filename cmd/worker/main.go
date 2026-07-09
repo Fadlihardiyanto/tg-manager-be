@@ -84,7 +84,7 @@ func main() {
 					bootstrapConfig.Log.Error("worker: group-sync panicked", zap.Any("panic", r))
 				}
 			}()
-			bootstrapConfig.GroupSyncWorker.Start(groupSyncCtx, 24*time.Hour)
+			bootstrapConfig.GroupSyncWorker.Start(groupSyncCtx, 1*time.Hour)
 		}()
 	}
 

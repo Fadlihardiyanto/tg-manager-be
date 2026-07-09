@@ -29,6 +29,7 @@ type MidtransWebhookRequest struct {
 	SignatureKey      string `json:"signature_key"`
 	StatusCode        string `json:"status_code"`
 	FraudStatus       string `json:"fraud_status"`
+	RawNotification   string `json:"-"` // raw JSON body untuk disimpan ke JSONB
 }
 
 // Cancel billing
@@ -67,6 +68,7 @@ type ClientBillingResponse struct {
 	UpdatedBy      *AdminBriefResponse  `json:"updated_by,omitempty"`
 	PaidAt         *time.Time           `json:"paid_at"`
 	PaymentURL     string               `json:"payment_url,omitempty"`
+	ReceiptURL     string               `json:"receipt_url,omitempty"`
 	IsManual       bool                 `json:"is_manual"`
 	Note           string               `json:"note,omitempty"`
 	CreatedAt      time.Time            `json:"created_at"`

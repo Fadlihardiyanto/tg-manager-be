@@ -31,27 +31,27 @@ import (
 // BootstrapConfig holds all initialized infrastructure dependencies.
 // This struct is passed to Bootstrap() for wiring repositories, usecases, and controllers.
 type BootstrapConfig struct {
-	Config               *Config
-	App                  *fiber.App
-	Log                  *zap.Logger
-	DB                   *entity.Database
-	Jwt                  *pkg_jwt.JWTConfig
-	Redis                *redis.Client
-	RabbitMQ             *rabbitmq.Connection
-	Validate             *validator.Validate
-	TelegramFactory      telegram.BotFactory
-	Publisher            *gatewayMsg.RabbitMQPublisher
-	Consumer             *deliveryMsg.MessageConsumer
-	OtpService           *otp.EmailOTPService
-	Mailer               mailer.Sender
-	SMTPMailer           mailer.Sender
-	Midtrans             *midtrans.Client
-	S3                   *pkg_s3.Client
-	OutboxWorker         *deliveryMsg.OutboxWorker
-	OrderCleanupWorker   *deliveryMsg.OrderCleanupWorker
-	EnforcerWorker       *deliveryMsg.EnforcerWorker
-	GroupSyncWorker      *deliveryMsg.GroupSyncWorker
-	ExpiryReminderWorker *deliveryMsg.ExpiryReminderWorker
+	Config                   *Config
+	App                      *fiber.App
+	Log                      *zap.Logger
+	DB                       *entity.Database
+	Jwt                      *pkg_jwt.JWTConfig
+	Redis                    *redis.Client
+	RabbitMQ                 *rabbitmq.Connection
+	Validate                 *validator.Validate
+	TelegramFactory          telegram.BotFactory
+	Publisher                *gatewayMsg.RabbitMQPublisher
+	Consumer                 *deliveryMsg.MessageConsumer
+	OtpService               *otp.EmailOTPService
+	Mailer                   mailer.Sender
+	SMTPMailer               mailer.Sender
+	Midtrans                 *midtrans.Client
+	S3                       *pkg_s3.Client
+	OutboxWorker             *deliveryMsg.OutboxWorker
+	OrderCleanupWorker       *deliveryMsg.OrderCleanupWorker
+	EnforcerWorker           *deliveryMsg.EnforcerWorker
+	GroupSyncWorker          *deliveryMsg.GroupSyncWorker
+	ExpiryReminderWorker     *deliveryMsg.ExpiryReminderWorker
 	BroadcastSchedulerWorker *deliveryMsg.BroadcastSchedulerWorker
 }
 
@@ -272,13 +272,15 @@ func BootstrapWeb(config *BootstrapConfig) {
 	platformDiscountUC := usecase.NewPlatformDiscountUseCase(config.DB, platformDiscountRepo, config.Log)
 	memberDiscountUC := usecase.NewMemberDiscountUseCase(config.DB, discountRepo, config.Log)
 	featureGateUC := usecase.NewFeatureGateUseCase(config.DB, billingRepo, botRepo, groupRepo, packageRepo, customCommandRepo, broadcastRepo, tenantAnalyticsRepo, config.Log)
-	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, featureGateUC, config.Midtrans, config.Redis, config.Log, config.Config.App.BaseURL, config.Config.App.FrontendURL)
-	memberOrderUC := usecase.NewMemberOrderUseCase(config.DB, orderRepo, subscriptionRepo, packageRepo, telegramUserRepo, clientRepo, billingRepo, discountRepo, memberDiscountUC, outboxRepo, config.Redis, config.Log, config.Config.App.EncryptionKey, config.Config.Midtrans.BaseURL, config.Config.Midtrans.SnapURL, config.Config.App.BaseURL, config.Config.App.FrontendURL)
+	pdfClient := pdf.NewClient(&pdf.Config{}, config.Log)
+	billingUC := usecase.NewClientBillingUseCase(config.DB, billingRepo, planRepo, clientRepo, platformDiscountRepo, platformDiscountUC, featureGateUC, config.Midtrans, config.S3, pdfClient, config.Redis, config.Log, config.Config.App.BaseURL, config.Config.App.FrontendURL)
+	memberOrderUC := usecase.NewMemberOrderUseCase(config.DB, orderRepo, subscriptionRepo, packageRepo, telegramUserRepo, clientRepo, billingRepo, discountRepo, memberDiscountUC, outboxRepo, botRepo, config.Redis, config.Log, config.Config.App.EncryptionKey, config.Config.Midtrans.BaseURL, config.Config.Midtrans.SnapURL, config.Config.App.BaseURL, config.Config.App.FrontendURL)
 	tenantAuthUC := usecase.NewTenantAuthUseCase(config.DB, userRepo, clientRepo, clientUserRepo, tenantPermissionRepo, outboxRepo, config.Log, config.Redis, config.Jwt, config.Config.App.FrontendURL, config.Config.App.BcryptCost)
 	tenantAnalyticsUC := usecase.NewTenantAnalyticsUseCase(config.DB.Gorm, tenantAnalyticsRepo, config.Log)
 	auditLogUC := usecase.NewAuditLogUseCase(config.DB.Gorm, auditLogRepo, config.Log)
 	botUC := usecase.NewTelegramBotUseCase(config.DB, botRepo, billingRepo, config.TelegramFactory, config.Log, config.Config.App.EncryptionKey, config.Config.Telegram.WebhookBaseURL, config.Config.Telegram.WebhookSecret)
-	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Redis, config.Log, config.Config.App.EncryptionKey)
+	groupSyncWorker := deliveryMsg.NewGroupSyncWorker(config.DB.Gorm, groupRepo, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Redis, config.Log, config.Config.App.EncryptionKey, groupSyncWorker.Process)
 	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, billingRepo, config.Log)
 	tenantProfileUC := usecase.NewTenantProfileUseCase(config.DB, clientRepo, config.Config.App.EncryptionKey, config.Log)
 	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.S3, config.Log)
@@ -291,7 +293,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	packagesHandler := handler.NewPackagesHandler(config.DB, packageRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
-	packageSelectHandler := handler.NewPackageSelectHandler(memberOrderUC, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	packageSelectHandler := handler.NewPackageSelectHandler(memberOrderUC, config.TelegramFactory, config.Config.App.EncryptionKey, config.Redis, config.Log)
 	mySubHandler := handler.NewMySubHandler(config.DB, subscriptionRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	statusHandler := handler.NewStatusAliasHandler(mySubHandler) // /status → same logic as /mysub
 	myOrdersHandler := handler.NewMyOrdersHandler(config.DB, orderRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)

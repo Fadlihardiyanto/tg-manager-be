@@ -116,6 +116,9 @@ func (c *ClientBillingController) Webhook(ctx fiber.Ctx) error {
 		c.log.Warn("billing webhook: invalid body", zap.Error(err))
 		return helper.BadRequest(ctx, "Format request tidak valid")
 	}
+	if rawBody, ok := ctx.Locals("midtrans_raw_body").(string); ok {
+		req.RawNotification = rawBody
+	}
 
 	if err := c.billingUC.HandleWebhook(ctx.Context(), &req); err != nil {
 		c.log.Error("billing webhook: handle failed", zap.Error(err),
@@ -174,4 +177,21 @@ func (c *ClientBillingController) ClientGetActiveBilling(ctx fiber.Ctx) error {
 	}
 
 	return helper.Success(ctx, "Billing aktif berhasil diambil", result)
+}
+
+// ClientGetBillingHistory godoc
+// GET /api/v1/tenant/billing/history
+func (c *ClientBillingController) ClientGetBillingHistory(ctx fiber.Ctx) error {
+	clientID := middleware.GetTenantClientID(ctx)
+
+	page, _ := strconv.Atoi(ctx.Query("page", "1"))
+	limit, _ := strconv.Atoi(ctx.Query("limit", "10"))
+
+	result, total, err := c.billingUC.GetBillingHistory(ctx.Context(), clientID, page, limit)
+	if err != nil {
+		return err
+	}
+
+	meta := helper.NewMeta(page, limit, total)
+	return helper.SuccessWithMeta(ctx, "Riwayat billing berhasil diambil", result, meta)
 }

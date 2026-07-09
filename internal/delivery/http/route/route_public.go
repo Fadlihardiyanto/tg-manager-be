@@ -3,6 +3,8 @@ package route
 import (
 	"strings"
 
+	json "github.com/bytedance/sonic"
+
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/controller"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/gofiber/fiber/v3"
@@ -42,10 +44,13 @@ func (c *PublicRouteConfig) Setup() {
 	// Midtrans Payment Webhook — PUBLIC, divalidasi via SHA512 signature (bukan JWT)
 	// Midtrans server akan POST ke endpoint ini setiap ada perubahan status pembayaran
 	handleMidtrans := func(ctx fiber.Ctx) error {
+		rawBody := ctx.Body()
+		ctx.Locals("midtrans_raw_body", string(rawBody))
+
 		var req struct {
 			OrderID string `json:"order_id"`
 		}
-		if err := ctx.Bind().JSON(&req); err != nil {
+		if err := json.Unmarshal(rawBody, &req); err != nil {
 			c.Log.Warn("midtrans webhook: invalid request body", zap.Error(err))
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format request tidak valid"})
 		}

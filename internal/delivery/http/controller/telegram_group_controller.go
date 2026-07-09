@@ -218,3 +218,17 @@ func (c *TelegramGroupController) CheckConnectStatus(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Status koneksi berhasil diperiksa", resp)
 }
+
+// Sync godoc
+// POST /api/v1/tenant/groups/sync
+func (c *TelegramGroupController) Sync(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("group controller sync request")
+
+	if err := c.groupUC.SyncMemberCounts(ctx.Context()); err != nil {
+		log.Error("group controller sync failed", zap.Error(err))
+		return err
+	}
+
+	return helper.Success(ctx, "Sinkronisasi member count sedang berjalan di background", nil)
+}

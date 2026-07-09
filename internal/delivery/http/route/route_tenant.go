@@ -128,6 +128,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	groups.Post("/", middleware.TenantRequirePermission("groups.create"), c.TelegramGroupController.Create)
 	groups.Put("/:id", middleware.TenantRequirePermission("groups.update"), c.TelegramGroupController.Update)
 	groups.Delete("/:id", middleware.TenantRequirePermission("groups.delete"), c.TelegramGroupController.Delete)
+	groups.Post("/sync", middleware.TenantRequirePermission("groups.update"), c.TelegramGroupController.Sync)
 
 	// ── Packages ─────────────────────────────────────────────────────
 	packages := protected.Group("/packages")
@@ -175,6 +176,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Billing (Self-Service) ────────────────────────────────────────────
 	billing := protected.Group("/billing")
 	billing.Get("/active", middleware.TenantRequirePermission("billing.read"), c.ClientBillingController.ClientGetActiveBilling)
+	billing.Get("/history", middleware.TenantRequirePermission("billing.read"), c.ClientBillingController.ClientGetBillingHistory)
 	billing.Post("/checkout", middleware.TenantRequirePermission("billing.manage"), c.ClientBillingController.ClientCheckout)
 
 	// ── Uploads ──────────────────────────────────────────────────────────

@@ -43,6 +43,9 @@ func NewGroupSyncWorker(
 
 func (w *GroupSyncWorker) Start(ctx context.Context, interval time.Duration) {
 	w.log.Info("group sync worker: starting polling loop", zap.Duration("interval", interval))
+
+	w.Process(ctx)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 

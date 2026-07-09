@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
 )
 
 func TestReceiptData_Validate(t *testing.T) {
@@ -22,11 +23,7 @@ func TestReceiptData_Validate(t *testing.T) {
 		data    ReceiptData
 		wantErr bool
 	}{
-		{
-			name:    "valid data",
-			data:    validData,
-			wantErr: false,
-		},
+		{name: "valid data", data: validData},
 		{
 			name: "missing order_id",
 			data: func() ReceiptData {
@@ -76,10 +73,9 @@ func TestReceiptData_Validate(t *testing.T) {
 			name: "zero total_paid is allowed",
 			data: func() ReceiptData {
 				d := validData
-				d.TotalPaid = decimal.NewFromInt(0)
+				d.TotalPaid = decimal.Zero
 				return d
 			}(),
-			wantErr: false,
 		},
 	}
 
@@ -100,48 +96,16 @@ func TestFormatCurrency(t *testing.T) {
 		currencyCode string
 		want         string
 	}{
-		{
-			name:         "IDR positive",
-			amount:       decimal.NewFromInt(150000),
-			currencyCode: "IDR",
-			want:         "IDR 150.000",
-		},
-		{
-			name:         "IDR negative",
-			amount:       decimal.NewFromInt(-50000),
-			currencyCode: "IDR",
-			want:         "-IDR 50.000",
-		},
-		{
-			name:         "IDR default if empty",
-			amount:       decimal.NewFromInt(1000),
-			currencyCode: "",
-			want:         "IDR 1.000",
-		},
-		{
-			name:         "USD positive with decimals",
-			amount:       decimal.NewFromFloat(1250.50),
-			currencyCode: "USD",
-			want:         "USD 1,250.50",
-		},
-		{
-			name:         "USD positive exact integer",
-			amount:       decimal.NewFromInt(100),
-			currencyCode: "USD",
-			want:         "USD 100.00",
-		},
-		{
-			name:         "USD negative",
-			amount:       decimal.NewFromFloat(-15.75),
-			currencyCode: "USD",
-			want:         "-USD 15.75",
-		},
+		{name: "IDR positive", amount: decimal.NewFromInt(150000), currencyCode: "IDR", want: "Rp 150.000"},
+		{name: "IDR negative", amount: decimal.NewFromInt(-50000), currencyCode: "IDR", want: "Rp -50.000"},
+		{name: "IDR default if empty", amount: decimal.NewFromInt(1000), currencyCode: "", want: "Rp 1.000"},
+		{name: "USD positive", amount: decimal.NewFromFloat(1250.5), currencyCode: "USD", want: "$ 1250.50"},
+		{name: "USD negative", amount: decimal.NewFromFloat(-15.75), currencyCode: "USD", want: "$ -15.75"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatCurrency(tt.amount, tt.currencyCode)
-			if got != tt.want {
+			if got := FormatCurrency(tt.amount, tt.currencyCode); got != tt.want {
 				t.Errorf("FormatCurrency() = %v, want %v", got, tt.want)
 			}
 		})
@@ -149,13 +113,60 @@ func TestFormatCurrency(t *testing.T) {
 }
 
 func TestStatusLabel(t *testing.T) {
-	if got := StatusLabel("settlement"); got != "LUNAS" {
-		t.Errorf("StatusLabel(settlement) = %v, want LUNAS", got)
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{status: "settlement", want: "LUNAS"},
+		{status: "pending", want: "MENUNGGU PEMBAYARAN"},
+		{status: "expired", want: "KADALUARSA"},
+		{status: "unknown_status", want: "UNKNOWN_STATUS"},
 	}
-	if got := StatusLabel("pending"); got != "MENUNGGU" {
-		t.Errorf("StatusLabel(pending) = %v, want MENUNGGU", got)
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			if got := StatusLabel(tt.status); got != tt.want {
+				t.Errorf("StatusLabel() = %v, want %v", got, tt.want)
+			}
+		})
 	}
-	if got := StatusLabel("unknown_status"); got != "unknown_status" {
-		t.Errorf("StatusLabel(unknown_status) = %v, want unknown_status", got)
+}
+
+func TestClient_GenerateReceipt(t *testing.T) {
+	client := NewClient(nil, zap.NewNop())
+	data := &ReceiptData{
+		OrderID:         "ORD-TEST-123",
+		MerchantName:    "Test Store",
+		CustomerName:    "John Doe 🚀",
+		TransactionTime: "12 Dec 2026",
+		Status:          "paid",
+		Items: []ReceiptItem{
+			{
+				Name:     "Produk A",
+				Qty:      1,
+				Price:    decimal.NewFromInt(10000),
+				Subtotal: decimal.NewFromInt(10000),
+			},
+			{
+				Name:     "Produk B",
+				Qty:      2,
+				Price:    decimal.NewFromInt(25000),
+				Subtotal: decimal.NewFromInt(50000),
+			},
+		},
+		Subtotal:  decimal.NewFromInt(60000),
+		TotalPaid: decimal.NewFromInt(60000),
+		Notes:     "Terima kasih.",
+	}
+
+	pdfBytes, err := client.GenerateReceipt(data)
+	if err != nil {
+		t.Fatalf("GenerateReceipt() error = %v", err)
+	}
+	if len(pdfBytes) < 4 {
+		t.Fatal("GenerateReceipt() returned too few bytes")
+	}
+	if string(pdfBytes[:4]) != "%PDF" {
+		t.Errorf("GenerateReceipt() did not return a valid PDF signature, got %q", pdfBytes[:4])
 	}
 }

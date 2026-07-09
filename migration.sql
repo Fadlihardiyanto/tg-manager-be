@@ -247,6 +247,8 @@ CREATE TABLE orders (
     -- 'pending', 'paid', 'failed', 'expired'
     payment_method  VARCHAR(50),
     -- 'bca_va', 'gopay', 'qris', etc
+    receipt_url     VARCHAR(500),
+    -- URL PDF receipt (generated after payment)
     
     paid_at         TIMESTAMP,
     expired_at      TIMESTAMP,
@@ -787,3 +789,11 @@ ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_discount_system BOOLEA
 ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_reports_export BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS allow_high_priority BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE platform_plans ADD COLUMN IF NOT EXISTS transaction_limit INT NOT NULL DEFAULT -1;
+
+-- ==========================================
+-- MIGRATION: Raw Midtrans Notification (JSONB)
+-- ==========================================
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS raw_notification JSONB;
+ALTER TABLE client_billings ADD COLUMN IF NOT EXISTS raw_notification JSONB;
+ALTER TABLE client_billings ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+ALTER TABLE client_billings ADD COLUMN IF NOT EXISTS receipt_url VARCHAR(500);

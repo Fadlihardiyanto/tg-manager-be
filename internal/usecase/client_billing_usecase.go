@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -11,11 +12,14 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/midtrans"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/pdf"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
+	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -37,6 +41,9 @@ type IClientBillingUseCase interface {
 
 	// Get active billing milik client
 	GetActiveBilling(ctx context.Context, clientID uuid.UUID) (*model.ClientBillingResponse, error)
+
+	// Get billing history (paginated) untuk tenant self-service
+	GetBillingHistory(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.ClientBillingResponse, int64, error)
 }
 
 type clientBillingUseCase struct {
@@ -50,6 +57,8 @@ type clientBillingUseCase struct {
 	featureGateUC      IFeatureGateUseCase
 
 	midtransClient *midtrans.Client
+	s3Client       *pkg_s3.Client
+	pdfClient      *pdf.Client
 	redis          *redis.Client
 	log            *zap.Logger
 	appBaseURL     string
@@ -65,6 +74,8 @@ func NewClientBillingUseCase(
 	platformDiscountUC IPlatformDiscountUseCase,
 	featureGateUC IFeatureGateUseCase,
 	midtransClient *midtrans.Client,
+	s3Client *pkg_s3.Client,
+	pdfClient *pdf.Client,
 	redisClient *redis.Client,
 	log *zap.Logger,
 	appBaseURL string,
@@ -79,6 +90,8 @@ func NewClientBillingUseCase(
 		platformDiscountUC:   platformDiscountUC,
 		featureGateUC:        featureGateUC,
 		midtransClient:       midtransClient,
+		s3Client:             s3Client,
+		pdfClient:            pdfClient,
 		redis:                redisClient,
 		log:                  log,
 		appBaseURL:           appBaseURL,
@@ -118,12 +131,13 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		if existing.Status == "pending" {
 			return nil, helper.NewBadRequest("Anda sudah memiliki billing pending, silakan selesaikan pembayaran atau batalkan terlebih dahulu")
 		}
-		return nil, helper.NewBadRequest(fmt.Sprintf("client masih memiliki billing aktif hingga %s, batalkan terlebih dahulu",
-			existing.ExpiredAt.Format("2 Jan 2006")))
+		if existing.PlanID == req.PlanID {
+			return nil, helper.NewBadRequest("Anda sudah berlangganan plan ini")
+		}
 	}
 
-	// 4. Hitung amount & expired_at berdasarkan billing cycle
-	originalAmount, expiredAt := uc.calculateBilling(plan, req.BillingCycle)
+	// 4. Hitung amount & waktu (startedAt/expiredAt) berdasarkan upgrade/downgrade
+	originalAmount, startedAt, expiredAt := uc.calculateBillingWithTransition(plan, req.BillingCycle, existing)
 
 	var appliedDiscountID *uuid.UUID
 	var discountAmount decimal.Decimal
@@ -247,7 +261,7 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		DiscountAmount: discountAmount,
 		ExternalID:     externalID,
 		PaymentURL:     snapResp.RedirectURL,
-		StartedAt:      now,
+		StartedAt:      startedAt,
 		ExpiredAt:      expiredAt,
 		IsManual:       false,
 		CreatedAt:      now,
@@ -380,16 +394,18 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 	// Kunci utama idempotency: UPDATE ... WHERE id=? AND status='pending'
 	// Jika concurrent webhook sudah memproses → RowsAffected=0 → skip.
 	// Ini mengunci di DB level tanpa SELECT FOR UPDATE yang lebih expensive.
-	return uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 
 		// Atomic conditional UPDATE: hanya update jika masih 'pending'
 		updates := map[string]any{
-			"status":     newStatus,
-			"updated_at": now,
+			"status":           newStatus,
+			"updated_at":       now,
+			"raw_notification": datatypes.JSON([]byte(req.RawNotification)),
 		}
 		if newStatus == "active" {
 			updates["paid_at"] = now
+			updates["payment_method"] = req.PaymentType
 		}
 
 		result := tx.WithContext(ctx).
@@ -426,6 +442,20 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// 7. Generate receipt on successful payment (non-fatal if fails)
+	if newStatus == "active" && uc.s3Client != nil && uc.pdfClient != nil {
+		if err := uc.generateBillingReceipt(ctx, billing); err != nil {
+			uc.log.Warn("client billing webhook: receipt generation failed",
+				zap.String("billing_id", billing.ID.String()),
+				zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
 func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.AdminAssignPlanRequest) (*model.ClientBillingResponse, error) {
@@ -588,8 +618,18 @@ func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID u
 		return nil, fmt.Errorf("gagal mengambil billing aktif")
 	}
 	if billing == nil {
+		_ = uc.db.Gorm.WithContext(ctx).
+			Model(&entity.Client{}).
+			Where("id = ?", clientID).
+			Update("subscription_tier", "free").Error
 		return nil, nil
 	}
+
+	_ = uc.db.Gorm.WithContext(ctx).
+		Model(&entity.Client{}).
+		Where("id = ? AND subscription_tier != ?", clientID, billing.Plan.Name).
+		Update("subscription_tier", billing.Plan.Name).Error
+
 	resp := toBillingResponse(billing)
 	if uc.featureGateUC != nil {
 		usage, err := uc.featureGateUC.GetUsage(ctx, clientID)
@@ -600,6 +640,27 @@ func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID u
 		}
 	}
 	return &resp, nil
+}
+
+func (uc *clientBillingUseCase) GetBillingHistory(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.ClientBillingResponse, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+
+	billings, total, err := uc.billingRepo.FindAllPaginated(ctx, uc.db.Gorm, &clientID, "", offset, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("gagal mengambil riwayat billing")
+	}
+
+	result := make([]model.ClientBillingResponse, len(billings))
+	for i, b := range billings {
+		result[i] = toBillingResponse(&b)
+	}
+	return result, total, nil
 }
 
 // ── Private helpers ───────────────────────────────────────────
@@ -613,12 +674,75 @@ func (uc *clientBillingUseCase) calculateBilling(plan *entity.PlatformPlan, cycl
 	return plan.PriceMonthly, now.AddDate(0, 1, 0)
 }
 
-// activateClientPlan update subscription_tier di tabel clients
+// calculateBillingWithTransition menghitung amount, startedAt, dan expiredAt
+// dengan mempertimbangkan upgrade/downgrade dari existing billing aktif.
+// existing = nil → pembelian baru tanpa billing aktif sebelumnya.
+func (uc *clientBillingUseCase) calculateBillingWithTransition(plan *entity.PlatformPlan, cycle string, existing *entity.ClientBilling) (amount decimal.Decimal, startedAt time.Time, expiredAt time.Time) {
+	now := time.Now()
+
+	if cycle == "yearly" {
+		amount = plan.PriceYearly
+	} else {
+		amount = plan.PriceMonthly
+	}
+
+	if existing == nil {
+		startedAt = now
+		expiredAt = now.AddDate(0, 1, 0)
+		if cycle == "yearly" {
+			expiredAt = now.AddDate(1, 0, 0)
+		}
+		return
+	}
+
+	existingPrice := existing.Plan.PriceMonthly
+	newPrice := plan.PriceMonthly
+	if cycle == "yearly" {
+		existingPrice = existing.Plan.PriceYearly
+		newPrice = plan.PriceYearly
+	}
+
+	if newPrice.GreaterThanOrEqual(existingPrice) {
+		// UPGRADE (atau same-price): aktivasi segera
+		startedAt = now
+	} else {
+		// DOWNGRADE: aktivasi setelah plan lama habis
+		startedAt = existing.ExpiredAt
+	}
+	expiredAt = startedAt.AddDate(0, 1, 0)
+	if cycle == "yearly" {
+		expiredAt = startedAt.AddDate(1, 0, 0)
+	}
+	return
+}
+
+// activateClientPlan handles plan activation after successful payment.
+// For upgrades (immediate activation): cancels other active billings, updates subscription_tier.
+// For downgrades (delayed activation, StartedAt > now): skips — old plan keeps running.
 func (uc *clientBillingUseCase) activateClientPlan(ctx context.Context, tx *gorm.DB, billing *entity.ClientBilling) error {
-	// Fetch plan untuk dapat nama tier
 	plan, err := uc.planRepo.FindByID(ctx, tx, billing.PlanID)
 	if err != nil || plan == nil {
 		return fmt.Errorf("plan tidak ditemukan saat aktivasi")
+	}
+
+	// Downgrade: startedAt di masa depan → jangan ganggu plan aktif, biarkan jalan sampai habis
+	if billing.StartedAt.After(time.Now()) {
+		uc.log.Info("client billing: downgrade detected, delaying activation",
+			zap.String("billing_id", billing.ID.String()),
+			zap.Time("started_at", billing.StartedAt))
+		return nil
+	}
+
+	// Upgrade atau pembelian baru: cancel billing aktif lain, lalu set subscription_tier ke plan baru
+	if err := tx.WithContext(ctx).
+		Model(&entity.ClientBilling{}).
+		Where("client_id = ? AND status = 'active' AND id != ?", billing.ClientID, billing.ID).
+		Updates(map[string]any{
+			"status":       "upgraded",
+			"cancelled_at": time.Now(),
+			"updated_at":   time.Now(),
+		}).Error; err != nil {
+		return err
 	}
 
 	return tx.WithContext(ctx).
@@ -628,6 +752,72 @@ func (uc *clientBillingUseCase) activateClientPlan(ctx context.Context, tx *gorm
 			"subscription_tier": plan.Name,
 			"updated_at":        time.Now(),
 		}).Error
+}
+
+func (uc *clientBillingUseCase) generateBillingReceipt(ctx context.Context, billing *entity.ClientBilling) error {
+	client, err := uc.clientRepo.FindByIDWithOwner(ctx, uc.db.Gorm, billing.ClientID)
+	if err != nil || client == nil {
+		return fmt.Errorf("client not found")
+	}
+
+	ownerName := billing.Client.Name
+	ownerEmail := ""
+	if client.Owner != nil {
+		ownerName = client.Owner.Name
+		ownerEmail = client.Owner.Email
+	}
+
+	duration := "30 Hari"
+	if billing.BillingCycle == "yearly" {
+		duration = "1 Tahun"
+	}
+	duration += fmt.Sprintf("\nAktif s.d. %s", billing.ExpiredAt.Format("02 Jan 2006"))
+
+	receiptData := &pdf.ReceiptData{
+		MerchantName:  "TG Manager",
+		OrderID:       billing.ExternalID,
+		CustomerName:  ownerName,
+		CustomerEmail: ownerEmail,
+		PaymentMethod: billing.PaymentMethod,
+		Items: []pdf.ReceiptItem{
+			{
+				Name:     billing.Plan.DisplayName,
+				Duration: duration,
+				Qty:      1,
+				Price:    billing.OriginalAmount,
+				Subtotal: billing.OriginalAmount,
+			},
+		},
+		Subtotal:       billing.OriginalAmount,
+		DiscountAmount: billing.DiscountAmount,
+		DiscountLabel:  "Diskon",
+		TotalPaid:      billing.Amount,
+		CurrencyCode:   "IDR",
+	}
+	if billing.PaidAt != nil {
+		receiptData.PaidAt = *billing.PaidAt
+	}
+
+	pdfBytes, err := uc.pdfClient.GenerateReceipt(receiptData)
+	if err != nil {
+		return fmt.Errorf("generate pdf: %w", err)
+	}
+
+	s3Key := fmt.Sprintf("billing-receipts/%s/%s.pdf", billing.ClientID.String(), billing.ID.String())
+	uploadResult, err := uc.s3Client.Upload(ctx, &pkg_s3.UploadInput{
+		Key:         s3Key,
+		Body:        bytes.NewReader(pdfBytes),
+		ContentType: "application/pdf",
+		Size:        int64(len(pdfBytes)),
+	})
+	if err != nil {
+		return fmt.Errorf("upload to s3: %w", err)
+	}
+
+	return uc.db.Gorm.WithContext(ctx).
+		Model(&entity.ClientBilling{}).
+		Where("id = ?", billing.ID).
+		Update("receipt_url", uploadResult.PublicURL).Error
 }
 
 func toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {
@@ -645,6 +835,7 @@ func toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {
 		PaymentURL:     b.PaymentURL,
 		IsManual:       b.IsManual,
 		Note:           b.Note,
+		ReceiptURL:     b.ReceiptURL,
 		CreatedAt:      b.CreatedAt,
 		Plan:           *converter.PlatformPlanToResponse(&b.Plan),
 		Client: model.ClientBriefResponse{

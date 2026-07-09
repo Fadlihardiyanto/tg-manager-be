@@ -40,6 +40,7 @@ type memberOrderUseCase struct {
 	discountRepo     repository.IMemberDiscountRepository
 	discountUC       IMemberDiscountUseCase
 	outboxRepo       repository.IOutboxRepository
+	botRepo          repository.ITelegramBotRepository
 	redis            *redis.Client
 	log              *zap.Logger
 	encryptionKey    string
@@ -60,6 +61,7 @@ func NewMemberOrderUseCase(
 	discountRepo repository.IMemberDiscountRepository,
 	discountUC IMemberDiscountUseCase,
 	outboxRepo repository.IOutboxRepository,
+	botRepo repository.ITelegramBotRepository,
 	redisClient *redis.Client,
 	log *zap.Logger,
 	encryptionKey string,
@@ -79,6 +81,7 @@ func NewMemberOrderUseCase(
 		discountRepo:     discountRepo,
 		discountUC:       discountUC,
 		outboxRepo:       outboxRepo,
+		botRepo:          botRepo,
 		redis:            redisClient,
 		log:              log,
 		encryptionKey:    encryptionKey,
@@ -341,7 +344,7 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 			Unit:     "hour",
 		},
 		Callbacks: &midtrans.SnapCallbacks{
-			Finish: fmt.Sprintf("%s/checkout/success?slug=%s&order_id=%s", uc.appFrontendURL, client.Slug, externalID),
+			Finish: uc.buildFinishURL(ctx, client.Slug, externalID, pkg),
 		},
 		NotificationURL: fmt.Sprintf("%s/webhooks/midtrans", uc.appBaseURL),
 	}
@@ -513,8 +516,9 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 
 		// Update order atomically ONLY IF status is 'pending'
 		updates := map[string]any{
-			"status":     newStatus,
-			"updated_at": now,
+			"status":           newStatus,
+			"updated_at":       now,
+			"raw_notification": datatypes.JSON([]byte(req.RawNotification)),
 		}
 		if newStatus == "paid" {
 			updates["paid_at"] = &now
@@ -704,6 +708,17 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 	}
 
 	return nil
+}
+
+func (uc *memberOrderUseCase) buildFinishURL(ctx context.Context, slug, externalID string, pkg *entity.Package) string {
+	base := fmt.Sprintf("%s/checkout/success?slug=%s&order_id=%s", uc.appFrontendURL, slug, externalID)
+	if len(pkg.Groups) > 0 {
+		bot, _ := uc.botRepo.FindByID(ctx, uc.db.Gorm, pkg.Groups[0].BotUUID)
+		if bot != nil && bot.Username != "" {
+			base += "&bot=" + bot.Username
+		}
+	}
+	return base
 }
 
 // ── Private Helpers ──────────────────────────────────────────
