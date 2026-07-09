@@ -110,8 +110,18 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 		ResponseText:   req.ResponseText,
 		FileUrl:        req.FileUrl,
 		IsActive:       true,
+		AccessScope:    req.AccessScope,
+		ChatTypeScope:  req.ChatTypeScope,
+		PackageIDs:     req.PackageIDs,
+		GroupIDs:       req.GroupIDs,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+	}
+	if cmd.AccessScope == "" {
+		cmd.AccessScope = "public"
+	}
+	if cmd.ChatTypeScope == "" {
+		cmd.ChatTypeScope = "all"
 	}
 
 	if err := uc.commandRepo.Create(ctx, uc.db.Gorm, cmd); err != nil {
@@ -212,6 +222,18 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 	}
 	if req.IsActive != nil {
 		cmd.IsActive = *req.IsActive
+	}
+	if req.AccessScope != nil {
+		cmd.AccessScope = *req.AccessScope
+	}
+	if req.ChatTypeScope != nil {
+		cmd.ChatTypeScope = *req.ChatTypeScope
+	}
+	if req.PackageIDs != nil || len(req.PackageIDs) > 0 {
+		cmd.PackageIDs = req.PackageIDs
+	}
+	if req.GroupIDs != nil || len(req.GroupIDs) > 0 {
+		cmd.GroupIDs = req.GroupIDs
 	}
 
 	cmd.UpdatedAt = time.Now()

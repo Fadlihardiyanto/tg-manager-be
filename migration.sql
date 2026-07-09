@@ -797,3 +797,8 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS raw_notification JSONB;
 ALTER TABLE client_billings ADD COLUMN IF NOT EXISTS raw_notification JSONB;
 ALTER TABLE client_billings ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
 ALTER TABLE client_billings ADD COLUMN IF NOT EXISTS receipt_url VARCHAR(500);
+
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) NOT NULL DEFAULT 'public';
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS chat_type_scope VARCHAR(20) NOT NULL DEFAULT 'all';
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS package_ids UUID[];
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS group_ids UUID[];

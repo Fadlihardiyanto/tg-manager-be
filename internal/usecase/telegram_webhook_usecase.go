@@ -33,6 +33,7 @@ type TelegramWebhookUseCase struct {
 	botRepo         repository.ITelegramBotRepository
 	groupRepo       repository.ITelegramGroupRepository
 	commandRepo     repository.ICustomCommandRepository
+	subRepo         repository.ISubscriptionRepository
 	router          *handler.Registry
 	telegramFactory telegram.BotFactory
 	redisClient     *redis.Client
@@ -46,6 +47,7 @@ func NewTelegramWebhookUseCase(
 	botRepo repository.ITelegramBotRepository,
 	groupRepo repository.ITelegramGroupRepository,
 	commandRepo repository.ICustomCommandRepository,
+	subRepo repository.ISubscriptionRepository,
 	router *handler.Registry,
 	telegramFactory telegram.BotFactory,
 	redisClient *redis.Client,
@@ -58,6 +60,7 @@ func NewTelegramWebhookUseCase(
 		botRepo:         botRepo,
 		groupRepo:       groupRepo,
 		commandRepo:     commandRepo,
+		subRepo:         subRepo,
 		router:          router,
 		telegramFactory: telegramFactory,
 		redisClient:     redisClient,
@@ -274,10 +277,14 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Debug("custom command not found", zap.String("trigger", trigger))
-			return nil // Abaikan jika tidak ada custom command
+			return nil
 		}
 		log.Error("failed to find custom command", zap.Error(err))
 		return err
+	}
+
+	if !uc.canExecuteCustomCommand(ctx, cmd, bot, msg) {
+		return nil
 	}
 
 	decryptedToken, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
@@ -397,6 +404,65 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 	}
 
 	return nil
+}
+
+// canExecuteCustomCommand checks whether a user is allowed to execute a custom command.
+func (uc *TelegramWebhookUseCase) canExecuteCustomCommand(ctx context.Context, cmd *entity.CustomCommand, bot *entity.TelegramBot, msg *tgbotapi.Message) bool {
+	log := logger.FromContext(ctx, uc.log)
+
+	switch cmd.ChatTypeScope {
+	case "dm_only":
+		if msg.Chat.Type != "private" {
+			return false
+		}
+	case "group_only":
+		if msg.Chat.Type != "group" && msg.Chat.Type != "supergroup" {
+			return false
+		}
+	}
+
+	if len(cmd.GroupIDs) > 0 {
+		groups, err := uc.groupRepo.FindByIDs(ctx, uc.db.Gorm, cmd.GroupIDs)
+		if err != nil {
+			log.Error("failed to check group IDs for custom command", zap.Error(err))
+			return false
+		}
+		allowed := false
+		for _, g := range groups {
+			if g.TelegramChatID == msg.Chat.ID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return false
+		}
+	}
+
+	switch cmd.AccessScope {
+	case "admin":
+		// ponytail: double-decrypt on admin check — merge with main flow if perf issue
+		isAdmin, err := uc.isSenderAdmin(ctx, bot, msg.Chat.ID, msg.From.ID)
+		return err == nil && isAdmin
+	case "member":
+		subs, err := uc.subRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, msg.From.ID, bot.ClientID)
+		if err != nil || len(subs) == 0 {
+			return false
+		}
+		if len(cmd.PackageIDs) > 0 {
+			for _, s := range subs {
+				for _, pid := range cmd.PackageIDs {
+					if s.PackageID == pid {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		return true
+	}
+
+	return true
 }
 
 func (uc *TelegramWebhookUseCase) handleConnectCommand(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message) error {

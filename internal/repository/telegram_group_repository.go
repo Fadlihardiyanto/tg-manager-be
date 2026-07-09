@@ -15,6 +15,7 @@ type ITelegramGroupRepository interface {
 	FindByTelegramID(ctx context.Context, tx *gorm.DB, telegramID int64) (*entity.Group, error)
 	FindAllActive(ctx context.Context, tx *gorm.DB) ([]entity.Group, error)
 	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Group, error)
+	FindByIDs(ctx context.Context, tx *gorm.DB, ids []uuid.UUID) ([]entity.Group, error)
 	Delete(ctx context.Context, tx *gorm.DB, group *entity.Group) error
 	CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
 }
@@ -67,6 +68,17 @@ func (r *TelegramGroupRepository) FindByID(ctx context.Context, tx *gorm.DB, id 
 		Where("id = ? AND deleted_at IS NULL", id).
 		First(&group).Error
 	return &group, err
+}
+
+func (r *TelegramGroupRepository) FindByIDs(ctx context.Context, tx *gorm.DB, ids []uuid.UUID) ([]entity.Group, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var groups []entity.Group
+	err := tx.WithContext(ctx).
+		Where("id IN ? AND deleted_at IS NULL", ids).
+		Find(&groups).Error
+	return groups, err
 }
 
 func (r *TelegramGroupRepository) Delete(ctx context.Context, tx *gorm.DB, group *entity.Group) error {

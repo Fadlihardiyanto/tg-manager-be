@@ -73,6 +73,9 @@ type ClientBillingResponse struct {
 	Note           string               `json:"note,omitempty"`
 	CreatedAt      time.Time            `json:"created_at"`
 	UpdatedAt      time.Time            `json:"updated_at"`
+	OrderID        string               `json:"order_id,omitempty"`
+	SnapToken      string               `json:"snap_token,omitempty"`
+	ClientKey      string               `json:"client_key,omitempty"`
 }
 
 type CancelByAdminResponse struct {
@@ -93,6 +96,8 @@ type AdminBriefResponse struct {
 
 // Response setelah checkout — berisi payment URL untuk redirect
 type CheckoutResponse struct {
+	OrderID        string          `json:"order_id"`
+	ClientKey      string          `json:"client_key"`
 	BillingID      uuid.UUID       `json:"billing_id"`
 	ExternalID     string          `json:"external_id"`
 	PaymentURL     string          `json:"payment_url"`

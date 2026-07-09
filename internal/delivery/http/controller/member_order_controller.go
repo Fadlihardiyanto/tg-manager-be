@@ -67,3 +67,19 @@ func (c *MemberOrderController) Webhook(ctx fiber.Ctx) error {
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
+
+// GetCheckoutDetail godoc
+// GET /api/v1/public/checkout/:order_id
+func (c *MemberOrderController) GetCheckoutDetail(ctx fiber.Ctx) error {
+	orderID := ctx.Params("order_id")
+	if orderID == "" {
+		return helper.BadRequest(ctx, "Order ID tidak boleh kosong")
+	}
+
+	result, err := c.orderUC.GetCheckoutDetail(ctx.Context(), orderID)
+	if err != nil {
+		return err
+	}
+
+	return helper.Success(ctx, "Detail checkout berhasil dimuat", result)
+}

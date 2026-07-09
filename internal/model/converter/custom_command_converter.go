@@ -19,6 +19,10 @@ func CustomCommandToResponse(cc *entity.CustomCommand) *model.CustomCommandRespo
 		ResponseText:   cc.ResponseText,
 		FileUrl:        cc.FileUrl,
 		IsActive:       cc.IsActive,
+		AccessScope:    cc.AccessScope,
+		ChatTypeScope:  cc.ChatTypeScope,
+		PackageIDs:     cc.PackageIDs,
+		GroupIDs:       cc.GroupIDs,
 		CreatedAt:      cc.CreatedAt,
 		UpdatedAt:      cc.UpdatedAt,
 	}

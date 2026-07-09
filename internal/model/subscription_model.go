@@ -48,15 +48,29 @@ type MemberCheckoutRequest struct {
 }
 
 type MemberCheckoutResponse struct {
-	OrderID        uuid.UUID       `json:"order_id"`
+	OrderID        string          `json:"order_id"`
+	DBOrderID      uuid.UUID       `json:"db_order_id"`
 	ExternalID     string          `json:"external_id"`
 	PaymentURL     string          `json:"payment_url"`
 	SnapToken      string          `json:"snap_token"`
+	ClientKey      string          `json:"client_key"`
 	PackageName    string          `json:"package_name"`
 	DurationDays   int             `json:"duration_days"`
 	OriginalAmount decimal.Decimal `json:"original_amount"`
 	DiscountAmount decimal.Decimal `json:"discount_amount"`
 	Amount         decimal.Decimal `json:"amount"`
+}
+
+type MemberCheckoutDetailResponse struct {
+	OrderID     string          `json:"order_id"`
+	SnapToken   string          `json:"snap_token"`
+	PaymentURL  string          `json:"payment_url"`
+	ClientKey   string          `json:"client_key"`
+	Bot         string          `json:"bot"`
+	Slug        string          `json:"slug"`
+	Amount      decimal.Decimal `json:"amount"`
+	PackageName string          `json:"package_name"`
+	Status      string          `json:"status"`
 }
 
 type OrderResponse struct {

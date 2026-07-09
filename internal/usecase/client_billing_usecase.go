@@ -295,6 +295,8 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 	// ── END TAMBAHAN ──────────────────────────────────────────
 
 	return &model.CheckoutResponse{
+		OrderID:        externalID,
+		ClientKey:      uc.midtransClient.ClientKey(),
 		BillingID:      billing.ID,
 		ExternalID:     externalID,
 		PaymentURL:     snapResp.RedirectURL,
@@ -547,7 +549,7 @@ func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.
 
 	// Fetch ulang dengan relasi
 	created, _ := uc.billingRepo.FindByID(ctx, uc.db.Gorm, billing.ID)
-	resp := toBillingResponse(created)
+	resp := uc.toBillingResponse(created)
 	return &resp, nil
 }
 
@@ -571,7 +573,7 @@ func (uc *clientBillingUseCase) ListBillings(ctx context.Context, req *model.Adm
 
 	result := make([]model.ClientBillingResponse, len(billings))
 	for i, b := range billings {
-		result[i] = toBillingResponse(&b)
+		result[i] = uc.toBillingResponse(&b)
 	}
 	return result, total, nil
 }
@@ -630,7 +632,7 @@ func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID u
 		Where("id = ? AND subscription_tier != ?", clientID, billing.Plan.Name).
 		Update("subscription_tier", billing.Plan.Name).Error
 
-	resp := toBillingResponse(billing)
+	resp := uc.toBillingResponse(billing)
 	if uc.featureGateUC != nil {
 		usage, err := uc.featureGateUC.GetUsage(ctx, clientID)
 		if err != nil {
@@ -658,7 +660,7 @@ func (uc *clientBillingUseCase) GetBillingHistory(ctx context.Context, clientID 
 
 	result := make([]model.ClientBillingResponse, len(billings))
 	for i, b := range billings {
-		result[i] = toBillingResponse(&b)
+		result[i] = uc.toBillingResponse(&b)
 	}
 	return result, total, nil
 }
@@ -820,7 +822,7 @@ func (uc *clientBillingUseCase) generateBillingReceipt(ctx context.Context, bill
 		Update("receipt_url", uploadResult.PublicURL).Error
 }
 
-func toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {
+func (uc *clientBillingUseCase) toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {
 	resp := model.ClientBillingResponse{
 		ID:             b.ID,
 		Status:         b.Status,
@@ -837,6 +839,9 @@ func toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {
 		Note:           b.Note,
 		ReceiptURL:     b.ReceiptURL,
 		CreatedAt:      b.CreatedAt,
+		OrderID:        b.ExternalID,
+		SnapToken:      midtrans.ExtractSnapToken(b.PaymentURL),
+		ClientKey:      uc.midtransClient.ClientKey(),
 		Plan:           *converter.PlatformPlanToResponse(&b.Plan),
 		Client: model.ClientBriefResponse{
 			ID:   b.Client.ID,

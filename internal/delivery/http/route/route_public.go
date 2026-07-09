@@ -78,4 +78,5 @@ func (c *PublicRouteConfig) Setup() {
 
 	public := api.Group("/public")
 	public.Get("/plans", c.PlatformPlanController.ListPublic)
+	public.Get("/checkout/:order_id", c.MemberOrderController.GetCheckoutDetail)
 }

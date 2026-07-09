@@ -27,6 +27,7 @@ type IMemberOrderUseCase interface {
 	Checkout(ctx context.Context, req *model.MemberCheckoutRequest) (*model.MemberCheckoutResponse, error)
 	CheckActiveSubscriptions(ctx context.Context, tgUserID int64, packageID uuid.UUID) (*model.ActiveSubscriptionCheckResult, error)
 	HandleWebhook(ctx context.Context, req *model.MidtransWebhookRequest) error
+	GetCheckoutDetail(ctx context.Context, externalID string) (*model.MemberCheckoutDetailResponse, error)
 }
 
 type memberOrderUseCase struct {
@@ -400,10 +401,12 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 
 	log.Info("member order checkout success", zap.String("order_id", order.ID.String()), zap.String("external_id", externalID))
 	return &model.MemberCheckoutResponse{
-		OrderID:        order.ID,
+		OrderID:        externalID,
+		DBOrderID:      order.ID,
 		ExternalID:     externalID,
 		PaymentURL:     snapResp.RedirectURL,
 		SnapToken:      snapResp.Token,
+		ClientKey:      midtransClient.ClientKey(),
 		PackageName:    pkg.Name,
 		DurationDays:   pkg.DurationDays,
 		OriginalAmount: originalAmount,
@@ -719,6 +722,58 @@ func (uc *memberOrderUseCase) buildFinishURL(ctx context.Context, slug, external
 		}
 	}
 	return base
+}
+
+func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID string) (*model.MemberCheckoutDetailResponse, error) {
+	var order entity.Order
+	err := uc.db.Gorm.WithContext(ctx).
+		Preload("Package.Groups").
+		Preload("User").
+		Where("external_id = ? AND deleted_at IS NULL", externalID).
+		First(&order).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, helper.NewNotFound("Order tidak ditemukan")
+		}
+		return nil, fmt.Errorf("gagal mencari order: %w", err)
+	}
+
+	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, order.ClientID)
+	if err != nil || client == nil {
+		return nil, helper.NewNotFound("Merchant tidak ditemukan")
+	}
+
+	midtransClient, err := uc.getMidtransClient(ctx, client)
+	if err != nil {
+		uc.log.Warn("GetCheckoutDetail: midtrans client init failed", zap.String("client_id", client.ID.String()), zap.Error(err))
+		return nil, helper.NewBadRequest(err.Error())
+	}
+
+	var botUsername string
+	if len(order.Package.Groups) > 0 {
+		bot, _ := uc.botRepo.FindByID(ctx, uc.db.Gorm, order.Package.Groups[0].BotUUID)
+		if bot != nil && bot.Username != "" {
+			botUsername = bot.Username
+		}
+	}
+	if botUsername == "" {
+		fallback, _ := uc.botRepo.FindFirstByClientID(ctx, uc.db.Gorm, order.ClientID)
+		if fallback != nil && fallback.Username != "" {
+			botUsername = fallback.Username
+		}
+	}
+
+	return &model.MemberCheckoutDetailResponse{
+		OrderID:     order.ExternalID,
+		SnapToken:   midtrans.ExtractSnapToken(order.PaymentURL),
+		PaymentURL:  order.PaymentURL,
+		ClientKey:   midtransClient.ClientKey(),
+		Bot:         botUsername,
+		Slug:        client.Slug,
+		Amount:      order.Amount,
+		PackageName: order.Package.Name,
+		Status:      order.Status,
+	}, nil
 }
 
 // ── Private Helpers ──────────────────────────────────────────
