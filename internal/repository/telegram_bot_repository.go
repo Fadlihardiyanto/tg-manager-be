@@ -14,6 +14,7 @@ type ITelegramBotRepository interface {
 	FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.TelegramBot, error)
 	FindFirstByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (*entity.TelegramBot, error)
 	FindByBotID(ctx context.Context, tx *gorm.DB, botID int64) (*entity.TelegramBot, error)
+	FindByBotIDAndClientID(ctx context.Context, tx *gorm.DB, botID int64, clientID uuid.UUID) (*entity.TelegramBot, error)
 	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.TelegramBot, error)
 	Delete(ctx context.Context, tx *gorm.DB, bot *entity.TelegramBot) error
 	CountByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
@@ -56,6 +57,18 @@ func (r *TelegramBotRepository) FindFirstByClientID(ctx context.Context, tx *gor
 func (r *TelegramBotRepository) FindByBotID(ctx context.Context, tx *gorm.DB, botID int64) (*entity.TelegramBot, error) {
 	var bot entity.TelegramBot
 	err := tx.WithContext(ctx).Where("bot_id = ? AND deleted_at IS NULL", botID).First(&bot).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &bot, nil
+}
+
+func (r *TelegramBotRepository) FindByBotIDAndClientID(ctx context.Context, tx *gorm.DB, botID int64, clientID uuid.UUID) (*entity.TelegramBot, error) {
+	var bot entity.TelegramBot
+	err := tx.WithContext(ctx).Where("bot_id = ? AND client_id = ? AND deleted_at IS NULL", botID, clientID).First(&bot).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

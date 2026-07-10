@@ -33,6 +33,9 @@ type IClientBillingRepository interface {
 	FindExpiredActives(ctx context.Context, db *gorm.DB, before time.Time) ([]entity.ClientBilling, error)
 	Create(ctx context.Context, db *gorm.DB, billing *entity.ClientBilling) error
 	Update(ctx context.Context, db *gorm.DB, billing *entity.ClientBilling) error
+	AtomicUpdateStatus(ctx context.Context, tx *gorm.DB, id uuid.UUID, fromStatus string, updates map[string]any) (int64, error)
+	UpdateReceiptURL(ctx context.Context, tx *gorm.DB, id uuid.UUID, receiptURL string) error
+	DeactivateOtherActiveBillings(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, excludeID uuid.UUID) error
 }
 
 // =============================================================================
@@ -207,4 +210,32 @@ func (r *clientBillingRepository) Create(ctx context.Context, db *gorm.DB, billi
 
 func (r *clientBillingRepository) Update(ctx context.Context, db *gorm.DB, billing *entity.ClientBilling) error {
 	return db.WithContext(ctx).Save(billing).Error
+}
+
+func (r *clientBillingRepository) AtomicUpdateStatus(ctx context.Context, tx *gorm.DB, id uuid.UUID, fromStatus string, updates map[string]any) (int64, error) {
+	result := tx.WithContext(ctx).
+		Model(&entity.ClientBilling{}).
+		Where("id = ? AND status = ?", id, fromStatus).
+		Updates(updates)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
+func (r *clientBillingRepository) UpdateReceiptURL(ctx context.Context, tx *gorm.DB, id uuid.UUID, receiptURL string) error {
+	return tx.WithContext(ctx).
+		Model(&entity.ClientBilling{}).
+		Where("id = ?", id).
+		Update("receipt_url", receiptURL).Error
+}
+
+func (r *clientBillingRepository) DeactivateOtherActiveBillings(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, excludeID uuid.UUID) error {
+	return tx.WithContext(ctx).
+		Model(&entity.ClientBilling{}).
+		Where("client_id = ? AND status = 'active' AND id != ?", clientID, excludeID).
+		Updates(map[string]any{
+			"status":       "cancelled",
+			"cancelled_at": time.Now(),
+		}).Error
 }

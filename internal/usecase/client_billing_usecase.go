@@ -403,17 +403,14 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 			updates["payment_method"] = req.PaymentType
 		}
 
-		result := tx.WithContext(ctx).
-			Model(&entity.ClientBilling{}).
-			Where("id = ? AND status = 'pending'", billing.ID).
-			Updates(updates)
-		if result.Error != nil {
-			return result.Error
+		rowsAffected, err := uc.billingRepo.AtomicUpdateStatus(ctx, tx, billing.ID, "pending", updates)
+		if err != nil {
+			return err
 		}
 
 		// RowsAffected = 0: billing sudah diupdate oleh concurrent webhook
 		// Ini adalah lapisan keamanan terakhir — tidak perlu retry
-		if result.RowsAffected == 0 {
+		if rowsAffected == 0 {
 			uc.log.Info("client billing webhook: concurrent duplicate detected via atomic update, skipping",
 				zap.String("order_id", req.OrderID),
 				zap.String("billing_id", billing.ID.String()))
@@ -613,17 +610,11 @@ func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID u
 		return nil, fmt.Errorf("gagal mengambil billing aktif")
 	}
 	if billing == nil {
-		_ = uc.db.Gorm.WithContext(ctx).
-			Model(&entity.Client{}).
-			Where("id = ?", clientID).
-			Update("subscription_tier", "free").Error
+		_ = uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, "free")
 		return nil, nil
 	}
 
-	_ = uc.db.Gorm.WithContext(ctx).
-		Model(&entity.Client{}).
-		Where("id = ? AND subscription_tier != ?", clientID, billing.Plan.Name).
-		Update("subscription_tier", billing.Plan.Name).Error
+	_ = uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, billing.Plan.Name)
 
 	resp := uc.toBillingResponse(billing)
 	if uc.featureGateUC != nil {
@@ -725,24 +716,11 @@ func (uc *clientBillingUseCase) activateClientPlan(ctx context.Context, tx *gorm
 	}
 
 	// Upgrade atau pembelian baru: cancel billing aktif lain, lalu set subscription_tier ke plan baru
-	if err := tx.WithContext(ctx).
-		Model(&entity.ClientBilling{}).
-		Where("client_id = ? AND status = 'active' AND id != ?", billing.ClientID, billing.ID).
-		Updates(map[string]any{
-			"status":       "upgraded",
-			"cancelled_at": time.Now(),
-			"updated_at":   time.Now(),
-		}).Error; err != nil {
+	if err := uc.billingRepo.DeactivateOtherActiveBillings(ctx, tx, billing.ClientID, billing.ID); err != nil {
 		return err
 	}
 
-	return tx.WithContext(ctx).
-		Model(&entity.Client{}).
-		Where("id = ?", billing.ClientID).
-		Updates(map[string]any{
-			"subscription_tier": plan.Name,
-			"updated_at":        time.Now(),
-		}).Error
+	return uc.clientRepo.UpdateSubscriptionTier(ctx, tx, billing.ClientID, plan.Name)
 }
 
 func (uc *clientBillingUseCase) generateBillingReceipt(ctx context.Context, billing *entity.ClientBilling) error {
@@ -805,10 +783,7 @@ func (uc *clientBillingUseCase) generateBillingReceipt(ctx context.Context, bill
 		return fmt.Errorf("upload to s3: %w", err)
 	}
 
-	return uc.db.Gorm.WithContext(ctx).
-		Model(&entity.ClientBilling{}).
-		Where("id = ?", billing.ID).
-		Update("receipt_url", uploadResult.PublicURL).Error
+	return uc.billingRepo.UpdateReceiptURL(ctx, uc.db.Gorm, billing.ID, uploadResult.PublicURL)
 }
 
 func (uc *clientBillingUseCase) toBillingResponse(b *entity.ClientBilling) model.ClientBillingResponse {

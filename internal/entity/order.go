@@ -23,6 +23,7 @@ type Order struct {
 	ClientID       uuid.UUID  `gorm:"type:uuid;index;not null"`
 	SubscriptionID *uuid.UUID `gorm:"type:uuid"`
 	PaymentURL     string     `gorm:"type:varchar(500)"`
+	SnapToken      string     `gorm:"type:varchar(255)"`
 	ReceiptURL       string         `gorm:"type:varchar(500);column:receipt_url"`
 	RawNotification  datatypes.JSON `gorm:"type:jsonb;column:raw_notification"`
 	ExpiredAt        *time.Time
@@ -31,7 +32,7 @@ type Order struct {
 	DeletedAt      *time.Time
 
 	// Relationships
-	User     TelegramUser    `gorm:"foreignKey:TelegramUserID"`
+	User     TelegramUser    `gorm:"foreignKey:TelegramUserID;references:ID"`
 	Package  Package         `gorm:"foreignKey:PackageID"`
 	Discount *MemberDiscount `gorm:"foreignKey:DiscountID"`
 }

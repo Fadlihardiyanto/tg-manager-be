@@ -35,6 +35,7 @@ func NewSubscriptionRepository() ISubscriptionRepository {
 func (r *SubscriptionRepository) FindByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Subscription, error) {
 	var subscription entity.Subscription
 	err := tx.WithContext(ctx).
+		Preload("Package", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).
 		Where("telegram_user_id = ? AND package_id = ? AND status = ? AND deleted_at IS NULL", userID, packageID, "active").
 		First(&subscription).Error
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -112,8 +113,8 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 		IsActive:       true,
 		AccessScope:    req.AccessScope,
 		ChatTypeScope:  req.ChatTypeScope,
-		PackageIDs:     req.PackageIDs,
-		GroupIDs:       req.GroupIDs,
+		PackageIDs:     uuidsToStringArray(req.PackageIDs),
+		GroupIDs:       uuidsToStringArray(req.GroupIDs),
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -229,11 +230,11 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 	if req.ChatTypeScope != nil {
 		cmd.ChatTypeScope = *req.ChatTypeScope
 	}
-	if req.PackageIDs != nil || len(req.PackageIDs) > 0 {
-		cmd.PackageIDs = req.PackageIDs
+	if req.PackageIDs != nil {
+		cmd.PackageIDs = uuidsToStringArray(req.PackageIDs)
 	}
-	if req.GroupIDs != nil || len(req.GroupIDs) > 0 {
-		cmd.GroupIDs = req.GroupIDs
+	if req.GroupIDs != nil {
+		cmd.GroupIDs = uuidsToStringArray(req.GroupIDs)
 	}
 
 	cmd.UpdatedAt = time.Now()
@@ -308,4 +309,12 @@ func validateResponseTextLength(responseType string, responseText string) error 
 		}
 	}
 	return nil
+}
+
+func uuidsToStringArray(ids []uuid.UUID) pq.StringArray {
+	result := make(pq.StringArray, len(ids))
+	for i, id := range ids {
+		result[i] = id.String()
+	}
+	return result
 }

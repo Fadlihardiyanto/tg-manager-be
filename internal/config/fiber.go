@@ -22,7 +22,7 @@ func NewFiber(cfg *AppConfig) *fiber.App {
 
 	app.Use(cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {
-			if cfg.Name == "development" {
+			if cfg.Env == "development" {
 				return true
 			}
 			return origin == cfg.AllowedOrigin

@@ -15,12 +15,14 @@ type IOrderRepository interface {
 	IRepository[entity.Order]
 	FindByID(ctx context.Context, tx *gorm.DB, id uuid.UUID) (*entity.Order, error)
 	FindByExternalID(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error)
+	FindByExternalIDWithPackage(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error)
 	FindBySubscriptionID(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID) (*entity.Order, error)
 	FindPendingOrderByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Order, error)
 	FindExpiredPendingOrders(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Order, error)
 	FindRecentByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID, limit int) ([]entity.Order, error)
 	FindTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) ([]entity.Order, error)
 	CountTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) (int64, error)
+	AtomicUpdateStatus(ctx context.Context, tx *gorm.DB, id uuid.UUID, fromStatus string, updates map[string]any) (int64, error)
 	Create(ctx context.Context, tx *gorm.DB, order *entity.Order) error
 	Update(ctx context.Context, tx *gorm.DB, order *entity.Order) error
 }
@@ -191,4 +193,30 @@ func (r *OrderRepository) CountTransactionsByClientID(ctx context.Context, tx *g
 	query := r.applyTransactionScope(tx.WithContext(ctx), clientID, filter)
 	err := query.Count(&count).Error
 	return count, err
+}
+
+func (r *OrderRepository) FindByExternalIDWithPackage(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error) {
+	var order entity.Order
+	err := tx.WithContext(ctx).
+		Preload("Package.Groups").
+		Where("external_id = ? AND deleted_at IS NULL", externalID).
+		First(&order).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &order, nil
+}
+
+func (r *OrderRepository) AtomicUpdateStatus(ctx context.Context, tx *gorm.DB, id uuid.UUID, fromStatus string, updates map[string]any) (int64, error) {
+	result := tx.WithContext(ctx).
+		Model(&entity.Order{}).
+		Where("id = ? AND status = ?", id, fromStatus).
+		Updates(updates)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }

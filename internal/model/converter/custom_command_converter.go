@@ -3,6 +3,7 @@ package converter
 import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
+	"github.com/google/uuid"
 )
 
 func CustomCommandToResponse(cc *entity.CustomCommand) *model.CustomCommandResponse {
@@ -21,8 +22,8 @@ func CustomCommandToResponse(cc *entity.CustomCommand) *model.CustomCommandRespo
 		IsActive:       cc.IsActive,
 		AccessScope:    cc.AccessScope,
 		ChatTypeScope:  cc.ChatTypeScope,
-		PackageIDs:     cc.PackageIDs,
-		GroupIDs:       cc.GroupIDs,
+		PackageIDs:     stringsToUUIDs(cc.PackageIDs),
+		GroupIDs:       stringsToUUIDs(cc.GroupIDs),
 		CreatedAt:      cc.CreatedAt,
 		UpdatedAt:      cc.UpdatedAt,
 	}
@@ -34,4 +35,16 @@ func CustomCommandListToResponse(list []entity.CustomCommand) []model.CustomComm
 		res = append(res, *CustomCommandToResponse(&item))
 	}
 	return res
+}
+
+func stringsToUUIDs(ids []string) []uuid.UUID {
+	result := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		parsed, err := uuid.Parse(id)
+		if err != nil {
+			continue
+		}
+		result = append(result, parsed)
+	}
+	return result
 }

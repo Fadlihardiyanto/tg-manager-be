@@ -802,3 +802,8 @@ ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) NO
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS chat_type_scope VARCHAR(20) NOT NULL DEFAULT 'all';
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS package_ids UUID[];
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS group_ids UUID[];
+
+-- ==========================================
+-- MIGRATION: Snap Token for custom payment page
+-- ==========================================
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS snap_token VARCHAR(255);

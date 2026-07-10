@@ -23,6 +23,7 @@ type IClientRepository interface {
 	SoftDelete(ctx context.Context, tx *gorm.DB, client *entity.Client) error
 	Activate(ctx context.Context, tx *gorm.DB, client *entity.Client) error
 	Deactivate(ctx context.Context, tx *gorm.DB, client *entity.Client) error
+	UpdateSubscriptionTier(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, tier string) error
 }
 
 type ClientRepository struct {
@@ -216,4 +217,11 @@ func (r *ClientRepository) Deactivate(ctx context.Context, tx *gorm.DB, client *
 
 	log.Info("client repo deactivate success", zap.String("client_id", client.ID.String()))
 	return nil
+}
+
+func (r *ClientRepository) UpdateSubscriptionTier(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, tier string) error {
+	return tx.WithContext(ctx).
+		Model(&entity.Client{}).
+		Where("id = ?", clientID).
+		Update("subscription_tier", tier).Error
 }

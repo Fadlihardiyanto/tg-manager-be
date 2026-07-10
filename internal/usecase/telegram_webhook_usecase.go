@@ -2,9 +2,9 @@ package usecase
 
 import (
 	"context"
-	json "github.com/bytedance/sonic"
 	"errors"
 	"fmt"
+	json "github.com/bytedance/sonic"
 	"strings"
 	"time"
 
@@ -283,7 +283,10 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		return err
 	}
 
-	if !uc.canExecuteCustomCommand(ctx, cmd, bot, msg) {
+	if ok, reason := uc.canExecuteCustomCommand(ctx, cmd, bot, msg); !ok {
+		if reason != "" {
+			_ = uc.sendReply(ctx, bot, msg.Chat.ID, reason)
+		}
 		return nil
 	}
 
@@ -407,25 +410,25 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 }
 
 // canExecuteCustomCommand checks whether a user is allowed to execute a custom command.
-func (uc *TelegramWebhookUseCase) canExecuteCustomCommand(ctx context.Context, cmd *entity.CustomCommand, bot *entity.TelegramBot, msg *tgbotapi.Message) bool {
+func (uc *TelegramWebhookUseCase) canExecuteCustomCommand(ctx context.Context, cmd *entity.CustomCommand, bot *entity.TelegramBot, msg *tgbotapi.Message) (bool, string) {
 	log := logger.FromContext(ctx, uc.log)
 
 	switch cmd.ChatTypeScope {
 	case "dm_only":
 		if msg.Chat.Type != "private" {
-			return false
+			return false, "Perintah ini hanya bisa digunakan di chat pribadi (DM) dengan bot"
 		}
 	case "group_only":
 		if msg.Chat.Type != "group" && msg.Chat.Type != "supergroup" {
-			return false
+			return false, "Perintah ini hanya bisa digunakan di dalam grup"
 		}
 	}
 
 	if len(cmd.GroupIDs) > 0 {
-		groups, err := uc.groupRepo.FindByIDs(ctx, uc.db.Gorm, cmd.GroupIDs)
+		groups, err := uc.groupRepo.FindByIDs(ctx, uc.db.Gorm, parseUUIDs(cmd.GroupIDs))
 		if err != nil {
 			log.Error("failed to check group IDs for custom command", zap.Error(err))
-			return false
+			return false, ""
 		}
 		allowed := false
 		for _, g := range groups {
@@ -435,34 +438,41 @@ func (uc *TelegramWebhookUseCase) canExecuteCustomCommand(ctx context.Context, c
 			}
 		}
 		if !allowed {
-			return false
+			return false, "Perintah ini tidak tersedia di grup ini"
 		}
 	}
 
 	switch cmd.AccessScope {
 	case "admin":
-		// ponytail: double-decrypt on admin check — merge with main flow if perf issue
 		isAdmin, err := uc.isSenderAdmin(ctx, bot, msg.Chat.ID, msg.From.ID)
-		return err == nil && isAdmin
+		if err != nil || !isAdmin {
+			return false, "Perintah ini hanya untuk admin grup"
+		}
 	case "member":
 		subs, err := uc.subRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, msg.From.ID, bot.ClientID)
 		if err != nil || len(subs) == 0 {
-			return false
+			return false, "Perintah ini hanya tersedia untuk member yang berlangganan"
 		}
 		if len(cmd.PackageIDs) > 0 {
+			allowed := false
 			for _, s := range subs {
-				for _, pid := range cmd.PackageIDs {
+				for _, pid := range parseUUIDs(cmd.PackageIDs) {
 					if s.PackageID == pid {
-						return true
+						allowed = true
+						break
 					}
 				}
+				if allowed {
+					break
+				}
 			}
-			return false
+			if !allowed {
+				return false, "Anda belum membeli paket yang diperlukan untuk perintah ini"
+			}
 		}
-		return true
 	}
 
-	return true
+	return true, ""
 }
 
 func (uc *TelegramWebhookUseCase) handleConnectCommand(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message) error {
@@ -875,4 +885,16 @@ func (uc *TelegramWebhookUseCase) sendReply(ctx context.Context, bot *entity.Tel
 		return err
 	}
 	return botClient.SendMessage(ctx, chatID, text)
+}
+
+func parseUUIDs(ids []string) []uuid.UUID {
+	result := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		parsed, err := uuid.Parse(id)
+		if err != nil {
+			continue
+		}
+		result = append(result, parsed)
+	}
+	return result
 }

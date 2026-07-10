@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 type ITelegramBotUseCase interface {
@@ -98,15 +96,12 @@ func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, re
 	}
 
 	// 1.5 Cek apakah bot ini sudah pernah didaftarkan oleh client ini
-	var existingBot entity.TelegramBot
-	err = uc.db.Gorm.WithContext(ctx).
-		Where("bot_id = ? AND client_id = ? AND deleted_at IS NULL", botInfo.Self.ID, clientID).
-		First(&existingBot).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	existingBot, err := uc.botRepo.FindByBotIDAndClientID(ctx, uc.db.Gorm, botInfo.Self.ID, clientID)
+	if err != nil {
 		log.Error("bot usecase create check existing bot failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to check existing bot")
 	}
-	if err == nil {
+	if existingBot != nil {
 		log.Warn("bot usecase create bot already exists for this client", zap.Int64("bot_id", botInfo.Self.ID), zap.String("client_id", clientID.String()))
 		return nil, helper.NewConflict("Bot Telegram ini sudah terdaftar di akun Anda")
 	}
@@ -135,14 +130,8 @@ func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, re
 		UpdatedAt: time.Now(),
 	}
 
-	// 3. Persist bot in DB first (transaction only for DB write).
-	err = uc.db.Gorm.Transaction(func(tx *gorm.DB) error {
-		if err := uc.botRepo.Create(ctx, tx, bot); err != nil {
-			return fmt.Errorf("create bot in db: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
+	// 3. Persist bot in DB
+	if err := uc.botRepo.Create(ctx, uc.db.Gorm, bot); err != nil {
 		log.Error("bot usecase create transaction failed", zap.Error(err))
 		return nil, fmt.Errorf("create bot in db: %w", err)
 	}

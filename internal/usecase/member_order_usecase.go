@@ -117,9 +117,6 @@ func (uc *memberOrderUseCase) CheckActiveSubscriptions(ctx context.Context, tgUs
 		return nil, err
 	}
 	if samePackageSub != nil {
-		if err := uc.db.Gorm.Unscoped().WithContext(ctx).Model(samePackageSub).Association("Package").Find(&samePackageSub.Package); err != nil {
-			uc.log.Warn("failed to preload package for subscription", zap.Error(err))
-		}
 		result.SamePackage = samePackageSub
 	}
 
@@ -363,21 +360,15 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		DiscountAmount: discountAmount,
 		Status:         "pending",
 		ClientID:       pkg.ClientID,
-		PaymentURL:     snapResp.RedirectURL,
+		PaymentURL:     fmt.Sprintf("%s/payment?order_id=%s", uc.appFrontendURL, externalID),
+		SnapToken:      snapResp.Token,
 		ExpiredAt:      &expiredAt,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
 
-	// Save within a transaction
-	err = uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := uc.orderRepo.Create(ctx, tx, order); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		log.Error("member order checkout save transaction failed", zap.Error(err))
+	if err := uc.orderRepo.Create(ctx, uc.db.Gorm, order); err != nil {
+		log.Error("member order checkout save failed", zap.Error(err))
 		return nil, fmt.Errorf("gagal membuat pesanan baru")
 	}
 
@@ -386,7 +377,7 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		OrderID:        externalID,
 		DBOrderID:      order.ID,
 		ExternalID:     externalID,
-		PaymentURL:     snapResp.RedirectURL,
+		PaymentURL:     fmt.Sprintf("%s/payment?order_id=%s", uc.appFrontendURL, externalID),
 		SnapToken:      snapResp.Token,
 		ClientKey:      midtransClient.ClientKey(),
 		PackageName:    pkg.Name,
@@ -501,12 +492,10 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 		}
 
 		log.Info("member order webhook updating order status", zap.String("order_id", order.ID.String()), zap.String("new_status", newStatus))
-		result := tx.Model(&entity.Order{}).
-			Where("id = ? AND status = ?", order.ID, "pending").
-			Updates(updates)
-		if result.Error != nil {
-			log.Error("member order webhook failed to update order status", zap.String("order_id", order.ID.String()), zap.Error(result.Error))
-			return result.Error
+		rowsAffected, err := uc.orderRepo.AtomicUpdateStatus(ctx, tx, order.ID, "pending", updates)
+		if err != nil {
+			log.Error("member order webhook failed to update order status", zap.String("order_id", order.ID.String()), zap.Error(err))
+			return err
 		}
 
 		order.Status = newStatus
@@ -517,7 +506,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 		}
 
 		// Concurrent webhook processed it first
-		if result.RowsAffected == 0 {
+		if rowsAffected == 0 {
 			log.Info("member order webhook concurrent update detected, skipping", zap.String("order_id", req.OrderID))
 			return nil
 		}
@@ -687,17 +676,12 @@ func (uc *memberOrderUseCase) buildFinishURL(ctx context.Context, slug, external
 }
 
 func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID string) (*model.MemberCheckoutDetailResponse, error) {
-	var order entity.Order
-	err := uc.db.Gorm.WithContext(ctx).
-		Preload("Package.Groups").
-		Preload("User").
-		Where("external_id = ? AND deleted_at IS NULL", externalID).
-		First(&order).Error
+	order, err := uc.orderRepo.FindByExternalIDWithPackage(ctx, uc.db.Gorm, externalID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, helper.NewNotFound("Order tidak ditemukan")
-		}
 		return nil, fmt.Errorf("gagal mencari order: %w", err)
+	}
+	if order == nil {
+		return nil, helper.NewNotFound("Order tidak ditemukan")
 	}
 
 	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, order.ClientID)
@@ -727,7 +711,7 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 
 	return &model.MemberCheckoutDetailResponse{
 		OrderID:     order.ExternalID,
-		SnapToken:   midtrans.ExtractSnapToken(order.PaymentURL),
+		SnapToken:   order.SnapToken,
 		PaymentURL:  order.PaymentURL,
 		ClientKey:   midtransClient.ClientKey(),
 		Bot:         botUsername,
