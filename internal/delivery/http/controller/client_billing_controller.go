@@ -161,6 +161,16 @@ func (c *ClientBillingController) ClientCheckout(ctx fiber.Ctx) error {
 	return helper.Created(ctx, "Checkout berhasil, silakan selesaikan pembayaran", result)
 }
 
+// ClientCancelPending godoc
+// POST /api/v1/tenant/billing/cancel-pending
+func (c *ClientBillingController) ClientCancelPending(ctx fiber.Ctx) error {
+	clientID := middleware.GetTenantClientID(ctx)
+	if err := c.billingUC.CancelPendingBilling(ctx.Context(), clientID); err != nil {
+		return err
+	}
+	return helper.Success(ctx, "Billing pending berhasil dibatalkan", nil)
+}
+
 // ClientGetActiveBilling godoc
 // GET /api/v1/billing/active
 // Dipanggil oleh tenant user yang sudah login untuk melihat billing aktifnya

@@ -28,6 +28,7 @@ type IMemberOrderUseCase interface {
 	CheckActiveSubscriptions(ctx context.Context, tgUserID int64, packageID uuid.UUID) (*model.ActiveSubscriptionCheckResult, error)
 	HandleWebhook(ctx context.Context, req *model.MidtransWebhookRequest) error
 	GetCheckoutDetail(ctx context.Context, externalID string) (*model.MemberCheckoutDetailResponse, error)
+	CancelPendingOrder(ctx context.Context, orderID string) error
 }
 
 type memberOrderUseCase struct {
@@ -720,6 +721,50 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 		PackageName: order.Package.Name,
 		Status:      order.Status,
 	}, nil
+}
+
+func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID string) error {
+	order, err := uc.orderRepo.FindByExternalID(ctx, uc.db.Gorm, externalID)
+	if err != nil {
+		return fmt.Errorf("gagal mencari order: %w", err)
+	}
+	if order == nil {
+		return helper.NewNotFound("Order tidak ditemukan")
+	}
+	if order.Status != "pending" {
+		return helper.NewBadRequest("Order tidak dalam status pending")
+	}
+
+	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, order.ClientID)
+	if err != nil || client == nil {
+		return helper.NewNotFound("Merchant tidak ditemukan")
+	}
+
+	midtransClient, err := uc.getMidtransClient(ctx, client)
+	if err != nil {
+		uc.log.Warn("CancelPendingOrder: midtrans client init failed", zap.Error(err))
+		return helper.NewBadRequest(err.Error())
+	}
+
+	if err := midtransClient.CancelTransaction(ctx, order.ExternalID); err != nil {
+		uc.log.Warn("CancelPendingOrder: midtrans cancel failed", zap.Error(err), zap.String("external_id", order.ExternalID))
+	}
+
+	now := time.Now()
+	order.Status = "failed"
+	order.UpdatedAt = now
+
+	if err := uc.orderRepo.Update(ctx, uc.db.Gorm, order); err != nil {
+		return fmt.Errorf("gagal update status order: %w", err)
+	}
+
+	if order.DiscountID != nil {
+		if err := uc.discountUC.RollbackUsage(ctx, uc.db.Gorm, order.ID, *order.DiscountID); err != nil {
+			uc.log.Error("CancelPendingOrder: failed to rollback discount", zap.Error(err), zap.String("discount_id", order.DiscountID.String()))
+		}
+	}
+
+	return nil
 }
 
 // ── Private Helpers ──────────────────────────────────────────

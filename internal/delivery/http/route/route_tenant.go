@@ -178,6 +178,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	billing.Get("/active", middleware.TenantRequirePermission("billing.read"), c.ClientBillingController.ClientGetActiveBilling)
 	billing.Get("/history", middleware.TenantRequirePermission("billing.read"), c.ClientBillingController.ClientGetBillingHistory)
 	billing.Post("/checkout", middleware.TenantRequirePermission("billing.manage"), c.ClientBillingController.ClientCheckout)
+	billing.Post("/cancel-pending", middleware.TenantRequirePermission("billing.manage"), c.ClientBillingController.ClientCancelPending)
 
 	// ── Uploads ──────────────────────────────────────────────────────────
 	protected.Post("/upload/presign", c.UploadController.GetPresignedURL)

@@ -83,3 +83,18 @@ func (c *MemberOrderController) GetCheckoutDetail(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Detail checkout berhasil dimuat", result)
 }
+
+// CancelCheckout godoc
+// POST /api/v1/public/checkout/:order_id/cancel
+func (c *MemberOrderController) CancelCheckout(ctx fiber.Ctx) error {
+	orderID := ctx.Params("order_id")
+	if orderID == "" {
+		return helper.BadRequest(ctx, "Order ID tidak boleh kosong")
+	}
+
+	if err := c.orderUC.CancelPendingOrder(ctx.Context(), orderID); err != nil {
+		return err
+	}
+
+	return helper.Success(ctx, "Pesanan berhasil dibatalkan", nil)
+}

@@ -39,6 +39,9 @@ type IClientBillingUseCase interface {
 	// Cancel billing
 	CancelBilling(ctx context.Context, req *model.CancelBillingRequest) error
 
+	// Cancel pending billing — untuk tenant membatalkan billing yang masih pending
+	CancelPendingBilling(ctx context.Context, clientID uuid.UUID) error
+
 	// Get active billing milik client
 	GetActiveBilling(ctx context.Context, clientID uuid.UUID) (*model.ClientBillingResponse, error)
 
@@ -602,6 +605,43 @@ func (uc *clientBillingUseCase) CancelBilling(ctx context.Context, req *model.Ca
 		}
 		return nil
 	})
+}
+
+func (uc *clientBillingUseCase) CancelPendingBilling(ctx context.Context, clientID uuid.UUID) error {
+	billing, err := uc.billingRepo.FindActiveOrPendingByClientID(ctx, uc.db.Gorm, clientID)
+	if err != nil {
+		return fmt.Errorf("gagal mengambil billing: %w", err)
+	}
+	if billing == nil {
+		return helper.NewNotFound("Tidak ada billing pending")
+	}
+	if billing.Status != "pending" {
+		return helper.NewBadRequest("Billing tidak dalam status pending")
+	}
+	if billing.ExternalID == "" {
+		return helper.NewBadRequest("Billing tidak memiliki ID transaksi")
+	}
+
+	if err := uc.midtransClient.CancelTransaction(ctx, billing.ExternalID); err != nil {
+		uc.log.Warn("CancelPendingBilling: midtrans cancel failed", zap.Error(err), zap.String("external_id", billing.ExternalID))
+	}
+
+	now := time.Now()
+	billing.Status = "cancelled"
+	billing.CancelledAt = &now
+	billing.UpdatedAt = now
+
+	if err := uc.billingRepo.Update(ctx, uc.db.Gorm, billing); err != nil {
+		return fmt.Errorf("gagal update status billing: %w", err)
+	}
+
+	if billing.DiscountID != nil {
+		if err := uc.platformDiscountRepo.DecrementUsage(ctx, uc.db.Gorm, *billing.DiscountID); err != nil {
+			uc.log.Error("CancelPendingBilling: failed to rollback discount", zap.Error(err), zap.String("discount_id", billing.DiscountID.String()))
+		}
+	}
+
+	return nil
 }
 
 func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID uuid.UUID) (*model.ClientBillingResponse, error) {
