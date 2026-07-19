@@ -87,12 +87,13 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 
 	// 3. Resolve group names for the message body
 	var groupNames []string
+	clientID, err := uuid.Parse(payload.ClientID)
+	if err != nil {
+		h.logger.Error("expiry reminder handler: invalid client_id", append(logFields, zap.String("client_id", payload.ClientID))...)
+		return nil
+	}
+
 	if pkg.IsAllAccess {
-		clientID, err := uuid.Parse(payload.ClientID)
-		if err != nil {
-			h.logger.Error("expiry reminder handler: invalid client_id", append(logFields, zap.String("client_id", payload.ClientID))...)
-			return nil
-		}
 		groups, err := h.groupRepo.FindByClientID(ctx, h.db, clientID, 1, 10000000000000000)
 		if err != nil {
 			return fmt.Errorf("expiry reminder handler: failed to fetch groups for all-access: %w", err)
@@ -106,14 +107,18 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 		}
 	}
 
-	// 4. Fetch the Bot for this Client
-	clientID, err := uuid.Parse(payload.ClientID)
-	if err != nil {
-		h.logger.Error("expiry reminder handler: invalid client_id", append(logFields, zap.String("client_id", payload.ClientID))...)
-		return nil
+	// 4. Fetch the Bot — use the bot from the package's first group, or fall back to any client bot
+	var botUUID uuid.UUID
+	if len(pkg.Groups) > 0 {
+		botUUID = pkg.Groups[0].BotUUID
 	}
 
-	bot, err := h.botRepo.FindFirstByClientID(ctx, h.db, clientID)
+	var bot *entity.TelegramBot
+	if botUUID != uuid.Nil {
+		bot, err = h.botRepo.FindByID(ctx, h.db, botUUID)
+	} else {
+		bot, err = h.botRepo.FindFirstByClientID(ctx, h.db, clientID)
+	}
 	if err != nil || bot == nil {
 		h.logger.Error("expiry reminder handler: no bot found for client", append(logFields, zap.String("client_id", payload.ClientID))...)
 		return nil

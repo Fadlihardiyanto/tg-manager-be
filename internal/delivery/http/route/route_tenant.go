@@ -171,6 +171,9 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Settings ─────────────────────────────────────────────────────────────
 	settings := protected.Group("/settings")
 	settings.Put("/payment", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.UpdatePaymentSettings)
+	settings.Get("/payment", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.GetPaymentSettings)
+	settings.Put("/payment/encrypted", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.PutPaymentEncrypted)
+	settings.Post("/payment/key-exchange/initiate", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.PostKeyExchange)
 	settings.Put("/profile", middleware.TenantRequireRole("owner", "admin"), c.TenantProfileController.UpdateProfile)
 
 	// ── Billing (Self-Service) ────────────────────────────────────────────

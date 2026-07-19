@@ -30,9 +30,10 @@ type AppConfig struct {
 	Timezone      string
 	EncryptionKey  string // 32-bytes key for AES-256
 	BaseURL        string
-	FrontendURL    string
-	AllowedOrigin  string
-	BcryptCost     int
+	FrontendURL             string
+	AllowedOrigin           string
+	BcryptCost              int
+	MidtransPaymentLinkMode string
 }
 
 // DatabaseConfig holds PostgreSQL connection settings.
@@ -156,9 +157,10 @@ func LoadConfig() (*Config, error) {
 			Timezone:      viper.GetString("APP_TIMEZONE"),
 			EncryptionKey: viper.GetString("APP_ENCRYPTION_KEY"),
 			BaseURL:       viper.GetString("APP_BASE_URL"),
-			FrontendURL:   viper.GetString("APP_FRONTEND_URL"),
-			AllowedOrigin: viper.GetString("ALLOWED_ORIGIN"),
-			BcryptCost:    viper.GetInt("BCRYPT_COST"),
+			FrontendURL:             viper.GetString("APP_FRONTEND_URL"),
+			AllowedOrigin:           viper.GetString("ALLOWED_ORIGIN"),
+			BcryptCost:              viper.GetInt("BCRYPT_COST"),
+			MidtransPaymentLinkMode: viper.GetString("MIDTRANS_PAYMENT_LINK_MODE"),
 		},
 		Database: DatabaseConfig{
 			Host:            viper.GetString("DB_HOST"),

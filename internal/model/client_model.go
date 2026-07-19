@@ -38,23 +38,49 @@ type ClientUpdateRequest struct {
 }
 
 type PaymentSettingsUpdateRequest struct {
-	SandboxServerKey    *string `json:"sandbox_server_key" validate:"omitempty"`
-	SandboxClientKey    *string `json:"sandbox_client_key" validate:"omitempty"`
-	SandboxMerchantID   *string `json:"sandbox_merchant_id" validate:"omitempty"`
-	ProductionServerKey *string `json:"production_server_key" validate:"omitempty"`
-	ProductionClientKey *string `json:"production_client_key" validate:"omitempty"`
-	ProductionMerchantID *string `json:"production_merchant_id" validate:"omitempty"`
-	IsSandbox           *bool   `json:"is_sandbox" validate:"required"`
+	SandboxServerKey      *string `json:"sandbox_server_key" validate:"omitempty"`
+	SandboxClientKey      *string `json:"sandbox_client_key" validate:"omitempty"`
+	SandboxMerchantID     *string `json:"sandbox_merchant_id" validate:"omitempty"`
+	ProductionServerKey   *string `json:"production_server_key" validate:"omitempty"`
+	ProductionClientKey   *string `json:"production_client_key" validate:"omitempty"`
+	ProductionMerchantID  *string `json:"production_merchant_id" validate:"omitempty"`
+	IsSandbox             *bool   `json:"is_sandbox" validate:"required"`
+}
+
+type KeyExchangeRequest struct {
+	ClientPublicKey string `json:"client_public_key" validate:"required"`
+}
+
+type KeyExchangeResponse struct {
+	SessionID       uuid.UUID `json:"session_id"`
+	ServerPublicKey string    `json:"server_public_key"`
+}
+
+type PaymentSettingsUpdateEncryptedRequest struct {
+	SessionID            uuid.UUID `json:"session_id" validate:"required"`
+	SandboxServerKey     string    `json:"sandbox_server_key"`
+	SandboxClientKey     string    `json:"sandbox_client_key"`
+	SandboxMerchantID    string    `json:"sandbox_merchant_id"`
+	ProductionServerKey  string    `json:"production_server_key"`
+	ProductionClientKey  string    `json:"production_client_key"`
+	ProductionMerchantID string    `json:"production_merchant_id"`
+	IsSandbox            *bool     `json:"is_sandbox" validate:"required"`
 }
 
 type PaymentSettingsResponse struct {
-	HasSandboxServerKey    bool `json:"has_sandbox_server_key"`
-	HasSandboxClientKey    bool `json:"has_sandbox_client_key"`
-	HasSandboxMerchantID   bool `json:"has_sandbox_merchant_id"`
-	HasProductionServerKey bool `json:"has_production_server_key"`
-	HasProductionClientKey bool `json:"has_production_client_key"`
-	HasProductionMerchantID bool `json:"has_production_merchant_id"`
-	IsSandbox              bool `json:"is_sandbox"`
+	HasSandboxServerKey     bool   `json:"has_sandbox_server_key"`
+	HasSandboxClientKey     bool   `json:"has_sandbox_client_key"`
+	HasSandboxMerchantID    bool   `json:"has_sandbox_merchant_id"`
+	HasProductionServerKey  bool   `json:"has_production_server_key"`
+	HasProductionClientKey  bool   `json:"has_production_client_key"`
+	HasProductionMerchantID bool   `json:"has_production_merchant_id"`
+	IsSandbox               bool   `json:"is_sandbox"`
+	SandboxMerchantID       string `json:"sandbox_merchant_id,omitempty"`
+	SandboxClientKey        string `json:"sandbox_client_key,omitempty"`
+	SandboxServerKey        string `json:"sandbox_server_key,omitempty"`
+	ProductionMerchantID    string `json:"production_merchant_id,omitempty"`
+	ProductionClientKey     string `json:"production_client_key,omitempty"`
+	ProductionServerKey     string `json:"production_server_key,omitempty"`
 }
 
 // ClientUser Models

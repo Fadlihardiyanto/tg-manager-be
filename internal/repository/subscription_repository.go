@@ -72,14 +72,34 @@ func (r *SubscriptionRepository) FindExpiredSubscriptions(ctx context.Context, t
 			return db.Unscoped()
 		}).
 		Preload("Package.Groups").
-		Preload("User").
 		Where("status = ? AND expired_at < ? AND deleted_at IS NULL", "active", gorm.Expr("CURRENT_TIMESTAMP")).
 		Order("expired_at ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	err := query.Find(&subscriptions).Error
-	return subscriptions, err
+	if err := query.Find(&subscriptions).Error; err != nil {
+		return nil, err
+	}
+
+	if len(subscriptions) > 0 {
+		userIDs := make([]uuid.UUID, len(subscriptions))
+		for i, s := range subscriptions {
+			userIDs[i] = s.TelegramUserID
+		}
+		var users []entity.TelegramUser
+		if err := tx.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			return nil, err
+		}
+		userMap := make(map[uuid.UUID]entity.TelegramUser, len(users))
+		for _, u := range users {
+			userMap[u.ID] = u
+		}
+		for i := range subscriptions {
+			subscriptions[i].User = userMap[subscriptions[i].TelegramUserID]
+		}
+	}
+
+	return subscriptions, nil
 }
 
 // FindExpiringSoon returns active subscriptions expiring within the next `withinHours` hours
@@ -96,7 +116,6 @@ func (r *SubscriptionRepository) FindExpiringSoon(ctx context.Context, tx *gorm.
 			return db.Unscoped()
 		}).
 		Preload("Package.Groups").
-		Preload("User").
 		Where(
 			`status = 'active'
 			AND deleted_at IS NULL
@@ -114,8 +133,36 @@ func (r *SubscriptionRepository) FindExpiringSoon(ctx context.Context, tx *gorm.
 		query = query.Limit(limit)
 	}
 
-	err := query.Find(&subscriptions).Error
-	return subscriptions, err
+	if err := query.Find(&subscriptions).Error; err != nil {
+		return nil, err
+	}
+
+	if len(subscriptions) == 0 {
+		return subscriptions, nil
+	}
+
+	// Preload User manually — the Belongs-To GORM tag on Subscription has a naming
+	// collision (TelegramUserID exists in both tables with different types), so
+	// Preload("User") generates a broken query.
+	userIDs := make([]uuid.UUID, len(subscriptions))
+	for i, s := range subscriptions {
+		userIDs[i] = s.TelegramUserID
+	}
+
+	var users []entity.TelegramUser
+	if err := tx.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return nil, err
+	}
+
+	userMap := make(map[uuid.UUID]entity.TelegramUser, len(users))
+	for _, u := range users {
+		userMap[u.ID] = u
+	}
+	for i := range subscriptions {
+		subscriptions[i].User = userMap[subscriptions[i].TelegramUserID]
+	}
+
+	return subscriptions, nil
 }
 
 // FindActiveByTelegramUserID fetches all active subscriptions for a given Telegram user

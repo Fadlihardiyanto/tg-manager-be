@@ -24,6 +24,6 @@ type Subscription struct {
 	DeletedAt        *time.Time
 
 	// Relationships
-	User    TelegramUser `gorm:"foreignKey:TelegramUserID"`
-	Package Package      `gorm:"foreignKey:PackageID"`
+	User    TelegramUser `gorm:"foreignKey:telegram_user_id;references:id"`
+	Package Package      `gorm:"foreignKey:package_id;references:id"`
 }

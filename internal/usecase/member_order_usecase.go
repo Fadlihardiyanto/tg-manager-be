@@ -50,6 +50,7 @@ type memberOrderUseCase struct {
 	midtransSnapURL  string
 	appBaseURL       string
 	appFrontendURL   string
+	paymentLinkMode  string
 }
 
 func NewMemberOrderUseCase(
@@ -71,6 +72,7 @@ func NewMemberOrderUseCase(
 	midtransSnapURL string,
 	appBaseURL string,
 	appFrontendURL string,
+	paymentLinkMode string,
 ) IMemberOrderUseCase {
 	return &memberOrderUseCase{
 		db:               db,
@@ -91,6 +93,7 @@ func NewMemberOrderUseCase(
 		midtransSnapURL:  midtransSnapURL,
 		appBaseURL:       appBaseURL,
 		appFrontendURL:   appFrontendURL,
+		paymentLinkMode:  paymentLinkMode,
 	}
 }
 
@@ -361,7 +364,7 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		DiscountAmount: discountAmount,
 		Status:         "pending",
 		ClientID:       pkg.ClientID,
-		PaymentURL:     fmt.Sprintf("%s/payment?order_id=%s", uc.appFrontendURL, externalID),
+		PaymentURL:     uc.buildPaymentURL(snapResp.RedirectURL, externalID),
 		SnapToken:      snapResp.Token,
 		ExpiredAt:      &expiredAt,
 		CreatedAt:      now,
@@ -378,7 +381,7 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		OrderID:        externalID,
 		DBOrderID:      order.ID,
 		ExternalID:     externalID,
-		PaymentURL:     fmt.Sprintf("%s/payment?order_id=%s", uc.appFrontendURL, externalID),
+		PaymentURL:     uc.buildPaymentURL(snapResp.RedirectURL, externalID),
 		SnapToken:      snapResp.Token,
 		ClientKey:      midtransClient.ClientKey(),
 		PackageName:    pkg.Name,
@@ -387,6 +390,13 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		DiscountAmount: discountAmount,
 		Amount:         finalAmount,
 	}, nil
+}
+
+func (uc *memberOrderUseCase) buildPaymentURL(midtransURL string, externalID string) string {
+	if uc.paymentLinkMode == "direct" {
+		return midtransURL
+	}
+	return fmt.Sprintf("%s/payment?order_id=%s", uc.appFrontendURL, externalID)
 }
 
 func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.MidtransWebhookRequest) error {

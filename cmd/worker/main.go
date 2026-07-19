@@ -98,7 +98,7 @@ func main() {
 					bootstrapConfig.Log.Error("worker: expiry-reminder panicked", zap.Any("panic", r))
 				}
 			}()
-			bootstrapConfig.ExpiryReminderWorker.Start(expiryReminderCtx, 1*time.Hour)
+			bootstrapConfig.ExpiryReminderWorker.Start(expiryReminderCtx, 1*time.Minute)
 		}()
 	}
 
