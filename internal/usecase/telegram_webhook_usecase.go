@@ -497,6 +497,13 @@ func (uc *TelegramWebhookUseCase) handleConnectCommand(ctx context.Context, bot 
 		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Hanya Administrator grup yang dapat menjalankan perintah ini.")
 	}
 
+	// Check if bot is admin in the group
+	isBotAdmin, err := uc.isSenderAdmin(ctx, bot, msg.Chat.ID, bot.BotID)
+	if err != nil || !isBotAdmin {
+		log.Warn("failed to check if bot is admin", zap.Error(err))
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Bot ini belum menjadi administrator di grup. Silakan jadikan bot sebagai administrator grup terlebih dahulu, lalu coba lagi.")
+	}
+
 	// Verify token in Redis
 	redisKey := fmt.Sprintf("connect_group:%s", token)
 	val, err := uc.redisClient.Get(ctx, redisKey).Result()

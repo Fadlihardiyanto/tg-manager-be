@@ -260,6 +260,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	planRepo := repository.NewPlatformPlanRepository()
 	billingRepo := repository.NewClientBillingRepository()
 	tenantPermissionRepo := repository.NewTenantPermissionRepository(config.Log)
+	impersonationLogRepo := repository.NewAdminImpersonationLogRepository()
 
 	// Usecases
 	adminAuthUC := usecase.NewAdminAuthUseCase(config.DB, adminUserRepo, adminPermissionRepo, config.Log, config.Redis, config.OtpService, config.Mailer, outboxRepo, config.Jwt, config.Config.App.FrontendURL, config.Config.App.BcryptCost)
@@ -269,6 +270,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	adminTenantUC := usecase.NewAdminTenantUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log, config.Config.App.BcryptCost)
 	adminTenantUserUC := usecase.NewAdminTenantUserUseCase(config.DB, clientRepo, userRepo, clientUserRepo, config.Log, config.Config.App.BcryptCost)
 	planUC := usecase.NewPlatformPlanUseCase(config.DB, planRepo, billingRepo, config.Log)
+	impersonationUC := usecase.NewAdminImpersonationUseCase(config.DB, adminUserRepo, clientRepo, impersonationLogRepo, config.Jwt, config.Log)
 	platformDiscountUC := usecase.NewPlatformDiscountUseCase(config.DB, platformDiscountRepo, config.Log)
 	memberDiscountUC := usecase.NewMemberDiscountUseCase(config.DB, discountRepo, config.Log)
 	featureGateUC := usecase.NewFeatureGateUseCase(config.DB, billingRepo, botRepo, groupRepo, packageRepo, customCommandRepo, broadcastRepo, tenantAnalyticsRepo, config.Log)
@@ -319,6 +321,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 	adminClientUserCtrl := controller.NewAdminClientUserController(adminTenantUserUC, config.Log, config.Validate)
 	planCtrl := controller.NewPlatformPlanController(planUC, config.Log, config.Validate)
 	billingCtrl := controller.NewClientBillingController(billingUC, config.Log, config.Validate)
+	platformDiscountCtrl := controller.NewPlatformDiscountController(platformDiscountUC, config.Log, config.Validate)
+	impersonationCtrl := controller.NewAdminImpersonationController(impersonationUC, config.Log, config.Validate)
 	memberOrderCtrl := controller.NewMemberOrderController(memberOrderUC, config.Log, config.Validate)
 	tenantAuthCtrl := controller.NewTenantAuthController(tenantAuthUC, config.Log, config.Validate)
 	botCtrl := controller.NewTelegramBotController(botUC, config.Log, config.Validate)
@@ -377,10 +381,12 @@ func BootstrapWeb(config *BootstrapConfig) {
 		AdminUserController:       adminUserCtrl,
 		AdminClientController:     adminClientCtrl,
 		AdminClientUserController: adminClientUserCtrl,
-		PlatformPlanController:    planCtrl,
-		ClientBillingController:   billingCtrl,
-		AuditLogController:        auditLogCtrl,
-		AdminAuthMiddleware:       middleware.AdminAuth(config.Jwt),
+		PlatformPlanController:      planCtrl,
+		ClientBillingController:     billingCtrl,
+		PlatformDiscountController:  platformDiscountCtrl,
+		AuditLogController:          auditLogCtrl,
+		AdminImpersonationController: impersonationCtrl,
+		AdminAuthMiddleware:         middleware.AdminAuth(config.Jwt),
 	}
 	adminRoute.Setup()
 

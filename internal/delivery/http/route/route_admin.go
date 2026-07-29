@@ -28,9 +28,13 @@ type AdminRouteConfig struct {
 	AdminClientUserController *controller.AdminClientUserController
 
 	// platform plan & billing
-	PlatformPlanController  *controller.PlatformPlanController
-	ClientBillingController *controller.ClientBillingController
-	AuditLogController      *controller.AuditLogController
+	PlatformPlanController      *controller.PlatformPlanController
+	ClientBillingController     *controller.ClientBillingController
+	PlatformDiscountController  *controller.PlatformDiscountController
+	AuditLogController          *controller.AuditLogController
+
+	// impersonation
+	AdminImpersonationController *controller.AdminImpersonationController
 
 	// Middleware
 	AdminAuthMiddleware fiber.Handler // JWT validation
@@ -76,6 +80,7 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 	protected.Post("/auth/logout", c.AdminAuthController.Logout)
 	protected.Post("/auth/2fa/setup", c.AdminAuthController.Setup2FA)
 	protected.Post("/auth/2fa/enable", c.AdminAuthController.Enable2FA)
+	protected.Get("/auth/me", c.AdminAuthController.Me)
 
 	// Role management
 	roles := protected.Group("/roles")
@@ -119,6 +124,10 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 	clientUsers.Put("/:user_id", middleware.Authorize("clients.update"), c.AdminClientUserController.Update)
 	clientUsers.Delete("/:user_id", middleware.Authorize("clients.update"), c.AdminClientUserController.Delete)
 
+	// Impersonation
+	clients.Post("/:id/impersonate", middleware.Authorize("clients.impersonate"), c.AdminImpersonationController.Start)
+	clients.Get("/:id/impersonation-logs", middleware.Authorize("clients.read"), c.AdminImpersonationController.ListByClient)
+
 	plans := protected.Group("/billing/plans")
 	plans.Get("/", middleware.Authorize("billing.read"), c.PlatformPlanController.List)
 	plans.Post("/", middleware.Authorize("billing.manage"), c.PlatformPlanController.Create)
@@ -131,7 +140,19 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 	billing.Post("/assign", middleware.Authorize("billing.manage"), c.ClientBillingController.AdminAssignPlan)
 	billing.Delete("/:id", middleware.Authorize("billing.manage"), c.ClientBillingController.CancelBilling)
 
+	discounts := billing.Group("/discounts")
+	discounts.Get("/", middleware.Authorize("billing.read"), c.PlatformDiscountController.List)
+	discounts.Post("/", middleware.Authorize("billing.manage"), c.PlatformDiscountController.Create)
+	discounts.Get("/:id", middleware.Authorize("billing.read"), c.PlatformDiscountController.GetByID)
+	discounts.Put("/:id", middleware.Authorize("billing.manage"), c.PlatformDiscountController.Update)
+	discounts.Delete("/:id", middleware.Authorize("billing.manage"), c.PlatformDiscountController.Delete)
+
 	// ── Audit Logs ───────────────────────────────────────────────────
 	audit := protected.Group("/audit-logs")
 	audit.Get("/", middleware.Authorize("analytics.read"), c.AuditLogController.ListPlatformLogs)
+
+	// ── Impersonation ────────────────────────────────────────────────
+	impersonation := protected.Group("/impersonation")
+	impersonation.Post("/end", middleware.Authorize("clients.impersonate"), c.AdminImpersonationController.End)
+	impersonation.Get("/logs", middleware.Authorize("clients.read"), c.AdminImpersonationController.ListByAdmin)
 }

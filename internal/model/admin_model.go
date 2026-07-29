@@ -398,7 +398,11 @@ type AdminPermissionGetRequest struct {
 // AdminImpersonateRequest is the payload for POST /admin/clients/:id/impersonate
 type AdminImpersonateRequest struct {
 	Reason       string     `json:"reason" validate:"required,min=10"`
-	TargetUserID *uuid.UUID `json:"target_user_id" validate:"omitempty"` // optional, defaults to owner
+	TargetUserID *uuid.UUID `json:"target_user_id" validate:"omitempty"`
+
+	// Dari JWT + request context
+	CallerPermissions []string `json:"-" validate:"-"`
+	IPAddress         string   `json:"-" validate:"-"`
 }
 
 // AdminImpersonateResponse is returned after successful impersonation setup.

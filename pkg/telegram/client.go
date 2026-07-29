@@ -32,6 +32,7 @@ type BotClient interface {
 	GetChatMember(ctx context.Context, chatID int64, userID int64) (tgbotapi.ChatMember, error)
 	GetChatMembersCount(ctx context.Context, chatID int64) (int, error)
 	SendDocument(ctx context.Context, c tgbotapi.Chattable) (tgbotapi.Message, error)
+	LeaveChat(ctx context.Context, chatID int64) error
 }
 
 type botClientImpl struct {
@@ -508,4 +509,26 @@ func (c *botClientImpl) GetChatMembersCount(ctx context.Context, chatID int64) (
 		return 0, fmt.Errorf("get chat members count API call: %w", err)
 	}
 	return count, nil
+}
+
+// LeaveChat makes the bot leave a chat.
+func (c *botClientImpl) LeaveChat(ctx context.Context, chatID int64) error {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("telegram: rate limiter wait failed: %w", err)
+	}
+
+	config := tgbotapi.LeaveChatConfig{
+		ChatID: chatID,
+	}
+
+	return c.retryOnRateLimit(ctx, func() error {
+		resp, err := c.bot.Request(config)
+		if err != nil {
+			return fmt.Errorf("telegram: failed to leave chat: %w", err)
+		}
+		if !resp.Ok {
+			return fmt.Errorf("telegram: failed to leave chat, api response: %s", resp.Description)
+		}
+		return nil
+	})
 }

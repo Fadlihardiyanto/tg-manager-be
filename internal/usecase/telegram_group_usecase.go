@@ -28,6 +28,7 @@ type ITelegramGroupUseCase interface {
 	FindByID(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) (*model.GroupResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID, req *model.GroupUpdateRequest) (*model.GroupResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
+	Disconnect(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
 	GenerateConnectToken(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (string, string, error)
 	CheckConnectStatus(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, token string) (string, error)
 	SyncMemberCounts(ctx context.Context) error
@@ -262,6 +263,64 @@ func (uc *TelegramGroupUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 	}
 
 	log.Info("group usecase delete success", zap.String("group_id", groupID.String()))
+	return nil
+}
+
+func (uc *TelegramGroupUseCase) Disconnect(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("group usecase disconnect start", zap.String("group_id", groupID.String()))
+
+	group, err := uc.groupRepo.FindByID(ctx, uc.db.Gorm, groupID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return helper.NewNotFound("Grup tidak ditemukan")
+		}
+		log.Error("group usecase disconnect find failed", zap.Error(err))
+		return err
+	}
+
+	if group.ClientID != clientID {
+		return helper.NewNotFound("Grup tidak ditemukan")
+	}
+
+	if !group.IsActive {
+		log.Info("group usecase disconnect already inactive", zap.String("group_id", groupID.String()))
+		return nil
+	}
+
+	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, group.BotUUID)
+	if err != nil {
+		log.Error("group usecase disconnect find bot failed", zap.Error(err))
+		return fmt.Errorf("Gagal menemukan bot")
+	}
+
+	token, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
+	if err != nil {
+		log.Error("group usecase disconnect decrypt token failed", zap.Error(err))
+		return fmt.Errorf("Gagal mendekripsi token bot")
+	}
+
+	tgClient, err := uc.telegramFactory.NewClient(token)
+	if err != nil {
+		log.Error("group usecase disconnect tg client init failed", zap.Error(err))
+		return fmt.Errorf("Gagal menghubungi Telegram API")
+	}
+
+	if err := tgClient.LeaveChat(ctx, group.TelegramChatID); err != nil {
+		log.Error("group usecase disconnect leave chat failed", zap.Error(err))
+		return fmt.Errorf("Gagal disconnect bot dari grup Telegram")
+	}
+
+	group.IsActive = false
+	group.InactiveReason = "Bot disconnected by tenant admin"
+	group.UpdatedAt = time.Now()
+
+	if err := uc.groupRepo.Update(ctx, uc.db.Gorm, group); err != nil {
+		log.Error("group usecase disconnect update failed", zap.Error(err))
+		return err
+	}
+
+	log.Info("group usecase disconnect success", zap.String("group_id", groupID.String()))
 	return nil
 }
 

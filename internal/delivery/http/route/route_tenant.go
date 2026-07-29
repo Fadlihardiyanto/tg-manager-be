@@ -128,6 +128,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	groups.Post("/", middleware.TenantRequirePermission("groups.create"), c.TelegramGroupController.Create)
 	groups.Put("/:id", middleware.TenantRequirePermission("groups.update"), c.TelegramGroupController.Update)
 	groups.Delete("/:id", middleware.TenantRequirePermission("groups.delete"), c.TelegramGroupController.Delete)
+	groups.Post("/:id/disconnect", middleware.TenantRequirePermission("groups.delete"), c.TelegramGroupController.Disconnect)
 	groups.Post("/sync", middleware.TenantRequirePermission("groups.update"), c.TelegramGroupController.Sync)
 
 	// ── Packages ─────────────────────────────────────────────────────

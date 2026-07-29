@@ -139,6 +139,27 @@ func (c *TelegramGroupController) Update(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Grup berhasil diperbarui", result)
 }
 
+// Disconnect godoc
+// POST /api/v1/tenant/groups/:id/disconnect
+func (c *TelegramGroupController) Disconnect(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("group controller disconnect request")
+
+	clientID := middleware.GetTenantClientID(ctx)
+	groupID, err := uuid.Parse(ctx.Params("id"))
+	if err != nil {
+		log.Warn("group controller disconnect invalid id", zap.Error(err))
+		return helper.BadRequest(ctx, "ID grup tidak valid")
+	}
+
+	if err := c.groupUC.Disconnect(ctx.Context(), clientID, groupID); err != nil {
+		log.Error("group controller disconnect failed", zap.Error(err))
+		return err
+	}
+
+	return helper.Success(ctx, "Bot berhasil disconnect dari grup", nil)
+}
+
 // Delete godoc
 // DELETE /api/v1/tenant/groups/:id
 func (c *TelegramGroupController) Delete(ctx fiber.Ctx) error {

@@ -21,11 +21,11 @@ import (
 
 type IPlatformDiscountUseCase interface {
 	List(ctx context.Context, onlyActive bool, callerPermissions []string) ([]model.PlatformDiscountResponse, error)
+	GetByID(ctx context.Context, id uuid.UUID, callerPermissions []string) (*model.PlatformDiscountResponse, error)
 	Create(ctx context.Context, req *model.CreatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error)
 	Update(ctx context.Context, req *model.UpdatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error)
 	Delete(ctx context.Context, id uuid.UUID, callerPermissions []string) error
 
-	// Dipakai oleh billing usecase saat checkout
 	ApplyByCode(ctx context.Context, req *model.ApplyPlatformDiscountRequest) (*model.DiscountPreviewResponse, error)
 	ApplyAuto(ctx context.Context, clientID, planID uuid.UUID, amount decimal.Decimal) (*model.DiscountPreviewResponse, error)
 }
@@ -57,6 +57,18 @@ func (uc *platformDiscountUseCase) List(ctx context.Context, onlyActive bool, ca
 		result[i] = toPlatformDiscountResponse(&d)
 	}
 	return result, nil
+}
+
+func (uc *platformDiscountUseCase) GetByID(ctx context.Context, id uuid.UUID, callerPermissions []string) (*model.PlatformDiscountResponse, error) {
+	if !rbac.HasPermission(callerPermissions, "billing.read") {
+		return nil, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+	}
+	d, err := uc.discountRepo.FindByID(ctx, uc.db.Gorm, id)
+	if err != nil || d == nil {
+		return nil, helper.NewNotFound("diskon tidak ditemukan")
+	}
+	resp := toPlatformDiscountResponse(d)
+	return &resp, nil
 }
 
 func (uc *platformDiscountUseCase) Create(ctx context.Context, req *model.CreatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error) {

@@ -55,6 +55,9 @@ type IAdminAuthUseCase interface {
 
 	// VerifyEmail confirms the admin's email address
 	VerifyEmail(ctx context.Context, req *model.AdminVerifyEmailRequest) error
+
+	// GetMe returns the current admin's profile from JWT claims
+	GetMe(ctx context.Context, adminID uuid.UUID) (*model.AdminUserResponse, error)
 }
 
 // =============================================================================
@@ -562,4 +565,12 @@ func (uc *AdminAuthUseCase) VerifyEmail(ctx context.Context, req *model.AdminVer
 	log.Info("admin auth verify email success", zap.String("admin_id", adminID.String()))
 
 	return nil
+}
+
+func (uc *AdminAuthUseCase) GetMe(ctx context.Context, adminID uuid.UUID) (*model.AdminUserResponse, error) {
+	admin, err := uc.adminRepo.FindByIDWithRoles(ctx, uc.db.Gorm, adminID)
+	if err != nil || admin == nil {
+		return nil, helper.NewNotFound("admin user")
+	}
+	return converter.AdminUserToResponse(admin), nil
 }

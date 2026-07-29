@@ -271,3 +271,13 @@ func (c *AdminAuthController) VerifyEmail(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Email berhasil diverifikasi", nil)
 }
+
+// GET /admin/v1/auth/me
+func (c *AdminAuthController) Me(ctx fiber.Ctx) error {
+	adminID := middleware.GetAdminID(ctx)
+	result, err := c.adminAuthUC.GetMe(ctx.Context(), adminID)
+	if err != nil {
+		return err
+	}
+	return helper.Success(ctx, "Profil admin berhasil diambil", result)
+}
