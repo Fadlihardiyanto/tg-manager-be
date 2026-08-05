@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	json "github.com/bytedance/sonic"
 	"strings"
 	"time"
+
+	json "github.com/bytedance/sonic"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/bot/handler"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
@@ -97,12 +98,13 @@ func (uc *TelegramWebhookUseCase) ProcessUpdate(ctx context.Context, botID uuid.
 
 	if chatID != 0 {
 		isConnectOrTransfer := update.Message != nil && update.Message.IsCommand() && (update.Message.Command() == "connect" || update.Message.Command() == "transfer")
+		isDeepLinkConnect := update.Message != nil && update.Message.IsCommand() && update.Message.Command() == "start" && strings.HasPrefix(update.Message.CommandArguments(), "connect_")
 		isCallbackConnectOrTransfer := update.CallbackQuery != nil && (strings.HasPrefix(update.CallbackQuery.Data, "connect_ok:") ||
 			strings.HasPrefix(update.CallbackQuery.Data, "transfer_ok:") ||
 			update.CallbackQuery.Data == "connect_cancel" ||
 			update.CallbackQuery.Data == "transfer_cancel")
 
-		if !isConnectOrTransfer && !isCallbackConnectOrTransfer {
+		if !isConnectOrTransfer && !isCallbackConnectOrTransfer && !isDeepLinkConnect {
 			group, err := uc.groupRepo.FindByTelegramID(ctx, uc.db.Gorm, chatID)
 			if err == nil && group != nil {
 				if group.BotUUID != bot.ID {
@@ -149,11 +151,25 @@ func (uc *TelegramWebhookUseCase) ProcessUpdate(ctx context.Context, botID uuid.
 			// Intercept /connect and /transfer commands
 			if update.Message.IsCommand() {
 				cmd := update.Message.Command()
+				log.Info("telegram webhook command received",
+					zap.String("cmd", cmd),
+					zap.String("text", update.Message.Text),
+					zap.String("args", update.Message.CommandArguments()),
+					zap.String("chat_type", update.Message.Chat.Type),
+					zap.Int64("chat_id", update.Message.Chat.ID),
+				)
 				if cmd == "connect" {
 					return uc.handleConnectCommand(ctx, bot, update.Message)
 				}
 				if cmd == "transfer" {
 					return uc.handleTransferCommand(ctx, bot, update.Message)
+				}
+				if cmd == "start" {
+					args := update.Message.CommandArguments()
+					if strings.HasPrefix(args, "connect_") && (update.Message.Chat.Type == "group" || update.Message.Chat.Type == "supergroup") {
+						code := strings.TrimPrefix(args, "connect_")
+						return uc.handleDeepLinkConnect(ctx, bot, update.Message, code)
+					}
 				}
 			}
 
@@ -273,14 +289,18 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 	trigger := "/" + msg.Command()
 	log.Info("handling custom command", zap.String("trigger", trigger))
 
-	cmd, err := uc.commandRepo.FindByBotIDAndTrigger(ctx, uc.db.Gorm, bot.ID, trigger)
+	cmd, err := uc.getCustomCommand(ctx, bot.ClientID, bot.ID, trigger)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Debug("custom command not found", zap.String("trigger", trigger))
-			return nil
+			return uc.sendReply(ctx, bot, msg.Chat.ID, "🤔 Hmm, perintah ini belum tersedia.\n\nKetik /start buat lihat apa aja yang bisa aku bantu ✨")
 		}
 		log.Error("failed to find custom command", zap.Error(err))
 		return err
+	}
+	if cmd == nil {
+		log.Debug("custom command not found", zap.String("trigger", trigger))
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "🤔 Hmm, perintah ini belum tersedia.\n\nKetik /start buat lihat apa aja yang bisa aku bantu ✨")
 	}
 
 	if ok, reason := uc.canExecuteCustomCommand(ctx, cmd, bot, msg); !ok {
@@ -302,15 +322,17 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		return err
 	}
 
-	if cmd.ResponseType == "text" {
+	switch cmd.ResponseType {
+	case "text":
 		reply := tgbotapi.NewMessage(msg.Chat.ID, cmd.ResponseText)
 		reply.ParseMode = tgbotapi.ModeHTML
+		log.Debug("sending custom text command", zap.String("text", cmd.ResponseText))
 		_, err = botClient.Send(ctx, reply)
 		if err != nil {
 			log.Error("failed to send custom text command", zap.Error(err))
 			return err
 		}
-	} else if cmd.ResponseType == "photo" {
+	case "photo":
 		var err error
 		var sentMsg tgbotapi.Message
 
@@ -346,6 +368,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 				if errUpdate := uc.commandRepo.Update(ctx, uc.db.Gorm, cmd); errUpdate != nil {
 					log.Error("failed to save telegram_file_id", zap.Error(errUpdate))
 				}
+				uc.setCustomCommand(ctx, bot.ClientID, bot.ID, trigger, cmd)
 			}
 		}
 
@@ -358,7 +381,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 				return err
 			}
 		}
-	} else if cmd.ResponseType == "document" {
+	case "document":
 		var err error
 		var sentMsg tgbotapi.Message
 
@@ -393,6 +416,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 				if errUpdate := uc.commandRepo.Update(ctx, uc.db.Gorm, cmd); errUpdate != nil {
 					log.Error("failed to save telegram_file_id for document", zap.Error(errUpdate))
 				}
+				uc.setCustomCommand(ctx, bot.ClientID, bot.ID, trigger, cmd)
 			}
 		}
 
@@ -473,6 +497,64 @@ func (uc *TelegramWebhookUseCase) canExecuteCustomCommand(ctx context.Context, c
 	}
 
 	return true, ""
+}
+
+const (
+	customCmdCacheTTL      = 15 * time.Minute
+	customCmdCacheMissTTL  = 2 * time.Minute
+	customCmdCacheSentinel = "nil"
+)
+
+func customCmdCacheKey(clientID, botID uuid.UUID, trigger string) string {
+	return fmt.Sprintf("custom_cmd:%s:%s:%s", clientID.String(), botID.String(), trigger)
+}
+
+// getCustomCommand returns the active custom command for a bot+trigger, using Redis
+// as a cache in front of the database. A miss stores a short-lived sentinel so
+// unknown commands don't hammer the DB. Redis failures fall back to the DB — the
+// cache must never break the bot.
+func (uc *TelegramWebhookUseCase) getCustomCommand(ctx context.Context, clientID, botID uuid.UUID, trigger string) (*entity.CustomCommand, error) {
+	if uc.redisClient != nil {
+		key := customCmdCacheKey(clientID, botID, trigger)
+		raw, err := uc.redisClient.Get(ctx, key).Result()
+		if err == nil {
+			if raw == customCmdCacheSentinel {
+				return nil, nil
+			}
+			var cmd entity.CustomCommand
+			if err := json.Unmarshal([]byte(raw), &cmd); err == nil {
+				return &cmd, nil
+			}
+			uc.log.Warn("failed to unmarshal cached custom command", zap.String("key", key), zap.Error(err))
+		} else if err != redis.Nil {
+			uc.log.Warn("failed to read custom command cache", zap.String("key", key), zap.Error(err))
+		}
+	}
+
+	cmd, err := uc.commandRepo.FindByBotIDAndTrigger(ctx, uc.db.Gorm, botID, trigger)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if uc.redisClient != nil {
+				uc.redisClient.Set(ctx, customCmdCacheKey(clientID, botID, trigger), customCmdCacheSentinel, customCmdCacheMissTTL)
+			}
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	uc.setCustomCommand(ctx, clientID, botID, trigger, cmd)
+	return cmd, nil
+}
+
+func (uc *TelegramWebhookUseCase) setCustomCommand(ctx context.Context, clientID, botID uuid.UUID, trigger string, cmd *entity.CustomCommand) {
+	if uc.redisClient == nil {
+		return
+	}
+	b, err := json.Marshal(cmd)
+	if err != nil {
+		return
+	}
+	uc.redisClient.Set(ctx, customCmdCacheKey(clientID, botID, trigger), b, customCmdCacheTTL)
 }
 
 func (uc *TelegramWebhookUseCase) handleConnectCommand(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message) error {
@@ -863,6 +945,93 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 	}
 
 	return nil
+}
+
+func (uc *TelegramWebhookUseCase) handleDeepLinkConnect(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message, code string) error {
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("deep link connect", zap.String("code", code), zap.Int64("chat_id", msg.Chat.ID))
+
+	// Verify token in Redis
+	redisKey := fmt.Sprintf("connect_group:%s", code)
+	val, err := uc.redisClient.Get(ctx, redisKey).Result()
+	if err != nil {
+		log.Warn("failed to get connect token from redis for deep link", zap.Error(err))
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Kode koneksi tidak valid atau sudah kedaluwarsa.")
+	}
+
+	var payload struct {
+		ClientID uuid.UUID `json:"client_id"`
+		BotID    uuid.UUID `json:"bot_id"`
+	}
+	if err := json.Unmarshal([]byte(val), &payload); err != nil {
+		log.Error("failed to unmarshal deep link connect token", zap.Error(err))
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Terjadi kesalahan sistem.")
+	}
+
+	payloadBot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, payload.BotID)
+	if err != nil || payloadBot == nil {
+		log.Warn("bot not found for deep link connect", zap.String("bot_id", payload.BotID.String()))
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Bot tidak ditemukan.")
+	}
+
+	if payloadBot.BotID != bot.BotID {
+		log.Info("deep link connect bot ID mismatch, ignoring", zap.Int64("expected", payloadBot.BotID), zap.Int64("actual", bot.BotID))
+		return nil
+	}
+
+	bot = payloadBot
+
+	// Check if bot is admin in the group
+	isBotAdmin, err := uc.isSenderAdmin(ctx, bot, msg.Chat.ID, bot.BotID)
+	if err != nil || !isBotAdmin {
+		// Extend Redis token TTL so user can retry with /connect CODE
+		uc.redisClient.Expire(ctx, redisKey, 15*time.Minute)
+		return uc.sendReply(ctx, bot, msg.Chat.ID, fmt.Sprintf("🤖 Bot sudah ditambahkan ke grup! Silakan jadikan bot sebagai <b>administrator</b> terlebih dahulu, lalu gunakan perintah:\n\n<code>/connect %s</code>", code))
+	}
+
+	// Check for existing group
+	group, err := uc.groupRepo.FindByTelegramID(ctx, uc.db.Gorm, msg.Chat.ID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Error("failed to fetch group by telegram id for deep link", zap.Error(err))
+		return err
+	}
+
+	if group != nil {
+		if group.ClientID != payload.ClientID {
+			return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Grup ini sudah terdaftar oleh klien lain.")
+		}
+		if group.BotUUID != payload.BotID {
+			return uc.sendReply(ctx, bot, msg.Chat.ID, fmt.Sprintf("❌ Grup ini sudah dikelola oleh bot lain. Gunakan perintah /transfer %s untuk memindahkan pengelolaan.", code))
+		}
+		group.IsActive = true
+		group.InactiveReason = ""
+		group.Name = msg.Chat.Title
+		group.UpdatedAt = time.Now()
+		if err := uc.groupRepo.Update(ctx, uc.db.Gorm, group); err != nil {
+			log.Error("failed to update group for deep link", zap.Error(err))
+			return err
+		}
+	} else {
+		newGroup := &entity.Group{
+			ID:             uuid.New(),
+			ClientID:       payload.ClientID,
+			BotUUID:        payload.BotID,
+			TelegramChatID: msg.Chat.ID,
+			Name:           msg.Chat.Title,
+			IsActive:       true,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
+		if err := uc.groupRepo.Create(ctx, uc.db.Gorm, newGroup); err != nil {
+			log.Error("failed to create group for deep link", zap.Error(err))
+			return err
+		}
+	}
+
+	uc.redisClient.Set(ctx, fmt.Sprintf("connect_group_status:%s", code), "success", 5*time.Minute)
+	uc.redisClient.Del(ctx, redisKey)
+
+	return uc.sendReply(ctx, bot, msg.Chat.ID, "✅ Grup berhasil terhubung! Gunakan /start untuk melihat daftar perintah yang tersedia.")
 }
 
 func (uc *TelegramWebhookUseCase) isSenderAdmin(ctx context.Context, bot *entity.TelegramBot, chatID int64, userID int64) (bool, error) {

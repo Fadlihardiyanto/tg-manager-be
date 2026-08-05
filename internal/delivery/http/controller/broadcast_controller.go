@@ -114,3 +114,25 @@ func (c *BroadcastController) List(ctx fiber.Ctx) error {
 	meta := helper.NewMeta(page, limit, total)
 	return helper.SuccessWithMeta(ctx, "Berhasil mengambil riwayat broadcast", result, meta)
 }
+
+// GetReach godoc
+// GET /api/v1/tenant/bots/:bot_id/broadcast-reach
+func (c *BroadcastController) GetReach(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	clientID := middleware.GetTenantClientID(ctx)
+
+	botIDStr := ctx.Params("bot_id")
+	botID, err := uuid.Parse(botIDStr)
+	if err != nil {
+		return helper.BadRequest(ctx, "Bot ID tidak valid")
+	}
+
+	result, err := c.broadcastUC.GetReach(ctx.Context(), clientID, botID)
+	if err != nil {
+		log.Error("broadcast controller get reach failed", zap.Error(err))
+		return err
+	}
+
+	return helper.Success(ctx, "Berhasil mengambil jangkauan broadcast", result)
+}

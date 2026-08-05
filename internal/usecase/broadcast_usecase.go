@@ -22,6 +22,7 @@ type IBroadcastUseCase interface {
 	Create(ctx context.Context, clientID uuid.UUID, req *model.CreateBroadcastRequest) (*model.BroadcastResponse, error)
 	List(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, filter *model.BroadcastFilterRequest) ([]model.BroadcastResponse, int64, error)
 	DistributeScheduled(ctx context.Context, broadcastID uuid.UUID) error
+	GetReach(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (*model.BroadcastReachResponse, error)
 }
 
 type BroadcastUseCase struct {
@@ -29,6 +30,7 @@ type BroadcastUseCase struct {
 	broadcastRepo repository.IBroadcastRepository
 	botRepo       repository.ITelegramBotRepository
 	groupRepo     repository.ITelegramGroupRepository
+	subRepo       repository.ISubscriptionRepository
 	outboxRepo    repository.IOutboxRepository
 	billingRepo   repository.IClientBillingRepository
 	log           *zap.Logger
@@ -39,6 +41,7 @@ func NewBroadcastUseCase(
 	broadcastRepo repository.IBroadcastRepository,
 	botRepo repository.ITelegramBotRepository,
 	groupRepo repository.ITelegramGroupRepository,
+	subRepo repository.ISubscriptionRepository,
 	outboxRepo repository.IOutboxRepository,
 	billingRepo repository.IClientBillingRepository,
 	log *zap.Logger,
@@ -48,6 +51,7 @@ func NewBroadcastUseCase(
 		broadcastRepo: broadcastRepo,
 		botRepo:       botRepo,
 		groupRepo:     groupRepo,
+		subRepo:       subRepo,
 		outboxRepo:    outboxRepo,
 		billingRepo:   billingRepo,
 		log:           log,
@@ -60,7 +64,7 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 
 	// 1. Validasi Bot milik Tenant
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, req.BotID)
-	if err != nil {
+	if err != nil || bot == nil {
 		return nil, helper.NewBadRequest("Bot tidak valid")
 	}
 	if bot.ClientID != clientID {
@@ -95,8 +99,15 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 		}
 	}
 
-	// Validasi ScheduledAt (jika ada)
-	if req.ScheduledAt != nil {
+	// Validasi IsImmediate vs Scheduled
+	if req.IsImmediate {
+		if req.ScheduledAt != nil {
+			return nil, helper.NewBadRequest("scheduled_at tidak boleh diset untuk broadcast langsung")
+		}
+	} else {
+		if req.ScheduledAt == nil {
+			return nil, helper.NewBadRequest("scheduled_at harus diisi untuk broadcast terjadwal")
+		}
 		if req.ScheduledAt.Before(time.Now().Add(1 * time.Minute)) {
 			return nil, helper.NewBadRequest("Waktu penjadwalan harus minimal 1 menit di masa depan")
 		}
@@ -117,7 +128,13 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 		UpdatedAt:    time.Now(),
 	}
 
-	if req.ScheduledAt != nil {
+	if len(req.GroupIDs) > 0 {
+		b, _ := json.Marshal(req.GroupIDs)
+		s := string(b)
+		broadcast.GroupFilter = &s
+	}
+
+	if !req.IsImmediate {
 		broadcast.Status = "scheduled"
 		broadcast.TotalTargets = 0
 		if err := uc.broadcastRepo.Create(ctx, uc.db.Gorm, broadcast); err != nil {
@@ -144,6 +161,18 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 func (uc *BroadcastUseCase) distribute(ctx context.Context, tx *gorm.DB, broadcast *entity.Broadcast) error {
 	log := logger.FromContext(ctx, uc.log)
 
+	gidSet := make(map[uuid.UUID]bool)
+	hasFilter := false
+	if broadcast.GroupFilter != nil && *broadcast.GroupFilter != "" {
+		var ids []uuid.UUID
+		if err := json.Unmarshal([]byte(*broadcast.GroupFilter), &ids); err == nil && len(ids) > 0 {
+			hasFilter = true
+			for _, id := range ids {
+				gidSet[id] = true
+			}
+		}
+	}
+
 	// 1. Kueri target penerima
 	var targetChatIDs []int64
 
@@ -154,26 +183,21 @@ func (uc *BroadcastUseCase) distribute(ctx context.Context, tx *gorm.DB, broadca
 			return fmt.Errorf("Gagal mencari grup penerima")
 		}
 		for _, g := range groups {
-			if g.IsActive {
-				targetChatIDs = append(targetChatIDs, g.TelegramChatID)
+			if !g.IsActive {
+				continue
 			}
+			if hasFilter && !gidSet[g.ID] {
+				continue
+			}
+			targetChatIDs = append(targetChatIDs, g.TelegramChatID)
 		}
 	} else if broadcast.TargetType == "member" {
-		err := tx.WithContext(ctx).
-			Table("subscriptions s").
-			Select("DISTINCT tu.telegram_user_id").
-			Joins("JOIN telegram_users tu ON s.telegram_user_id = tu.id").
-			Joins("JOIN packages p ON s.package_id = p.id").
-			Where("s.status = 'active' AND s.expired_at > ? AND s.deleted_at IS NULL", time.Now()).
-			Where(`
-				(p.is_all_access = true AND p.client_id = ?)
-				OR EXISTS (
-					SELECT 1 FROM package_groups pg
-					JOIN groups g ON pg.group_id = g.id
-					WHERE pg.package_id = p.id AND g.bot_id = ? AND g.deleted_at IS NULL
-				)
-			`, broadcast.ClientID, broadcast.BotUUID).
-			Pluck("telegram_user_id", &targetChatIDs).Error
+		gids := make([]uuid.UUID, 0, len(gidSet))
+		for id := range gidSet {
+			gids = append(gids, id)
+		}
+		var err error
+		targetChatIDs, err = uc.subRepo.FindActiveMemberIDsByBotID(ctx, tx, broadcast.ClientID, broadcast.BotUUID, gids)
 		if err != nil {
 			log.Error("broadcast usecase: failed to fetch active member subscriptions", zap.Error(err))
 			return fmt.Errorf("Gagal mencari member aktif penerima")
@@ -272,7 +296,7 @@ func (uc *BroadcastUseCase) List(ctx context.Context, clientID uuid.UUID, botID 
 
 	// Validasi Bot milik Tenant
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, botID)
-	if err != nil {
+	if err != nil || bot == nil {
 		return nil, 0, helper.NewBadRequest("Bot tidak valid")
 	}
 	if bot.ClientID != clientID {
@@ -292,4 +316,40 @@ func (uc *BroadcastUseCase) List(ctx context.Context, clientID uuid.UUID, botID 
 	}
 
 	return converter.BroadcastListToResponse(list), total, nil
+}
+
+func (uc *BroadcastUseCase) GetReach(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (*model.BroadcastReachResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
+
+	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, botID)
+	if err != nil || bot == nil {
+		return nil, helper.NewBadRequest("Bot tidak valid")
+	}
+	if bot.ClientID != clientID {
+		return nil, helper.NewBadRequest("Akses ke bot ditolak")
+	}
+
+	groups, err := uc.groupRepo.FindByBotID(ctx, uc.db.Gorm, botID)
+	if err != nil {
+		log.Error("broadcast reach: failed to fetch groups", zap.Error(err))
+		return nil, fmt.Errorf("Gagal mengambil data grup")
+	}
+
+	activeCount := 0
+	for _, g := range groups {
+		if g.IsActive {
+			activeCount++
+		}
+	}
+
+	memberCount, err := uc.subRepo.CountActiveMembersByBotID(ctx, uc.db.Gorm, clientID, botID)
+	if err != nil {
+		log.Error("broadcast reach: failed to count members", zap.Error(err))
+		return nil, fmt.Errorf("Gagal menghitung jumlah member")
+	}
+
+	return &model.BroadcastReachResponse{
+		GroupCount:  activeCount,
+		MemberCount: int(memberCount),
+	}, nil
 }

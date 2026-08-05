@@ -18,15 +18,15 @@ type IFeatureGateUseCase interface {
 }
 
 type FeatureGateUseCase struct {
-	db                    *entity.Database
-	billingRepo           repository.IClientBillingRepository
-	botRepo               repository.ITelegramBotRepository
-	groupRepo             repository.ITelegramGroupRepository
-	packageRepo           repository.IPackageRepository
-	customCommandRepo     repository.ICustomCommandRepository
-	broadcastRepo         repository.IBroadcastRepository
-	tenantAnalyticsRepo   repository.ITenantAnalyticsRepository
-	log                   *zap.Logger
+	db                  *entity.Database
+	billingRepo         repository.IClientBillingRepository
+	botRepo             repository.ITelegramBotRepository
+	groupRepo           repository.ITelegramGroupRepository
+	packageRepo         repository.IPackageRepository
+	customCommandRepo   repository.ICustomCommandRepository
+	broadcastRepo       repository.IBroadcastRepository
+	tenantAnalyticsRepo repository.ITenantAnalyticsRepository
+	log                 *zap.Logger
 }
 
 func NewFeatureGateUseCase(
@@ -73,15 +73,17 @@ func (uc *FeatureGateUseCase) CanUseFeature(ctx context.Context, clientID uuid.U
 	if !ok {
 		return false, nil
 	}
+
+	fmt.Println("billing plan", billing.Plan)
 	return check(&billing.Plan), nil
 }
 
 var resourceKeyMap = map[string]func(*entity.PlatformPlan) int{
-	"bots":             func(p *entity.PlatformPlan) int { return p.MaxBots },
-	"groups":           func(p *entity.PlatformPlan) int { return p.MaxGroups },
-	"packages":         func(p *entity.PlatformPlan) int { return p.MaxPackages },
-	"custom_commands":  func(p *entity.PlatformPlan) int { return p.MaxCustomCommands },
-	"broadcasts":       func(p *entity.PlatformPlan) int { return p.MaxBroadcasts },
+	"bots":            func(p *entity.PlatformPlan) int { return p.MaxBots },
+	"groups":          func(p *entity.PlatformPlan) int { return p.MaxGroups },
+	"packages":        func(p *entity.PlatformPlan) int { return p.MaxPackages },
+	"custom_commands": func(p *entity.PlatformPlan) int { return p.MaxCustomCommands },
+	"broadcasts":      func(p *entity.PlatformPlan) int { return p.MaxBroadcasts },
 }
 
 func (uc *FeatureGateUseCase) CheckQuota(ctx context.Context, clientID uuid.UUID, resourceType string) (bool, int64, int, error) {

@@ -807,3 +807,9 @@ ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS group_ids UUID[];
 -- MIGRATION: Snap Token for custom payment page
 -- ==========================================
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS snap_token VARCHAR(255);
+
+-- ==========================================
+-- MIGRATION: Broadcast Failed Details (JSONB)
+-- ==========================================
+ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS failed_details JSONB;
+ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS group_filter JSONB;

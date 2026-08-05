@@ -2,9 +2,12 @@ package messaging
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 
-	json "github.com/bytedance/sonic"
+	jsonlib "github.com/bytedance/sonic"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
@@ -53,6 +56,15 @@ type BroadcastPayload struct {
 	FileUrl     string `json:"file_url"`
 }
 
+func sanitizeHTML(text string) string {
+	text = strings.ReplaceAll(text, "<p>", "")
+	text = strings.ReplaceAll(text, "</p>", "\n")
+	text = strings.ReplaceAll(text, "<br>", "\n")
+	text = regexp.MustCompile(`<br\s*/?>`).ReplaceAllString(text, "\n")
+	text = regexp.MustCompile(`\s+(target|rel)="[^"]*"`).ReplaceAllString(text, "")
+	return text
+}
+
 func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 	messageID := trace.MessageIDFromContext(ctx)
 	correlationID := trace.CorrelationIDFromContext(ctx)
@@ -63,7 +75,7 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 
 	// 1. Parse Payload
 	var payload BroadcastPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := jsonlib.Unmarshal(body, &payload); err != nil {
 		h.logger.Error("broadcast handler: failed to unmarshal payload", append(logFields, zap.Error(err))...)
 		return nil
 	}
@@ -124,16 +136,18 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 	// 3. Send Message based on type
 	var sendErr error
 
+	messageText := sanitizeHTML(payload.MessageText)
+
 	switch payload.MessageType {
 	case "text":
-		msgConfig := tgbotapi.NewMessage(payload.ChatID, payload.MessageText)
+		msgConfig := tgbotapi.NewMessage(payload.ChatID, messageText)
 		msgConfig.ParseMode = tgbotapi.ModeHTML
 		_, sendErr = botClient.Send(ctx, msgConfig)
 
 	case "photo":
 		if broadcast.TelegramFileID != nil && *broadcast.TelegramFileID != "" {
 			photoConfig := tgbotapi.NewPhoto(payload.ChatID, tgbotapi.FileID(*broadcast.TelegramFileID))
-			photoConfig.Caption = payload.MessageText
+			photoConfig.Caption = messageText
 			photoConfig.ParseMode = tgbotapi.ModeHTML
 			_, sendErr = botClient.Send(ctx, photoConfig)
 		} else {
@@ -142,7 +156,7 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 				break
 			}
 			photoConfig := tgbotapi.NewPhoto(payload.ChatID, tgbotapi.FileURL(payload.FileUrl))
-			photoConfig.Caption = payload.MessageText
+			photoConfig.Caption = messageText
 			photoConfig.ParseMode = tgbotapi.ModeHTML
 			msg, err := botClient.Send(ctx, photoConfig)
 			sendErr = err
@@ -156,7 +170,7 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 	case "document":
 		if broadcast.TelegramFileID != nil && *broadcast.TelegramFileID != "" {
 			docConfig := tgbotapi.NewDocument(payload.ChatID, tgbotapi.FileID(*broadcast.TelegramFileID))
-			docConfig.Caption = payload.MessageText
+			docConfig.Caption = messageText
 			docConfig.ParseMode = tgbotapi.ModeHTML
 			_, sendErr = botClient.SendDocument(ctx, docConfig)
 		} else {
@@ -165,7 +179,7 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 				break
 			}
 			docConfig := tgbotapi.NewDocument(payload.ChatID, tgbotapi.FileURL(payload.FileUrl))
-			docConfig.Caption = payload.MessageText
+			docConfig.Caption = messageText
 			docConfig.ParseMode = tgbotapi.ModeHTML
 			msg, err := botClient.SendDocument(ctx, docConfig)
 			sendErr = err
@@ -183,12 +197,12 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 	// 4. Update Broadcast Stats
 	if sendErr != nil {
 		h.logger.Error("broadcast handler: failed to send message", append(logFields, zap.Int64("chat_id", payload.ChatID), zap.Error(sendErr))...)
-		// Increment failed counter
+		h.recordFailure(ctx, broadcastUUID, payload.ChatID, sendErr.Error())
 		_, dbErr := h.broadcastRepo.IncrementCounters(ctx, h.db, broadcastUUID, false)
 		if dbErr != nil {
 			h.logger.Error("broadcast handler: failed to increment failed counter", append(logFields, zap.Error(dbErr))...)
 		}
-		return nil // Return nil so RabbitMQ deletes the message from queue instead of retrying forever (since rate limit / chat block is typical)
+		return nil
 	}
 
 	// Increment sent counter
@@ -198,4 +212,25 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 	}
 
 	return nil
+}
+
+type broadcastFailure struct {
+	ChatID int64  `json:"chat_id"`
+	Error  string `json:"error"`
+}
+
+func (h *BroadcastHandler) recordFailure(ctx context.Context, broadcastID uuid.UUID, chatID int64, errMsg string) {
+	failure := broadcastFailure{ChatID: chatID, Error: errMsg}
+	b, marshalErr := json.Marshal([]broadcastFailure{failure})
+	if marshalErr != nil {
+		return
+	}
+
+	dbErr := h.db.WithContext(ctx).Exec(
+		`UPDATE broadcasts SET failed_details = COALESCE(failed_details, '[]'::jsonb) || ?::jsonb, updated_at = NOW() WHERE id = ?`,
+		string(b), broadcastID,
+	).Error
+	if dbErr != nil {
+		h.logger.Error("broadcast handler: failed to record failure detail", zap.Error(dbErr))
+	}
 }

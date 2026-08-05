@@ -285,15 +285,15 @@ func BootstrapWeb(config *BootstrapConfig) {
 	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Redis, config.Log, config.Config.App.EncryptionKey, groupSyncWorker.Process)
 	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, billingRepo, config.Log)
 	tenantProfileUC := usecase.NewTenantProfileUseCase(config.DB, clientRepo, config.Redis, config.Config.App.EncryptionKey, config.Log)
-	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.S3, config.Log)
+	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.Redis, config.S3, config.Log)
 	memberUC := usecase.NewMemberUseCase(config.DB, telegramUserRepo, subscriptionRepo, outboxRepo, auditLogRepo, config.Log)
 	tenantTransactionUC := usecase.NewTenantTransactionUseCase(config.DB, orderRepo, config.S3, config.Log)
 	uploadUC := usecase.NewUploadUseCase(config.S3, config.Log)
-	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepo, botRepo, groupRepo, outboxRepo, billingRepo, config.Log)
+	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepo, botRepo, groupRepo, subscriptionRepo, outboxRepo, billingRepo, config.Log)
 	migrationMemberUC := usecase.NewMigrationMemberUseCase(config.DB, migrationMemberRepo, packageRepo, featureGateUC, config.Log)
 
 	// Bot Handlers & Registry
-	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log, config.DB, customCommandRepo)
 	packagesHandler := handler.NewPackagesHandler(config.DB, packageRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	packageSelectHandler := handler.NewPackageSelectHandler(memberOrderUC, config.TelegramFactory, config.Config.App.EncryptionKey, config.Redis, config.Log)
 	mySubHandler := handler.NewMySubHandler(config.DB, subscriptionRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
@@ -483,7 +483,7 @@ func BootstrapWorker(config *BootstrapConfig) {
 
 	// Instantiate BroadcastSchedulerWorker
 	billingRepo := repository.NewClientBillingRepository()
-	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepoWorker, botRepo, groupRepo, outboxRepo, billingRepo, config.Log)
+	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepoWorker, botRepo, groupRepo, subscriptionRepo, outboxRepo, billingRepo, config.Log)
 	config.BroadcastSchedulerWorker = deliveryMsg.NewBroadcastSchedulerWorker(config.DB.Gorm, broadcastUC, config.Log)
 }
 

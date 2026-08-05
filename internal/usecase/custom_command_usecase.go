@@ -17,6 +17,7 @@ import (
 	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -34,6 +35,7 @@ type CustomCommandUseCase struct {
 	commandRepo repository.ICustomCommandRepository
 	botRepo     repository.ITelegramBotRepository
 	billingRepo repository.IClientBillingRepository
+	redisClient *redis.Client
 	s3Client    *pkg_s3.Client
 	log         *zap.Logger
 }
@@ -43,6 +45,7 @@ func NewCustomCommandUseCase(
 	commandRepo repository.ICustomCommandRepository,
 	botRepo repository.ITelegramBotRepository,
 	billingRepo repository.IClientBillingRepository,
+	redisClient *redis.Client,
 	s3Client *pkg_s3.Client,
 	log *zap.Logger,
 ) ICustomCommandUseCase {
@@ -51,6 +54,7 @@ func NewCustomCommandUseCase(
 		commandRepo: commandRepo,
 		botRepo:     botRepo,
 		billingRepo: billingRepo,
+		redisClient: redisClient,
 		s3Client:    s3Client,
 		log:         log,
 	}
@@ -133,6 +137,8 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 		return nil, fmt.Errorf("Gagal menyimpan custom command")
 	}
 
+	uc.invalidateCommand(ctx, clientID, cmd.BotUUID, trigger)
+
 	return converter.CustomCommandToResponse(cmd), nil
 }
 
@@ -178,6 +184,8 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 	if cmd.ClientID != clientID {
 		return nil, helper.NewNotFound("Custom command tidak ditemukan")
 	}
+
+	oldTrigger := cmd.CommandTrigger
 
 	if req.CommandTrigger != nil {
 		trigger := strings.ToLower(*req.CommandTrigger)
@@ -246,6 +254,9 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		return nil, err
 	}
 
+	uc.invalidateCommand(ctx, clientID, cmd.BotUUID, oldTrigger)
+	uc.invalidateCommand(ctx, clientID, cmd.BotUUID, cmd.CommandTrigger)
+
 	return converter.CustomCommandToResponse(cmd), nil
 }
 
@@ -262,6 +273,8 @@ func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 		return helper.NewNotFound("Custom command tidak ditemukan")
 	}
 
+	uc.invalidateCommand(ctx, cmd.ClientID, cmd.BotUUID, cmd.CommandTrigger)
+
 	// Hapus file dari S3 jika ada
 	if cmd.FileUrl != nil && *cmd.FileUrl != "" && uc.s3Client != nil {
 		key := extractS3Key(*cmd.FileUrl)
@@ -273,6 +286,16 @@ func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 	}
 
 	return uc.commandRepo.Delete(ctx, uc.db.Gorm, cmd)
+}
+
+func (uc *CustomCommandUseCase) invalidateCommand(ctx context.Context, clientID, botID uuid.UUID, trigger string) {
+	if uc.redisClient == nil {
+		return
+	}
+	key := customCmdCacheKey(clientID, botID, trigger)
+	if err := uc.redisClient.Del(ctx, key).Err(); err != nil {
+		uc.log.Warn("failed to invalidate custom command cache", zap.String("key", key), zap.Error(err))
+	}
 }
 
 func isBlacklistedCommand(trigger string) bool {

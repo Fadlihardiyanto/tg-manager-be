@@ -2,8 +2,11 @@ package handler
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -22,13 +25,17 @@ type StartHandler struct {
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
 	log             *zap.Logger
+	db              *entity.Database
+	commandRepo     repository.ICustomCommandRepository
 }
 
-func NewStartHandler(factory telegram.BotFactory, encKey string, log *zap.Logger) *StartHandler {
+func NewStartHandler(factory telegram.BotFactory, encKey string, log *zap.Logger, db *entity.Database, commandRepo repository.ICustomCommandRepository) *StartHandler {
 	return &StartHandler{
 		telegramFactory: factory,
 		encryptionKey:   encKey,
 		log:             log,
+		db:              db,
+		commandRepo:     commandRepo,
 	}
 }
 
@@ -54,11 +61,38 @@ func (h *StartHandler) Execute(ctx context.Context, bot *entity.TelegramBot, mes
 		return err
 	}
 
-	if err := botClient.SendMessage(ctx, message.Chat.ID, startReplyMessage); err != nil {
+	reply := startReplyMessage
+
+	customCmds, err := h.commandRepo.FindByClientID(ctx, h.db.Gorm, bot.ClientID, &bot.ID, ptrBool(true), 1, 50)
+	if err != nil {
+		h.log.Warn("failed to load custom commands for /start", zap.Error(err))
+	} else if len(customCmds) > 0 {
+		var sb strings.Builder
+		sb.WriteString(reply)
+		sb.WriteString("\n\n📋 Perintah khusus:")
+		for _, cmd := range customCmds {
+			sb.WriteString(fmt.Sprintf("\n%s — %s", cmd.CommandTrigger, truncateDescription(cmd.ResponseText, 50)))
+		}
+		reply = sb.String()
+	}
+
+	if err := botClient.SendMessage(ctx, message.Chat.ID, reply); err != nil {
 		h.log.Error("failed to send reply", zap.Error(err))
 		return err
 	}
 
 	h.log.Info("successfully replied to /start command", zap.Int64("user_id", message.From.ID))
 	return nil
+}
+
+func ptrBool(b bool) *bool {
+	return &b
+}
+
+func truncateDescription(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }

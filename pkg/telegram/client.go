@@ -194,6 +194,7 @@ func (c *botClientImpl) Send(ctx context.Context, chattable tgbotapi.Chattable) 
 
 	var result tgbotapi.Message
 	err := c.retryOnRateLimit(ctx, func() error {
+		c.logger.Debug("sending message", zap.Any("chattable", chattable))
 		msg, err := c.bot.Send(chattable)
 		if err != nil {
 			return err
@@ -202,6 +203,7 @@ func (c *botClientImpl) Send(ctx context.Context, chattable tgbotapi.Chattable) 
 		return nil
 	})
 	if err != nil {
+		c.logger.Error("failed to send message", zap.Error(err), zap.Any("chattable", chattable))
 		return tgbotapi.Message{}, err
 	}
 	return result, nil

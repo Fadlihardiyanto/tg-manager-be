@@ -65,7 +65,7 @@ func (w *BroadcastSchedulerWorker) Process(ctx context.Context) {
 		var broadcasts []entity.Broadcast
 		now := time.Now().UTC()
 
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		err := tx.Session(&gorm.Session{PrepareStmt: false}).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("status = ? AND scheduled_at <= ? AND deleted_at IS NULL", "scheduled", now).
 			Find(&broadcasts).Error
 		if err != nil {

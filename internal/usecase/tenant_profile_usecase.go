@@ -155,7 +155,11 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 		encrypted.sandboxClientKey = &plain
 	}
 	if req.SandboxMerchantID != "" {
-		encrypted.sandboxMerchantID = &req.SandboxMerchantID
+		plain, err := crypto.ECDHDecryptPayload(req.SandboxMerchantID, derivedKey)
+		if err != nil {
+			return nil, helper.NewBadRequest("Gagal mendekripsi sandbox merchant ID")
+		}
+		encrypted.sandboxMerchantID = &plain
 	}
 	if req.ProductionServerKey != "" {
 		plain, err := crypto.ECDHDecryptPayload(req.ProductionServerKey, derivedKey)
@@ -172,7 +176,11 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 		encrypted.productionClientKey = &plain
 	}
 	if req.ProductionMerchantID != "" {
-		encrypted.productionMerchantID = &req.ProductionMerchantID
+		plain, err := crypto.ECDHDecryptPayload(req.ProductionMerchantID, derivedKey)
+		if err != nil {
+			return nil, helper.NewBadRequest("Gagal mendekripsi production merchant ID")
+		}
+		encrypted.productionMerchantID = &plain
 	}
 
 	return uc.applyPaymentSettings(ctx, clientID, encrypted)

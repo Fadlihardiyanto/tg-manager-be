@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/gofiber/fiber/v3"
@@ -15,6 +17,7 @@ func EnforceFeature(fgUC usecase.IFeatureGateUseCase, featureKey string) fiber.H
 			return fiber.NewError(fiber.StatusInternalServerError, "Gagal memeriksa batasan fitur")
 		}
 		if !allowed {
+			fmt.Println("test")
 			return helper.NewForbidden("Fitur ini tidak tersedia di paket Anda. Silakan upgrade untuk mengakses fitur ini.")
 		}
 

@@ -189,8 +189,10 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 
 	// ── Broadcasts ────────────────────────────────────────────────────────
 	broadcasts := protected.Group("/bots/:bot_id/broadcasts", middleware.TenantRequirePermission("bots.write"))
-	broadcasts.Post("/", middleware.EnforceFeature(c.FeatureGateUseCase, "allow_media_broadcast"), middleware.EnforceQuota(c.FeatureGateUseCase, "broadcasts"), c.BroadcastController.Create)
+	broadcasts.Post("/", middleware.EnforceQuota(c.FeatureGateUseCase, "broadcasts"), c.BroadcastController.Create)
 	broadcasts.Get("/", middleware.TenantRequirePermission("bots.read"), c.BroadcastController.List)
+
+	protected.Get("/bots/:bot_id/broadcast-reach", middleware.TenantRequirePermission("bots.read"), c.BroadcastController.GetReach)
 
 	// ── Migration Members ─────────────────────────────────────────────
 	migration := protected.Group("/migration-members")

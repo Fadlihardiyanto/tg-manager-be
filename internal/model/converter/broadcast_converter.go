@@ -1,6 +1,8 @@
 package converter
 
 import (
+	"encoding/json"
+
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 )
@@ -10,7 +12,7 @@ func BroadcastToResponse(b *entity.Broadcast) *model.BroadcastResponse {
 		return nil
 	}
 
-	return &model.BroadcastResponse{
+	resp := &model.BroadcastResponse{
 		ID:           b.ID,
 		ClientID:     b.ClientID,
 		BotID:        b.BotUUID,
@@ -26,6 +28,15 @@ func BroadcastToResponse(b *entity.Broadcast) *model.BroadcastResponse {
 		CreatedAt:    b.CreatedAt,
 		UpdatedAt:    b.UpdatedAt,
 	}
+
+	if b.FailedDetails != nil && *b.FailedDetails != "" {
+		var details []model.BroadcastFailure
+		if err := json.Unmarshal([]byte(*b.FailedDetails), &details); err == nil && len(details) > 0 {
+			resp.FailedDetails = &details
+		}
+	}
+
+	return resp
 }
 
 func BroadcastListToResponse(list []entity.Broadcast) []model.BroadcastResponse {

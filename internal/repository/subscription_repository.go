@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/google/uuid"
@@ -22,6 +24,8 @@ type ISubscriptionRepository interface {
 	Create(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	Update(ctx context.Context, tx *gorm.DB, subscription *entity.Subscription) error
 	CountActiveUniqueUsersByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID) (int64, error)
+	CountActiveMembersByBotID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, botID uuid.UUID) (int64, error)
+	FindActiveMemberIDsByBotID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, botID uuid.UUID, groupIDs []uuid.UUID) ([]int64, error)
 }
 
 type SubscriptionRepository struct {
@@ -242,4 +246,61 @@ func (r *SubscriptionRepository) CountActiveUniqueUsersByClientID(ctx context.Co
 		Distinct("telegram_user_id").
 		Count(&count).Error
 	return count, err
+}
+
+func (r *SubscriptionRepository) CountActiveMembersByBotID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, botID uuid.UUID) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Table("subscriptions s").
+		Select("COUNT(DISTINCT s.telegram_user_id)").
+		Joins("JOIN packages p ON s.package_id = p.id").
+		Where("s.status = ? AND s.expired_at > CURRENT_TIMESTAMP AND s.deleted_at IS NULL", "active").
+		Where(`
+			(p.is_all_access = true AND p.client_id = ?)
+			OR EXISTS (
+				SELECT 1 FROM package_groups pg
+				JOIN groups g ON pg.group_id = g.id
+				WHERE pg.package_id = p.id AND g.bot_id = ? AND g.is_active = true AND g.deleted_at IS NULL
+			)
+		`, clientID, botID).
+		Count(&count).Error
+	return count, err
+}
+
+func (r *SubscriptionRepository) FindActiveMemberIDsByBotID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, botID uuid.UUID, groupIDs []uuid.UUID) ([]int64, error) {
+	var ids []int64
+
+	query := tx.WithContext(ctx).
+		Table("subscriptions s").
+		Select("DISTINCT tu.telegram_user_id").
+		Joins("JOIN telegram_users tu ON s.telegram_user_id = tu.id").
+		Joins("JOIN packages p ON s.package_id = p.id").
+		Where("s.status = 'active' AND s.expired_at > ? AND s.deleted_at IS NULL", time.Now())
+
+	if len(groupIDs) > 0 {
+		idStrs := make([]string, 0, len(groupIDs))
+		for _, id := range groupIDs {
+			idStrs = append(idStrs, "'"+id.String()+"'")
+		}
+		query = query.Where(`
+			(p.is_all_access = true AND p.client_id = ?)
+			OR EXISTS (
+				SELECT 1 FROM package_groups pg
+				JOIN groups g ON pg.group_id = g.id
+				WHERE pg.package_id = p.id AND g.id IN (`+strings.Join(idStrs, ",")+`) AND g.is_active = true AND g.deleted_at IS NULL
+			)
+		`, clientID)
+	} else {
+		query = query.Where(`
+			(p.is_all_access = true AND p.client_id = ?)
+			OR EXISTS (
+				SELECT 1 FROM package_groups pg
+				JOIN groups g ON pg.group_id = g.id
+				WHERE pg.package_id = p.id AND g.bot_id = ? AND g.is_active = true AND g.deleted_at IS NULL
+			)
+		`, clientID, botID)
+	}
+
+	err := query.Pluck("telegram_user_id", &ids).Error
+	return ids, err
 }

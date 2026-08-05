@@ -160,6 +160,9 @@ func (r *OrderRepository) applyTransactionScope(query *gorm.DB, clientID uuid.UU
 }
 
 // FindTransactionsByClientID returns paginated orders with preloaded Package, User, and Discount.
+// ponytail: Preload("User") generates a broken query here — Order.TelegramUserID (uuid FK)
+// collides with TelegramUser.TelegramUserID (bigint), so GORM filters the wrong column
+// (`telegram_user_id IN (uuid...)`). Users are loaded manually, same as SubscriptionRepository.
 func (r *OrderRepository) FindTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) ([]entity.Order, error) {
 	var orders []entity.Order
 
@@ -176,15 +179,41 @@ func (r *OrderRepository) FindTransactionsByClientID(ctx context.Context, tx *go
 	query := r.applyTransactionScope(tx.WithContext(ctx), clientID, filter)
 	query = query.
 		Preload("Package", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).
-		Preload("User").
 		Preload("Discount", func(db *gorm.DB) *gorm.DB { return db.Unscoped() })
 
 	err := query.
 		Order("orders.created_at DESC").
 		Offset(offset).Limit(limit).
 		Find(&orders).Error
+	if err != nil {
+		return nil, err
+	}
 
-	return orders, err
+	if len(orders) > 0 {
+		userIDs := make([]uuid.UUID, 0, len(orders))
+		seen := make(map[uuid.UUID]struct{}, len(orders))
+		for _, o := range orders {
+			if _, ok := seen[o.TelegramUserID]; ok {
+				continue
+			}
+			seen[o.TelegramUserID] = struct{}{}
+			userIDs = append(userIDs, o.TelegramUserID)
+		}
+
+		var users []entity.TelegramUser
+		if err := tx.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			return nil, err
+		}
+		userMap := make(map[uuid.UUID]entity.TelegramUser, len(users))
+		for _, u := range users {
+			userMap[u.ID] = u
+		}
+		for i := range orders {
+			orders[i].User = userMap[orders[i].TelegramUserID]
+		}
+	}
+
+	return orders, nil
 }
 
 // CountTransactionsByClientID counts orders matching the transaction filter.
