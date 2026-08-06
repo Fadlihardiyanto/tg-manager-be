@@ -115,7 +115,7 @@ func (w *GroupSyncWorker) Process(ctx context.Context) {
 						zap.Error(err),
 					)
 					group.IsActive = false
-					group.InactiveReason = "Failed to fetch member count: " + err.Error()
+					group.InactiveReason = mapGroupInactiveReason(err)
 					if upErr := w.groupRepo.Update(ctx, w.db, &group); upErr != nil {
 						w.log.Error("group sync worker: failed to mark group inactive", zap.String("group_id", group.ID.String()), zap.Error(upErr))
 					}
@@ -165,4 +165,27 @@ func shouldDeactivateGroupOnCountError(err error) bool {
 		}
 	}
 	return false
+}
+
+// mapGroupInactiveReason converts a Telegram member-count error into a short,
+// FE-displayable (Bahasa Indonesia) inactive reason. The full technical error
+// stays in the logs via the caller's zap.Error field.
+func mapGroupInactiveReason(err error) string {
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "bot is not a member"):
+		return "Bot tidak lagi menjadi member di grup ini"
+	case strings.Contains(msg, "bot was kicked"):
+		return "Bot dikeluarkan dari grup"
+	case strings.Contains(msg, "chat not found"):
+		return "Grup tidak ditemukan atau sudah dihapus"
+	case strings.Contains(msg, "not enough rights"):
+		return "Bot tidak memiliki izin yang cukup di grup"
+	case strings.Contains(msg, "user is deactivated"):
+		return "Akun bot dinonaktifkan"
+	case strings.Contains(msg, "forbidden"):
+		return "Bot tidak lagi menjadi member di grup ini"
+	default:
+		return "Gagal sinkronisasi grup"
+	}
 }
