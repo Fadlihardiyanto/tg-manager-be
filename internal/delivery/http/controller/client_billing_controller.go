@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/metrics"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
@@ -113,20 +115,34 @@ func (c *ClientBillingController) CancelBilling(ctx fiber.Ctx) error {
 func (c *ClientBillingController) Webhook(ctx fiber.Ctx) error {
 	var req model.MidtransWebhookRequest
 	if err := ctx.Bind().JSON(&req); err != nil {
+		// Terminal: retry tidak akan memperbaiki format body
+		metrics.MidtransWebhook.WithLabelValues("billing", "invalid_body").Inc()
 		c.log.Warn("billing webhook: invalid body", zap.Error(err))
-		return helper.BadRequest(ctx, "Format request tidak valid")
+		return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 	}
 	if rawBody, ok := ctx.Locals("midtrans_raw_body").(string); ok {
 		req.RawNotification = rawBody
 	}
 
 	if err := c.billingUC.HandleWebhook(ctx.Context(), &req); err != nil {
-		c.log.Error("billing webhook: handle failed", zap.Error(err),
-			zap.String("order_id", req.OrderID))
-		// Selalu return 200 ke Midtrans meski gagal — Midtrans akan retry
-		return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+		// Terminal outcomes → 200 (stop Midtrans retry): signature invalid / not found
+		if errors.Is(err, usecase.ErrWebhookInvalidSignature) {
+			metrics.MidtransWebhook.WithLabelValues("billing", "invalid_signature").Inc()
+			c.log.Warn("billing webhook: terminal error, acking 200", zap.Error(err), zap.String("order_id", req.OrderID))
+			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+		}
+		if errors.Is(err, usecase.ErrWebhookNotFound) {
+			metrics.MidtransWebhook.WithLabelValues("billing", "not_found").Inc()
+			c.log.Warn("billing webhook: terminal error, acking 200", zap.Error(err), zap.String("order_id", req.OrderID))
+			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+		}
+		// Transient (DB/Redis/etc.) → 503 so Midtrans retries (retry 4x, vs 1x for 500)
+		metrics.MidtransWebhook.WithLabelValues("billing", "transient_error").Inc()
+		c.log.Error("billing webhook: transient error, returning 503 for retry", zap.Error(err), zap.String("order_id", req.OrderID))
+		return ctx.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
 	}
 
+	metrics.MidtransWebhook.WithLabelValues("billing", "success").Inc()
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
 

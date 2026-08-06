@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/metrics"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model/converter"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
@@ -245,9 +246,16 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 
 	snapResp, err := uc.midtransClient.CreateSnapToken(ctx, snapReq)
 	if err != nil {
-		uc.log.Error("client billing: create snap token", zap.Error(err))
+		metrics.MidtransSnapTokenFailed.Inc()
+		uc.log.Error("client billing: create snap token",
+			zap.String("external_id", externalID),
+			zap.String("client_id", req.ClientID.String()),
+			zap.String("plan_id", plan.ID.String()),
+			zap.String("amount", finalAmount.String()),
+			zap.Error(err))
 		return nil, fmt.Errorf("gagal membuat payment link")
 	}
+	metrics.MidtransSnapTokenCreated.Inc()
 
 	// 7. Simpan billing dalam DB transaction
 	// ── TAMBAHAN: Wrap dalam transaction karena ada 2 operasi (billing + increment diskon) ──
@@ -292,7 +300,19 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		return nil
 	})
 	if err != nil {
-		uc.log.Error("client billing: save billing transaction", zap.Error(err))
+		uc.log.Error("client billing: save billing transaction",
+			zap.String("external_id", externalID),
+			zap.String("client_id", req.ClientID.String()),
+			zap.Error(err))
+		// Orphaned Snap token: DB save failed after Midtrans created the token.
+		// Best-effort cancel so the payment link doesn't dangle; failure is only logged.
+		if cancelErr := uc.midtransClient.CancelTransaction(ctx, externalID); cancelErr != nil {
+			uc.log.Error("client billing: failed to cancel orphaned snap token",
+				zap.String("external_id", externalID),
+				zap.Error(cancelErr))
+		} else {
+			uc.log.Info("client billing: cancelled orphaned snap token", zap.String("external_id", externalID))
+		}
 		return nil, fmt.Errorf("gagal menyimpan billing")
 	}
 	// ── END TAMBAHAN ──────────────────────────────────────────
@@ -328,7 +348,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 	if !uc.midtransClient.VerifySignature(notification) {
 		uc.log.Warn("client billing webhook: invalid signature",
 			zap.String("order_id", req.OrderID))
-		return fmt.Errorf("invalid signature")
+		return ErrWebhookInvalidSignature
 	}
 
 	// 2. Distributed lock per order_id — cegah concurrent webhook processing
@@ -367,7 +387,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 	if billing == nil {
 		uc.log.Warn("client billing webhook: billing not found",
 			zap.String("order_id", req.OrderID))
-		return fmt.Errorf("billing tidak ditemukan")
+		return ErrWebhookNotFound
 	}
 
 	// 4. Early idempotency check (optimistic — bisa race, dikuatkan oleh atomic UPDATE di bawah)

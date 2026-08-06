@@ -47,4 +47,26 @@ var (
 		},
 		[]string{"worker"},
 	)
+
+	MidtransSnapTokenCreated = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "midtrans_snap_token_created_total",
+			Help: "Total number of Midtrans Snap tokens successfully created",
+		},
+	)
+
+	MidtransSnapTokenFailed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "midtrans_snap_token_failed_total",
+			Help: "Total number of failed Midtrans Snap token creation attempts",
+		},
+	)
+
+	MidtransWebhook = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "midtrans_webhook_total",
+			Help: "Total number of Midtrans webhooks by type and outcome",
+		},
+		[]string{"type", "outcome"},
+	)
 )

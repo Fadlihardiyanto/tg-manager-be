@@ -308,7 +308,6 @@ __debug_bin
 *telegram_token*
 
 # Payment gateway credentials (if accidentally saved)
-*midtrans*
 *xendit*
 *payment_key*
 

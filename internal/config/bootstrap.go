@@ -191,7 +191,7 @@ func NewBootstrapConfig(cfg *Config, opts ...BootstrapOption) (*BootstrapConfig,
 		ClientKey: cfg.Midtrans.ClientKey,
 		BaseURL:   cfg.Midtrans.BaseURL,
 		SnapURL:   cfg.Midtrans.SnapURL,
-	})
+	}, logger)
 
 	// S3-compatible storage (Cloudflare R2, MinIO, AWS S3)
 	var s3Client *pkg_s3.Client

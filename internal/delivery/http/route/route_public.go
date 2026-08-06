@@ -51,8 +51,9 @@ func (c *PublicRouteConfig) Setup() {
 			OrderID string `json:"order_id"`
 		}
 		if err := json.Unmarshal(rawBody, &req); err != nil {
+			// Terminal: retry tidak akan memperbaiki format body — ack 200, log loudly
 			c.Log.Warn("midtrans webhook: invalid request body", zap.Error(err))
-			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format request tidak valid"})
+			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 		}
 
 		if strings.HasPrefix(req.OrderID, "BILLING-") {
