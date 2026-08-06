@@ -152,3 +152,25 @@ func (c *MemberDiscountController) Delete(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Berhasil menghapus diskon", nil)
 }
+
+// BulkDelete godoc
+// DELETE /api/v1/tenant/discounts/bulk
+func (c *MemberDiscountController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	clientID := middleware.GetTenantClientID(ctx)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("member discount controller bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validate, req); errs != nil {
+		log.Warn("member discount controller bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.discountUC.BulkDelete(ctx.Context(), clientID, req.IDs)
+	log.Info("member discount controller bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete diskon selesai", result)
+}

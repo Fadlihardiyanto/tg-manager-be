@@ -124,3 +124,18 @@ func (c *PlatformDiscountController) Delete(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Diskon berhasil dihapus", nil)
 }
+
+// BulkDelete godoc
+// DELETE /admin/v1/billing/discounts/bulk
+func (c *PlatformDiscountController) BulkDelete(ctx fiber.Ctx) error {
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.discountUC.BulkDelete(ctx.Context(), req.IDs, middleware.GetAdminPermissions(ctx))
+	return helper.Success(ctx, "Bulk delete diskon selesai", result)
+}

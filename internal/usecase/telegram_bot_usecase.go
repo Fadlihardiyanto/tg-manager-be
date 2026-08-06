@@ -23,6 +23,7 @@ type ITelegramBotUseCase interface {
 	FindByID(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (*model.TelegramBotResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, req *model.TelegramBotUpdateRequest) (*model.TelegramBotResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) error
+	BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult
 }
 
 type TelegramBotUseCase struct {
@@ -290,4 +291,10 @@ func (uc *TelegramBotUseCase) Delete(ctx context.Context, clientID uuid.UUID, bo
 
 	log.Info("bot usecase delete success", zap.String("bot_id", botID.String()))
 	return nil
+}
+
+func (uc *TelegramBotUseCase) BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, clientID, id)
+	})
 }

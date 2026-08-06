@@ -25,6 +25,7 @@ type IPlatformDiscountUseCase interface {
 	Create(ctx context.Context, req *model.CreatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error)
 	Update(ctx context.Context, req *model.UpdatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error)
 	Delete(ctx context.Context, id uuid.UUID, callerPermissions []string) error
+	BulkDelete(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult
 
 	ApplyByCode(ctx context.Context, req *model.ApplyPlatformDiscountRequest) (*model.DiscountPreviewResponse, error)
 	ApplyAuto(ctx context.Context, clientID, planID uuid.UUID, amount decimal.Decimal) (*model.DiscountPreviewResponse, error)
@@ -175,6 +176,12 @@ func (uc *platformDiscountUseCase) Delete(ctx context.Context, id uuid.UUID, cal
 	return uc.discountRepo.SoftDelete(ctx, uc.db.Gorm, id)
 }
 
+func (uc *platformDiscountUseCase) BulkDelete(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, id, callerPermissions)
+	})
+}
+
 func (uc *platformDiscountUseCase) ApplyByCode(ctx context.Context, req *model.ApplyPlatformDiscountRequest) (*model.DiscountPreviewResponse, error) {
 	d, err := uc.discountRepo.FindByCode(ctx, uc.db.Gorm, req.Code)
 	if err != nil || d == nil {
@@ -228,6 +235,7 @@ type IMemberDiscountUseCase interface {
 	Create(ctx context.Context, req *model.CreateMemberDiscountRequest) (*model.MemberDiscountResponse, error)
 	Update(ctx context.Context, req *model.UpdateMemberDiscountRequest) (*model.MemberDiscountResponse, error)
 	Delete(ctx context.Context, id, clientID uuid.UUID) error
+	BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult
 
 	// Dipakai saat member checkout paket
 	ApplyByCode(ctx context.Context, req *model.ApplyMemberDiscountRequest) (*model.DiscountPreviewResponse, error)
@@ -367,6 +375,12 @@ func (uc *memberDiscountUseCase) Delete(ctx context.Context, id, clientID uuid.U
 		return uc.discountRepo.Update(ctx, uc.db.Gorm, d)
 	}
 	return uc.discountRepo.SoftDelete(ctx, uc.db.Gorm, id)
+}
+
+func (uc *memberDiscountUseCase) BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, id, clientID)
+	})
 }
 
 func (uc *memberDiscountUseCase) ApplyByCode(ctx context.Context, req *model.ApplyMemberDiscountRequest) (*model.DiscountPreviewResponse, error) {

@@ -21,6 +21,7 @@ type IPlatformPlanUseCase interface {
 	Create(ctx context.Context, req *model.CreatePlatformPlanRequest, callerPermissions []string) (*model.PlatformPlanResponse, error)
 	Update(ctx context.Context, id uuid.UUID, req *model.UpdatePlatformPlanRequest, callerPermissions []string) (*model.PlatformPlanResponse, error)
 	Delete(ctx context.Context, id uuid.UUID, callerPermissions []string) error
+	BulkDelete(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult
 	ListPublic(ctx context.Context) ([]model.PlatformPlanResponse, error)
 }
 
@@ -276,4 +277,10 @@ func (uc *platformPlanUseCase) Delete(ctx context.Context, id uuid.UUID, callerP
 	}
 
 	return uc.planRepo.Delete(ctx, uc.db.Gorm, id)
+}
+
+func (uc *platformPlanUseCase) BulkDelete(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, id, callerPermissions)
+	})
 }

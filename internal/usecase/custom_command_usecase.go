@@ -28,6 +28,7 @@ type ICustomCommandUseCase interface {
 	FindByID(ctx context.Context, clientID uuid.UUID, id uuid.UUID) (*model.CustomCommandResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, id uuid.UUID, req *model.UpdateCustomCommandRequest) (*model.CustomCommandResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, id uuid.UUID) error
+	BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult
 }
 
 type CustomCommandUseCase struct {
@@ -288,6 +289,12 @@ func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 	}
 
 	return uc.commandRepo.Delete(ctx, uc.db.Gorm, cmd)
+}
+
+func (uc *CustomCommandUseCase) BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, clientID, id)
+	})
 }
 
 func (uc *CustomCommandUseCase) invalidateCommand(ctx context.Context, clientID, botID uuid.UUID, trigger string) {

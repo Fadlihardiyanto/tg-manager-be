@@ -26,6 +26,7 @@ type IAdminTenantUseCase interface {
 	CreateClient(ctx context.Context, req *model.AdminCreateClientRequest) (*model.ClientResponse, error)
 	UpdateClient(ctx context.Context, req *model.AdminUpdateClientRequest) (*model.ClientResponse, error)
 	DeleteClient(ctx context.Context, req *model.AdminDeleteClientRequest) error
+	BulkDeleteClients(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult
 	ActivateClient(ctx context.Context, req *model.AdminActivateClientRequest) error
 	DeactivateClient(ctx context.Context, req *model.AdminDeactivateClientRequest) error
 }
@@ -294,6 +295,12 @@ func (uc *adminTenantUseCase) DeleteClient(ctx context.Context, req *model.Admin
 
 	log.Info("admin tenant delete client success", zap.String("client_id", req.ClientID.String()))
 	return nil
+}
+
+func (uc *adminTenantUseCase) BulkDeleteClients(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.DeleteClient(ctx, &model.AdminDeleteClientRequest{ClientID: id, CallerPermissions: callerPermissions})
+	})
 }
 
 func (uc *adminTenantUseCase) ActivateClient(ctx context.Context, req *model.AdminActivateClientRequest) error {

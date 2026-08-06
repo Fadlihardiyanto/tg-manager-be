@@ -176,6 +176,26 @@ func (c *AdminUserController) Delete(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Admin berhasil dihapus", nil)
 }
 
+// BulkDelete godoc
+// DELETE /admin/v1/admins/bulk
+func (c *AdminUserController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("admin user bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("admin user bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.adminUserUC.BulkDeleteAdmins(ctx.Context(), req.IDs, middleware.GetAdminPermissions(ctx))
+	log.Info("admin user bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete admin selesai", result)
+}
+
 // Activate godoc
 // PATCH /admin/v1/admins/:id/activate
 func (c *AdminUserController) Activate(ctx fiber.Ctx) error {

@@ -25,6 +25,7 @@ type IAdminUserManagementUseCase interface {
 	CreateAdmin(ctx context.Context, req *model.AdminUserCreateRequest) (*model.AdminUserResponse, error)
 	UpdateAdmin(ctx context.Context, req *model.AdminUserUpdateRequest) (*model.AdminUserResponse, error)
 	DeleteAdmin(ctx context.Context, req *model.AdminUserDeleteRequest) error
+	BulkDeleteAdmins(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult
 	ActivateAdmin(ctx context.Context, req *model.AdminUserActivateRequest) error
 	DeactivateAdmin(ctx context.Context, req *model.AdminUserDeactivateRequest) error
 }
@@ -239,6 +240,12 @@ func (uc *adminUserManagementUseCase) DeleteAdmin(ctx context.Context, req *mode
 
 	log.Info("admin user management delete success", zap.String("admin_id", req.AdminID.String()))
 	return nil
+}
+
+func (uc *adminUserManagementUseCase) BulkDeleteAdmins(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.DeleteAdmin(ctx, &model.AdminUserDeleteRequest{AdminID: id, CallerPermissions: callerPermissions})
+	})
 }
 
 func (uc *adminUserManagementUseCase) ActivateAdmin(ctx context.Context, req *model.AdminUserActivateRequest) error {

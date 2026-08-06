@@ -24,6 +24,7 @@ type IAdminRoleUseCase interface {
 	CreateRole(ctx context.Context, req *model.AdminRoleCreateRequest) (*model.AdminRoleResponse, error)
 	UpdateRole(ctx context.Context, req *model.AdminRoleUpdateRequest) (*model.AdminRoleResponse, error)
 	DeleteRole(ctx context.Context, req *model.AdminRoleDeleteRequest) error
+	BulkDeleteRoles(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult
 
 	// Permission assignment
 	SyncRolePermissions(ctx context.Context, req *model.AdminSyncPermissionsRequest) error
@@ -237,6 +238,12 @@ func (uc *adminRoleUseCase) DeleteRole(ctx context.Context, req *model.AdminRole
 	}
 	log.Info("admin role delete success", zap.String("role_id", req.RoleID.String()))
 	return nil
+}
+
+func (uc *adminRoleUseCase) BulkDeleteRoles(ctx context.Context, ids []uuid.UUID, callerPermissions []string) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.DeleteRole(ctx, &model.AdminRoleDeleteRequest{RoleID: id, CallerPermissions: callerPermissions})
+	})
 }
 
 // SyncRolePermissions is used for bulk updating permissions of a role, typically in the role edit page in admin panel.

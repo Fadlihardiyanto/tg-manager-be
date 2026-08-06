@@ -172,6 +172,26 @@ func (c *AdminClientController) Delete(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Tenant berhasil dihapus", nil)
 }
 
+// BulkDelete godoc
+// DELETE /admin/v1/clients/bulk
+func (c *AdminClientController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("admin client bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("admin client bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.clientUC.BulkDeleteClients(ctx.Context(), req.IDs, middleware.GetAdminPermissions(ctx))
+	log.Info("admin client bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete tenant selesai", result)
+}
+
 func (c *AdminClientController) Activate(ctx fiber.Ctx) error {
 	log := logger.FromContext(ctx.Context(), c.log)
 	log.Info("admin client activate request")

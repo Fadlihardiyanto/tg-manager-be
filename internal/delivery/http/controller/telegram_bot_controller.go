@@ -159,3 +159,25 @@ func (c *TelegramBotController) Delete(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Bot berhasil dihapus", nil)
 }
+
+// BulkDelete godoc
+// DELETE /api/v1/tenant/bots/bulk
+func (c *TelegramBotController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	clientID := middleware.GetTenantClientID(ctx)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("bot controller bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("bot controller bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.botUC.BulkDelete(ctx.Context(), clientID, req.IDs)
+	log.Info("bot controller bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete bot selesai", result)
+}

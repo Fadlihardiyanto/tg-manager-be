@@ -28,6 +28,7 @@ type ITelegramGroupUseCase interface {
 	FindByID(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) (*model.GroupResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID, req *model.GroupUpdateRequest) (*model.GroupResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
+	BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult
 	Disconnect(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error
 	GenerateConnectToken(ctx context.Context, clientID uuid.UUID, botID uuid.UUID) (string, string, error)
 	CheckConnectStatus(ctx context.Context, clientID uuid.UUID, botID uuid.UUID, token string) (string, error)
@@ -264,6 +265,12 @@ func (uc *TelegramGroupUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 
 	log.Info("group usecase delete success", zap.String("group_id", groupID.String()))
 	return nil
+}
+
+func (uc *TelegramGroupUseCase) BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, clientID, id)
+	})
 }
 
 func (uc *TelegramGroupUseCase) Disconnect(ctx context.Context, clientID uuid.UUID, groupID uuid.UUID) error {

@@ -85,6 +85,7 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 	// Role management
 	roles := protected.Group("/roles")
 	roles.Get("/", middleware.Authorize("roles.read"), c.AdminRoleController.List)
+	roles.Delete("/bulk", middleware.Authorize("roles.delete"), c.AdminRoleController.BulkDelete)
 	roles.Post("/", middleware.Authorize("roles.create"), c.AdminRoleController.Create)
 	roles.Get("/:id", middleware.Authorize("roles.read"), c.AdminRoleController.GetByID)
 	roles.Put("/:id", middleware.Authorize("roles.update"), c.AdminRoleController.Update)
@@ -99,6 +100,7 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 	// Admin user management
 	admins := protected.Group("/admins")
 	admins.Get("/", middleware.Authorize("admins.read"), c.AdminUserController.List)
+	admins.Delete("/bulk", middleware.Authorize("admins.delete"), c.AdminUserController.BulkDelete)
 	admins.Post("/", middleware.Authorize("admins.create"), c.AdminUserController.Create)
 	admins.Get("/:id", middleware.Authorize("admins.read"), c.AdminUserController.GetByID)
 	admins.Put("/:id", middleware.Authorize("admins.update"), c.AdminUserController.Update)
@@ -110,6 +112,7 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 	// Client (tenant) management
 	clients := protected.Group("/clients")
 	clients.Get("/", middleware.Authorize("clients.read"), c.AdminClientController.List)
+	clients.Delete("/bulk", middleware.Authorize("clients.delete"), c.AdminClientController.BulkDelete)
 	clients.Post("/", middleware.Authorize("clients.create"), c.AdminClientController.Create)
 	clients.Get("/:id", middleware.Authorize("clients.read"), c.AdminClientController.GetByID)
 	clients.Put("/:id", middleware.Authorize("clients.update"), c.AdminClientController.Update)
@@ -130,6 +133,7 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 
 	plans := protected.Group("/billing/plans")
 	plans.Get("/", middleware.Authorize("billing.read"), c.PlatformPlanController.List)
+	plans.Delete("/bulk", middleware.Authorize("billing.manage"), c.PlatformPlanController.BulkDelete)
 	plans.Post("/", middleware.Authorize("billing.manage"), c.PlatformPlanController.Create)
 	plans.Get("/:id", middleware.Authorize("billing.read"), c.PlatformPlanController.GetByID)
 	plans.Put("/:id", middleware.Authorize("billing.manage"), c.PlatformPlanController.Update)
@@ -142,6 +146,7 @@ func (c *AdminRouteConfig) setupProtectedRoutes(admin fiber.Router) {
 
 	discounts := billing.Group("/discounts")
 	discounts.Get("/", middleware.Authorize("billing.read"), c.PlatformDiscountController.List)
+	discounts.Delete("/bulk", middleware.Authorize("billing.manage"), c.PlatformDiscountController.BulkDelete)
 	discounts.Post("/", middleware.Authorize("billing.manage"), c.PlatformDiscountController.Create)
 	discounts.Get("/:id", middleware.Authorize("billing.read"), c.PlatformDiscountController.GetByID)
 	discounts.Put("/:id", middleware.Authorize("billing.manage"), c.PlatformDiscountController.Update)

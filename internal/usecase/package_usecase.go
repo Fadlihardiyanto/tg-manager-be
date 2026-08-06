@@ -23,6 +23,7 @@ type IPackageUseCase interface {
 	FindByID(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) (*model.PackageResponse, error)
 	Update(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID, req *model.PackageUpdateRequest) (*model.PackageResponse, error)
 	Delete(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID) error
+	BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult
 	AssociateGroups(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID, req *model.PackageGroupAssociateRequest) error
 }
 
@@ -206,6 +207,12 @@ func (uc *PackageUseCase) Delete(ctx context.Context, clientID uuid.UUID, packag
 
 	log.Info("package usecase delete success", zap.String("package_id", packageID.String()))
 	return nil
+}
+
+func (uc *PackageUseCase) BulkDelete(ctx context.Context, clientID uuid.UUID, ids []uuid.UUID) model.BulkDeleteResult {
+	return RunBulkDelete(ids, func(id uuid.UUID) error {
+		return uc.Delete(ctx, clientID, id)
+	})
 }
 
 func (uc *PackageUseCase) AssociateGroups(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID, req *model.PackageGroupAssociateRequest) error {

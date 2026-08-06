@@ -106,6 +106,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Bots ─────────────────────────────────────────────────────────
 	bots := protected.Group("/bots")
 	bots.Get("/", middleware.TenantRequirePermission("bots.read"), c.TelegramBotController.List)
+	bots.Delete("/bulk", middleware.TenantRequirePermission("bots.delete"), c.TelegramBotController.BulkDelete)
 	bots.Get("/:id", middleware.TenantRequirePermission("bots.read"), c.TelegramBotController.Get)
 	bots.Post("/", middleware.TenantRequirePermission("bots.create"), middleware.EnforceQuota(c.FeatureGateUseCase, "bots"), c.TelegramBotController.Create)
 	bots.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.TelegramBotController.Update)
@@ -116,6 +117,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Custom Commands ──────────────────────────────────────────────
 	commands := protected.Group("/commands")
 	commands.Get("/", middleware.TenantRequirePermission("bots.read"), c.CustomCommandController.List)
+	commands.Delete("/bulk", middleware.TenantRequirePermission("bots.delete"), c.CustomCommandController.BulkDelete)
 	commands.Get("/:id", middleware.TenantRequirePermission("bots.read"), c.CustomCommandController.Get)
 	commands.Post("/", middleware.TenantRequirePermission("bots.create"), middleware.EnforceQuota(c.FeatureGateUseCase, "custom_commands"), c.CustomCommandController.Create)
 	commands.Put("/:id", middleware.TenantRequirePermission("bots.update"), c.CustomCommandController.Update)
@@ -124,6 +126,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Groups ───────────────────────────────────────────────────────
 	groups := protected.Group("/groups")
 	groups.Get("/", middleware.TenantRequirePermission("groups.read"), c.TelegramGroupController.List)
+	groups.Delete("/bulk", middleware.TenantRequirePermission("groups.delete"), c.TelegramGroupController.BulkDelete)
 	groups.Get("/:id", middleware.TenantRequirePermission("groups.read"), c.TelegramGroupController.Get)
 	groups.Post("/", middleware.TenantRequirePermission("groups.create"), c.TelegramGroupController.Create)
 	groups.Put("/:id", middleware.TenantRequirePermission("groups.update"), c.TelegramGroupController.Update)
@@ -134,6 +137,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Packages ─────────────────────────────────────────────────────
 	packages := protected.Group("/packages")
 	packages.Get("/", middleware.TenantRequirePermission("packages.read"), c.PackageController.List)
+	packages.Delete("/bulk", middleware.TenantRequirePermission("packages.delete"), c.PackageController.BulkDelete)
 	packages.Get("/:id", middleware.TenantRequirePermission("packages.read"), c.PackageController.Get)
 	packages.Post("/", middleware.TenantRequirePermission("packages.create"), c.PackageController.Create)
 	packages.Put("/:id", middleware.TenantRequirePermission("packages.update"), c.PackageController.Update)
@@ -145,6 +149,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	// ── Discounts ────────────────────────────────────────────────────
 	discounts := protected.Group("/discounts")
 	discounts.Get("/", middleware.TenantRequirePermission("packages.read"), c.MemberDiscountController.List)
+	discounts.Delete("/bulk", middleware.TenantRequirePermission("packages.delete"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.BulkDelete)
 	discounts.Post("/", middleware.TenantRequirePermission("packages.create"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.Create)
 	discounts.Put("/:id", middleware.TenantRequirePermission("packages.update"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.Update)
 	discounts.Delete("/:id", middleware.TenantRequirePermission("packages.delete"), middleware.EnforceFeature(c.FeatureGateUseCase, "allow_discount_system"), c.MemberDiscountController.Delete)

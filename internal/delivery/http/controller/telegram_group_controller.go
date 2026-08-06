@@ -181,6 +181,28 @@ func (c *TelegramGroupController) Delete(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Grup berhasil dihapus", nil)
 }
 
+// BulkDelete godoc
+// DELETE /api/v1/tenant/groups/bulk
+func (c *TelegramGroupController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	clientID := middleware.GetTenantClientID(ctx)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("group controller bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("group controller bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.groupUC.BulkDelete(ctx.Context(), clientID, req.IDs)
+	log.Info("group controller bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete grup selesai", result)
+}
+
 // GenerateConnectToken godoc
 // POST /api/v1/tenant/bots/:bot_id/groups/connect-token
 func (c *TelegramGroupController) GenerateConnectToken(ctx fiber.Ctx) error {

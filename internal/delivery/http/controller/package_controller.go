@@ -169,6 +169,28 @@ func (c *PackageController) Delete(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Paket berhasil dihapus", nil)
 }
 
+// BulkDelete godoc
+// DELETE /api/v1/tenant/packages/bulk
+func (c *PackageController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	clientID := middleware.GetTenantClientID(ctx)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("package controller bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("package controller bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.packageUC.BulkDelete(ctx.Context(), clientID, req.IDs)
+	log.Info("package controller bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete paket selesai", result)
+}
+
 // AssociateGroups godoc
 // POST /api/v1/tenant/packages/:id/groups
 func (c *PackageController) AssociateGroups(ctx fiber.Ctx) error {

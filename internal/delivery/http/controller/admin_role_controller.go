@@ -170,6 +170,26 @@ func (c *AdminRoleController) Delete(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Role berhasil dihapus", nil)
 }
 
+// BulkDelete godoc
+// DELETE /admin/v1/roles/bulk
+func (c *AdminRoleController) BulkDelete(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("admin role bulk delete bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("admin role bulk delete validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.adminRoleUC.BulkDeleteRoles(ctx.Context(), req.IDs, middleware.GetAdminPermissions(ctx))
+	log.Info("admin role bulk delete finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk delete role selesai", result)
+}
+
 // SyncPermissions godoc
 // PUT /admin/v1/roles/:id/permissions
 func (c *AdminRoleController) SyncPermissions(ctx fiber.Ctx) error {

@@ -149,3 +149,18 @@ func (c *PlatformPlanController) Delete(ctx fiber.Ctx) error {
 
 	return helper.Success(ctx, "Plan berhasil dihapus", nil)
 }
+
+// BulkDelete godoc
+// DELETE /admin/v1/billing/plans/bulk
+func (c *PlatformPlanController) BulkDelete(ctx fiber.Ctx) error {
+	var req model.BulkDeleteRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.planUC.BulkDelete(ctx.Context(), req.IDs, middleware.GetAdminPermissions(ctx))
+	return helper.Success(ctx, "Bulk delete plan selesai", result)
+}
