@@ -151,7 +151,18 @@ func (uc *MigrationMemberUseCase) ImportMembers(ctx context.Context, clientID uu
 			continue
 		}
 
-		expiredAt, _ := parseDate(row.ExpiredAt)
+		expiredAt, err := parseDate(row.ExpiredAt)
+		if err != nil {
+			log.Warn("migration member import: invalid expired_at, skipping row",
+				zap.String("username", row.Username),
+				zap.String("expired_at", row.ExpiredAt),
+				zap.Error(err))
+			skipped++
+			validationErrors = append(validationErrors, model.MigrationMemberImportRowError{
+				Row: i + 1, Username: row.Username, Error: "Format tanggal expired_at tidak valid: " + row.ExpiredAt,
+			})
+			continue
+		}
 		toInsert = append(toInsert, entity.MigrationMember{
 			ID:        uuid.New(),
 			ClientID:  clientID,

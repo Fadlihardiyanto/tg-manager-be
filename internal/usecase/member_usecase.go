@@ -198,7 +198,10 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 			}
 		}
 
-		auditLogMeta, _ := sonic.Marshal(map[string]interface{}{"reason": "manual_kick"})
+		auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{"reason": "manual_kick"})
+		if marshalErr != nil {
+			uc.log.Warn("member usecase: failed to marshal audit log meta", zap.Error(marshalErr))
+		}
 		auditLog := entity.AuditLog{
 			ClientID:   &clientID,
 			EntityType: "member",
@@ -279,12 +282,15 @@ func (uc *memberUseCase) ExtendMember(ctx context.Context, clientID uuid.UUID, u
 			return err
 		}
 
-		auditLogMeta, _ := sonic.Marshal(map[string]interface{}{
+		auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{
 			"subscription_id":  sub.ID.String(),
 			"additional_days":  req.AdditionalDays,
 			"old_expiry":       oldExpiry.Format(time.RFC3339),
 			"new_expiry":       sub.ExpiredAt.Format(time.RFC3339),
 		})
+		if marshalErr != nil {
+			uc.log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))
+		}
 		auditLog := entity.AuditLog{
 			ClientID:   &clientID,
 			EntityType: "subscription",
@@ -332,7 +338,10 @@ func (uc *memberUseCase) SyncMember(ctx context.Context, clientID uuid.UUID, use
 						"telegram_user_id": user.TelegramUserID,
 						"telegram_chat_id": group.TelegramChatID,
 					}
-					payloadBytes, _ := sonic.Marshal(payload)
+					payloadBytes, marshalErr := sonic.Marshal(payload)
+					if marshalErr != nil {
+						uc.log.Warn("member usecase: failed to marshal sync_request outbox payload", zap.Error(marshalErr))
+					}
 
 					outbox := entity.Outbox{
 						AggregateType: "member",
@@ -402,7 +411,10 @@ func (uc *memberUseCase) ResendLink(ctx context.Context, clientID uuid.UUID, use
 				"client_id":        clientID,
 				"is_resend":        true,
 			}
-			payloadBytes, _ := sonic.Marshal(payload)
+			payloadBytes, marshalErr := sonic.Marshal(payload)
+			if marshalErr != nil {
+				uc.log.Warn("member usecase: failed to marshal resend_link outbox payload", zap.Error(marshalErr))
+			}
 
 			outbox := entity.Outbox{
 				AggregateType: "member",

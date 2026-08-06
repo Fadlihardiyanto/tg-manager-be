@@ -127,7 +127,10 @@ func (uc *TenantAuthUseCase) Register(ctx context.Context, req *model.TenantRegi
 			Name:             user.Name,
 			VerificationLink: verificationLink,
 		}
-		payloadBytes, _ := json.Marshal(payload)
+		payloadBytes, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			log.Warn("tenant auth: failed to marshal register outbox payload", zap.Error(marshalErr))
+		}
 
 		outbox := &entity.Outbox{
 			ID:            uuid.New(),
@@ -210,7 +213,9 @@ func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRe
 	// 4. Update Last Login
 	now := time.Now()
 	user.LastLoginAt = &now
-	_ = uc.userRepo.Update(ctx, uc.db.Gorm, user)
+	if err := uc.userRepo.Update(ctx, uc.db.Gorm, user); err != nil {
+		log.Error("tenant auth login failed to update last login", zap.String("user_id", user.ID.String()), zap.Error(err))
+	}
 
 	// 4. Check if user is associated with an active client
 	if len(user.ClientUsers) == 0 {
@@ -418,7 +423,9 @@ func (uc *TenantAuthUseCase) VerifyEmail(ctx context.Context, req *model.TenantV
 	}
 
 	// 3. Delete token from Redis
-	_ = uc.redis.Del(ctx, tokenKey)
+	if err := uc.redis.Del(ctx, tokenKey).Err(); err != nil {
+		log.Warn("tenant auth verify email failed to delete token from redis", zap.Error(err))
+	}
 
 	// 4. Auto-login: fetch user with client data and generate JWT
 	userBasic, err := uc.userRepo.FindByID(ctx, uc.db.Gorm, userID)
@@ -436,7 +443,9 @@ func (uc *TenantAuthUseCase) VerifyEmail(ctx context.Context, req *model.TenantV
 	// Update last login
 	now := time.Now()
 	user.LastLoginAt = &now
-	_ = uc.userRepo.Update(ctx, uc.db.Gorm, user)
+	if err := uc.userRepo.Update(ctx, uc.db.Gorm, user); err != nil {
+		log.Error("tenant auth verify email failed to update last login", zap.String("user_id", user.ID.String()), zap.Error(err))
+	}
 
 	// 5. Generate JWT — same logic as Login
 	if len(user.ClientUsers) == 0 {
@@ -523,7 +532,10 @@ func (uc *TenantAuthUseCase) ResendVerification(ctx context.Context, req *model.
 			Name:             user.Name,
 			VerificationLink: verificationLink,
 		}
-		payloadBytes, _ := json.Marshal(payload)
+		payloadBytes, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			log.Warn("tenant auth: failed to marshal resend verification outbox payload", zap.Error(marshalErr))
+		}
 
 		outbox := &entity.Outbox{
 			ID:            uuid.New(),

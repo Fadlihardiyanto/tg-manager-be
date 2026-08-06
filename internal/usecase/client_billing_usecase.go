@@ -498,7 +498,10 @@ func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.
 	}
 
 	// Cancel billing aktif atau pending jika ada
-	existing, _ := uc.billingRepo.FindActiveOrPendingByClientID(ctx, uc.db.Gorm, req.ClientID)
+	existing, err := uc.billingRepo.FindActiveOrPendingByClientID(ctx, uc.db.Gorm, req.ClientID)
+	if err != nil {
+		uc.log.Warn("client billing: failed to find active/pending billing before assign", zap.String("client_id", req.ClientID.String()), zap.Error(err))
+	}
 
 	// Hitung amount & expired_at
 	amount, expiredAt := uc.calculateBilling(plan, req.BillingCycle)
@@ -561,7 +564,11 @@ func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.
 	}
 
 	// Fetch ulang dengan relasi
-	created, _ := uc.billingRepo.FindByID(ctx, uc.db.Gorm, billing.ID)
+	created, err := uc.billingRepo.FindByID(ctx, uc.db.Gorm, billing.ID)
+	if err != nil || created == nil {
+		uc.log.Error("client billing: failed to refetch billing after assign, falling back to in-memory billing", zap.String("billing_id", billing.ID.String()), zap.Error(err))
+		created = billing
+	}
 	resp := uc.toBillingResponse(created)
 	return &resp, nil
 }
@@ -670,11 +677,15 @@ func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID u
 		return nil, fmt.Errorf("gagal mengambil billing aktif")
 	}
 	if billing == nil {
-		_ = uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, "free")
+		if err := uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, "free"); err != nil {
+			uc.log.Error("client billing: failed to sync subscription tier to free", zap.String("client_id", clientID.String()), zap.Error(err))
+		}
 		return nil, nil
 	}
 
-	_ = uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, billing.Plan.Name)
+	if err := uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, billing.Plan.Name); err != nil {
+		uc.log.Error("client billing: failed to sync subscription tier", zap.String("client_id", clientID.String()), zap.String("plan", billing.Plan.Name), zap.Error(err))
+	}
 
 	resp := uc.toBillingResponse(billing)
 	if uc.featureGateUC != nil {

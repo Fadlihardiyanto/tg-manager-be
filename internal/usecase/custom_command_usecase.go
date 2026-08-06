@@ -222,7 +222,9 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 			oldKey := extractS3Key(*cmd.FileUrl)
 			if oldKey != "" && uc.s3Client != nil {
 				// Abaikan error agar proses update tetap berjalan meskipun hapus file lama gagal
-				_ = uc.s3Client.Delete(ctx, oldKey)
+				if delErr := uc.s3Client.Delete(ctx, oldKey); delErr != nil {
+					uc.log.Warn("custom command: failed to delete old file from S3", zap.String("key", oldKey), zap.Error(delErr))
+				}
 			}
 		}
 		cmd.FileUrl = req.FileUrl

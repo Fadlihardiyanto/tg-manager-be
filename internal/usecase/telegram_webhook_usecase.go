@@ -305,7 +305,9 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 	if ok, reason := uc.canExecuteCustomCommand(ctx, cmd, bot, msg); !ok {
 		if reason != "" {
-			_ = uc.sendReply(ctx, bot, msg.Chat.ID, reason)
+			if sendErr := uc.sendReply(ctx, bot, msg.Chat.ID, reason); sendErr != nil {
+				log.Warn("telegram webhook: failed to send custom command restriction reply", zap.Error(sendErr))
+			}
 		}
 		return nil
 	}
@@ -771,7 +773,9 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 	if err != nil || !isAdmin {
 		callbackConfig := tgbotapi.NewCallback(cb.ID, "❌ Hanya Administrator yang dapat menekan tombol ini.")
 		callbackConfig.ShowAlert = true
-		_, _ = botClient.Request(ctx, callbackConfig)
+		if _, err := botClient.Request(ctx, callbackConfig); err != nil {
+			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+		}
 		return nil
 	}
 
@@ -780,7 +784,9 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 	// Handle Cancel
 	if data == "connect_cancel" || data == "transfer_cancel" {
 		callbackConfig := tgbotapi.NewCallback(cb.ID, "Koneksi dibatalkan.")
-		_, _ = botClient.Request(ctx, callbackConfig)
+		if _, err := botClient.Request(ctx, callbackConfig); err != nil {
+			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+		}
 
 		editMsg := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, "❌ Koneksi dibatalkan.")
 		_, err = botClient.Send(ctx, editMsg)
@@ -795,7 +801,9 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 		if err != nil {
 			callbackConfig := tgbotapi.NewCallback(cb.ID, "❌ Kode koneksi kedaluwarsa.")
 			callbackConfig.ShowAlert = true
-			_, _ = botClient.Request(ctx, callbackConfig)
+			if _, err := botClient.Request(ctx, callbackConfig); err != nil {
+			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+		}
 
 			editMsg := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, "❌ Koneksi gagal: Kode koneksi tidak valid atau sudah kedaluwarsa.")
 			_, err = botClient.Send(ctx, editMsg)
@@ -855,7 +863,9 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 
 		// Answer callback and update UI
 		callbackConfig := tgbotapi.NewCallback(cb.ID, "Grup berhasil terhubung!")
-		_, _ = botClient.Request(ctx, callbackConfig)
+		if _, err := botClient.Request(ctx, callbackConfig); err != nil {
+			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+		}
 
 		editMsg := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, "✅ <b>Sukses!</b> Grup ini sekarang telah terhubung ke dashboard Anda.")
 		editMsg.ParseMode = "HTML"
@@ -871,7 +881,9 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 		if err != nil {
 			callbackConfig := tgbotapi.NewCallback(cb.ID, "❌ Kode transfer kedaluwarsa.")
 			callbackConfig.ShowAlert = true
-			_, _ = botClient.Request(ctx, callbackConfig)
+			if _, err := botClient.Request(ctx, callbackConfig); err != nil {
+			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+		}
 
 			editMsg := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, "❌ Pengalihan gagal: Kode transfer tidak valid atau sudah kedaluwarsa.")
 			_, err = botClient.Send(ctx, editMsg)
@@ -931,7 +943,9 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 
 		// Answer callback and update UI
 		callbackConfig := tgbotapi.NewCallback(cb.ID, "Pengalihan berhasil!")
-		_, _ = botClient.Request(ctx, callbackConfig)
+		if _, err := botClient.Request(ctx, callbackConfig); err != nil {
+			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+		}
 
 		replyText := fmt.Sprintf("✅ <b>Pengalihan Berhasil!</b> Pengelolaan grup ini telah dipindahkan dari @%s ke @%s.", oldBotUsername, bot.Username)
 		if oldBotUsername == "" {

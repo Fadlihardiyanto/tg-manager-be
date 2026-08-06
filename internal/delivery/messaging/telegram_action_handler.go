@@ -219,7 +219,11 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 	// 6. Generate Receipt PDF and Upload to S3 (skip for resend link — no order data)
 	var receiptPDFBytes []byte
 	if !payload.IsResend {
-		receiptPDFBytes, _, _ = h.generateReceipt(ctx, payload, pkg, sub.ExpiredAt, logFields)
+		var receiptErr error
+		receiptPDFBytes, _, receiptErr = h.generateReceipt(ctx, payload, pkg, sub.ExpiredAt, logFields)
+		if receiptErr != nil {
+			h.logger.Error("telegram action handler: failed to generate receipt", append(logFields, zap.Error(receiptErr))...)
+		}
 	}
 
 	loc, _ := time.LoadLocation("Asia/Jakarta")

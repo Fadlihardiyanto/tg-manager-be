@@ -76,7 +76,10 @@ func (uc *tenantProfileUseCase) InitiateKeyExchange(ctx context.Context, clientI
 		Status:           "initiated",
 	}
 
-	payload, _ := json.Marshal(session)
+	payload, marshalErr := json.Marshal(session)
+	if marshalErr != nil {
+		uc.log.Warn("tenant profile: failed to marshal ECDH session", zap.Error(marshalErr))
+	}
 	key := fmt.Sprintf("ecdh:%s:%s", clientID.String(), sessionID.String())
 	if err := uc.redisClient.Set(ctx, key, payload, 5*time.Minute).Err(); err != nil {
 		uc.log.Error("failed to store ECDH session in redis", zap.Error(err))
@@ -120,7 +123,10 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 		return nil, helper.NewUnprocessable("Gagal compute shared secret")
 	}
 
-	info, _ := req.SessionID.MarshalBinary()
+	info, marshalErr := req.SessionID.MarshalBinary()
+	if marshalErr != nil {
+		uc.log.Warn("tenant profile: failed to marshal session id", zap.Error(marshalErr))
+	}
 	derivedKey, err := crypto.ECDHDeriveKey(sharedSecret, info)
 	if err != nil {
 		return nil, helper.NewUnprocessable("Gagal derive encryption key")

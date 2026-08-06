@@ -36,7 +36,10 @@ func NewAuditLogUseCase(db *gorm.DB, auditRepo repository.IAuditLogRepository, l
 }
 
 func (uc *auditLogUseCase) Record(ctx context.Context, tx *gorm.DB, clientID *uuid.UUID, entityType string, entityID uuid.UUID, action string, actorType string, actorID string, metadata map[string]interface{}) error {
-	metaBytes, _ := json.Marshal(metadata)
+	metaBytes, err := json.Marshal(metadata)
+	if err != nil {
+		uc.log.Warn("audit log: failed to marshal metadata", zap.String("entity_type", entityType), zap.String("entity_id", entityID.String()), zap.String("action", action), zap.Error(err))
+	}
 
 	log := &entity.AuditLog{
 		ClientID:   clientID,
@@ -82,7 +85,9 @@ func (uc *auditLogUseCase) toResponseList(logs []entity.AuditLog) []model.AuditL
 	res := make([]model.AuditLogResponse, len(logs))
 	for i, l := range logs {
 		var meta map[string]interface{}
-		_ = json.Unmarshal(l.Metadata, &meta)
+		if err := json.Unmarshal(l.Metadata, &meta); err != nil {
+			uc.log.Warn("audit log: failed to unmarshal metadata", zap.String("audit_id", l.ID.String()), zap.Error(err))
+		}
 
 		res[i] = model.AuditLogResponse{
 			ID:         l.ID,

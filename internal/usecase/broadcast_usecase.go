@@ -129,7 +129,10 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 	}
 
 	if len(req.GroupIDs) > 0 {
-		b, _ := json.Marshal(req.GroupIDs)
+		b, marshalErr := json.Marshal(req.GroupIDs)
+		if marshalErr != nil {
+			log.Warn("broadcast usecase: failed to marshal group filter", zap.Error(marshalErr))
+		}
 		s := string(b)
 		broadcast.GroupFilter = &s
 	}

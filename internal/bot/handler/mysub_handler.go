@@ -75,7 +75,9 @@ func (h *MySubHandler) Execute(ctx context.Context, bot *entity.TelegramBot, msg
 	if err != nil {
 		h.log.Error("mysub handler: failed to fetch subscriptions", zap.Error(err))
 		replyText := "❌ Gagal mengambil data langganan. Silakan coba beberapa saat lagi."
-		_ = botClient.SendMessage(ctx, msg.Chat.ID, replyText)
+		if sendErr := botClient.SendMessage(ctx, msg.Chat.ID, replyText); sendErr != nil {
+			h.log.Warn("mysub handler: failed to send error reply", zap.Error(sendErr))
+		}
 		return err
 	}
 

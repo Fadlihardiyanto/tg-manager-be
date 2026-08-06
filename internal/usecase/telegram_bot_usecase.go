@@ -271,7 +271,11 @@ func (uc *TelegramBotUseCase) Delete(ctx context.Context, clientID uuid.UUID, bo
 		tgClient, tgErr := uc.telegramFactory.NewClient(token)
 		if tgErr == nil {
 			// 2. Delete webhook
-			_ = tgClient.DeleteWebhook(ctx)
+			if wbErr := tgClient.DeleteWebhook(ctx); wbErr != nil {
+				log.Warn("bot usecase delete failed to remove webhook", zap.String("bot_id", bot.ID.String()), zap.Error(wbErr))
+			}
+		} else {
+			log.Warn("bot usecase delete failed to init bot client for webhook removal", zap.Error(tgErr))
 		}
 	} else {
 		log.Warn("bot usecase delete failed to decrypt token for webhook removal", zap.Error(err))

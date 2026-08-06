@@ -73,7 +73,9 @@ func (h *MyOrdersHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 	if err != nil {
 		h.log.Error("myorders handler: failed to fetch orders", zap.Error(err))
 		replyText := "❌ Gagal mengambil riwayat pembayaran. Silakan coba beberapa saat lagi."
-		_ = botClient.SendMessage(ctx, msg.Chat.ID, replyText)
+		if sendErr := botClient.SendMessage(ctx, msg.Chat.ID, replyText); sendErr != nil {
+			h.log.Warn("myorders handler: failed to send error reply", zap.Error(sendErr))
+		}
 		return err
 	}
 

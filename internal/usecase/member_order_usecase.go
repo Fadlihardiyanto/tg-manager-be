@@ -176,7 +176,10 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		if currentCount >= int64(billing.Plan.MaxMembers) {
 			// Needs to verify if this specific user already has an active sub to this client.
 			// If they don't, it means they are adding a NEW member to the count, which is blocked.
-			activeSubs, _ := uc.subRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, req.TelegramUserID, pkg.ClientID)
+			activeSubs, err := uc.subRepo.FindActiveByTelegramUserID(ctx, uc.db.Gorm, req.TelegramUserID, pkg.ClientID)
+			if err != nil {
+				log.Warn("member order checkout: failed to load active subs for member-limit check", zap.Int64("telegram_user_id", req.TelegramUserID), zap.Error(err))
+			}
 			if len(activeSubs) == 0 {
 				return nil, helper.NewBadRequest(fmt.Sprintf("Mohon maaf, grup ini telah mencapai batas maksimum pendaftaran member (%d/%d).", currentCount, billing.Plan.MaxMembers))
 			}
@@ -641,8 +644,10 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 			}
 
 			highPriority := false
-			billing, _ := uc.billingRepo.FindActiveByClientID(ctx, tx, order.ClientID)
-			if billing != nil {
+			billing, err := uc.billingRepo.FindActiveByClientID(ctx, tx, order.ClientID)
+			if err != nil {
+				log.Warn("member order webhook: failed to load billing for high-priority flag", zap.String("client_id", order.ClientID.String()), zap.Error(err))
+			} else if billing != nil {
 				highPriority = billing.Plan.AllowHighPriority
 			}
 
@@ -698,8 +703,10 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 func (uc *memberOrderUseCase) buildFinishURL(ctx context.Context, slug, externalID string, pkg *entity.Package) string {
 	base := fmt.Sprintf("%s/checkout/success?slug=%s&order_id=%s", uc.appFrontendURL, slug, externalID)
 	if len(pkg.Groups) > 0 {
-		bot, _ := uc.botRepo.FindByID(ctx, uc.db.Gorm, pkg.Groups[0].BotUUID)
-		if bot != nil && bot.Username != "" {
+		bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, pkg.Groups[0].BotUUID)
+		if err != nil {
+			uc.log.Warn("member order: failed to load bot for finish URL", zap.String("bot_id", pkg.Groups[0].BotUUID.String()), zap.Error(err))
+		} else if bot != nil && bot.Username != "" {
 			base += "&bot=" + bot.Username
 		}
 	}
@@ -728,14 +735,18 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 
 	var botUsername string
 	if len(order.Package.Groups) > 0 {
-		bot, _ := uc.botRepo.FindByID(ctx, uc.db.Gorm, order.Package.Groups[0].BotUUID)
-		if bot != nil && bot.Username != "" {
+		bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, order.Package.Groups[0].BotUUID)
+		if err != nil {
+			uc.log.Warn("GetCheckoutDetail: failed to load bot", zap.String("bot_id", order.Package.Groups[0].BotUUID.String()), zap.Error(err))
+		} else if bot != nil && bot.Username != "" {
 			botUsername = bot.Username
 		}
 	}
 	if botUsername == "" {
-		fallback, _ := uc.botRepo.FindFirstByClientID(ctx, uc.db.Gorm, order.ClientID)
-		if fallback != nil && fallback.Username != "" {
+		fallback, err := uc.botRepo.FindFirstByClientID(ctx, uc.db.Gorm, order.ClientID)
+		if err != nil {
+			uc.log.Warn("GetCheckoutDetail: failed to load fallback bot", zap.String("client_id", order.ClientID.String()), zap.Error(err))
+		} else if fallback != nil && fallback.Username != "" {
 			botUsername = fallback.Username
 		}
 	}
