@@ -17,3 +17,14 @@ type BulkDeleteFailure struct {
 	ID    uuid.UUID `json:"id"`
 	Error string    `json:"error"`
 }
+
+// BulkMemberKickItem pairs a member with the specific subscription to cancel.
+type BulkMemberKickItem struct {
+	MemberID       uuid.UUID `json:"member_id" validate:"required,uuid"`
+	SubscriptionID uuid.UUID `json:"subscription_id" validate:"required,uuid"`
+}
+
+// BulkMemberKickRequest is the body for best-effort bulk selective kick.
+type BulkMemberKickRequest struct {
+	Items []BulkMemberKickItem `json:"items" validate:"required,min=1,max=100,dive"`
+}

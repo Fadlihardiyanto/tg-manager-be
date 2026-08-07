@@ -32,6 +32,11 @@ type IMemberUseCase interface {
 	// If nil, all active subscriptions are cancelled (global kick).
 	KickMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, subscriptionID *uuid.UUID) error
 
+	// BulkKickMembers performs best-effort selective kicks for many (member, subscription)
+	// pairs. Items whose subscription is missing, not owned, or already expired are
+	// skipped silently (not counted, not failed).
+	BulkKickMembers(ctx context.Context, clientID uuid.UUID, items []model.BulkMemberKickItem) model.BulkDeleteResult
+
 	// ExtendMember adds N days to a specific subscription's expiry.
 	ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, req *model.ExtendMemberRequest) error
 
@@ -154,25 +159,12 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 
 		if subscriptionID != nil {
 			// ── Selective kick: cancel only the specified subscription ──
-			sub, err := uc.subscriptionRepo.FindActiveByIdWithPackage(ctx, tx, *subscriptionID)
+			skipped, err := uc.kickSubscriptionSelective(ctx, tx, clientID, userID, *subscriptionID, user.TelegramUserID, now)
 			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return helper.NewBadRequest("Langganan tidak ditemukan atau sudah tidak aktif")
-				}
 				return err
 			}
-			if sub.TelegramUserID != user.ID || sub.ClientID != clientID {
+			if skipped {
 				return helper.NewBadRequest("Langganan tidak ditemukan atau sudah tidak aktif")
-			}
-
-			sub.Status = "cancelled"
-			sub.KickedAt = &now
-			if err := uc.subscriptionRepo.Update(ctx, tx, sub); err != nil {
-				return err
-			}
-
-			if err := createKickOutboxEvents(ctx, tx, uc.outboxRepo, sub, user.TelegramUserID, now); err != nil {
-				return err
 			}
 		} else {
 			// ── Global kick: cancel all active subscriptions (existing behavior) ──
@@ -198,25 +190,109 @@ func (uc *memberUseCase) KickMember(ctx context.Context, clientID uuid.UUID, use
 			}
 		}
 
-		auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{"reason": "manual_kick"})
-		if marshalErr != nil {
-			uc.log.Warn("member usecase: failed to marshal audit log meta", zap.Error(marshalErr))
-		}
-		auditLog := entity.AuditLog{
-			ClientID:   &clientID,
-			EntityType: "member",
-			EntityID:   userID,
-			Action:     "kick_member",
-			ActorType:  "system",
-			ActorID:    "system",
-			Metadata:   datatypes.JSON(auditLogMeta),
-		}
-		if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
-			log.Warn("failed to create audit log for kick", zap.Error(err))
-		}
-
-		return nil
+		return uc.writeKickAuditLog(ctx, tx, clientID, userID)
 	})
+}
+
+// kickSubscriptionSelective cancels a single subscription if it is valid and active.
+// Returns (skipped=true, nil) when the subscription is missing, not owned by the
+// member/client, or already expired — callers decide whether to treat that as an
+// error (single kick) or a silent skip (bulk kick).
+func (uc *memberUseCase) kickSubscriptionSelective(ctx context.Context, tx *gorm.DB, clientID, userID, subscriptionID uuid.UUID, telegramUserID int64, now time.Time) (bool, error) {
+	sub, err := uc.subscriptionRepo.FindActiveByIdWithPackage(ctx, tx, subscriptionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	if sub.TelegramUserID != userID || sub.ClientID != clientID {
+		return true, nil
+	}
+	if now.After(sub.ExpiredAt) {
+		return true, nil
+	}
+
+	sub.Status = "cancelled"
+	sub.KickedAt = &now
+	if err := uc.subscriptionRepo.Update(ctx, tx, sub); err != nil {
+		return false, err
+	}
+
+	if err := createKickOutboxEvents(ctx, tx, uc.outboxRepo, sub, telegramUserID, now); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+func (uc *memberUseCase) writeKickAuditLog(ctx context.Context, tx *gorm.DB, clientID, userID uuid.UUID) error {
+	log := logger.FromContext(ctx, uc.log)
+
+	auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{"reason": "manual_kick"})
+	if marshalErr != nil {
+		uc.log.Warn("member usecase: failed to marshal audit log meta", zap.Error(marshalErr))
+	}
+	auditLog := entity.AuditLog{
+		ClientID:   &clientID,
+		EntityType: "member",
+		EntityID:   userID,
+		Action:     "kick_member",
+		ActorType:  "system",
+		ActorID:    "system",
+		Metadata:   datatypes.JSON(auditLogMeta),
+	}
+	if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
+		log.Warn("failed to create audit log for kick", zap.Error(err))
+	}
+	return nil
+}
+
+// BulkKickMembers performs best-effort selective kicks. Items whose subscription
+// is missing, not owned, or already expired are skipped silently.
+func (uc *memberUseCase) BulkKickMembers(ctx context.Context, clientID uuid.UUID, items []model.BulkMemberKickItem) model.BulkDeleteResult {
+	log := logger.FromContext(ctx, uc.log)
+
+	result := model.BulkDeleteResult{Deleted: 0, Failed: []model.BulkDeleteFailure{}}
+	for _, item := range items {
+		skipped := false
+		err := uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			user, err := uc.tgUserRepo.FindMemberDetailByID(ctx, tx, item.MemberID, clientID)
+			if err != nil {
+				return err
+			}
+			if user == nil {
+				skipped = true // member not in this tenant → skip
+				return nil
+			}
+
+			now := time.Now()
+			s, err := uc.kickSubscriptionSelective(ctx, tx, clientID, item.MemberID, item.SubscriptionID, user.TelegramUserID, now)
+			if err != nil {
+				return err
+			}
+			if s {
+				skipped = true // skip silently (not counted, not failed)
+				return nil
+			}
+
+			return uc.writeKickAuditLog(ctx, tx, clientID, item.MemberID)
+		})
+		if err != nil {
+			log.Warn("member usecase BulkKickMembers item failed", zap.String("member_id", item.MemberID.String()), zap.String("subscription_id", item.SubscriptionID.String()), zap.Error(err))
+			result.Failed = append(result.Failed, model.BulkDeleteFailure{ID: item.MemberID, Error: err.Error()})
+			continue
+		}
+		if skipped {
+			continue
+		}
+		result.Deleted++
+	}
+
+	if len(result.Failed) == 0 {
+		result.Failed = nil
+	}
+	return result
 }
 
 // createKickOutboxEvents creates enforcer.kick outbox events for every group in the subscription's package.
