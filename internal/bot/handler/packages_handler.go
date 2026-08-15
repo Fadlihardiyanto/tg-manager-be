@@ -10,6 +10,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -18,15 +19,19 @@ import (
 type PackagesHandler struct {
 	db              *entity.Database
 	packageRepo     repository.IPackageRepository
+	tgUserRepo      repository.ITelegramUserRepository
+	orderRepo       repository.IOrderRepository
 	telegramFactory telegram.BotFactory
 	encryptionKey   string
 	log             *zap.Logger
 }
 
-func NewPackagesHandler(db *entity.Database, packageRepo repository.IPackageRepository, factory telegram.BotFactory, encKey string, log *zap.Logger) *PackagesHandler {
+func NewPackagesHandler(db *entity.Database, packageRepo repository.IPackageRepository, tgUserRepo repository.ITelegramUserRepository, orderRepo repository.IOrderRepository, factory telegram.BotFactory, encKey string, log *zap.Logger) *PackagesHandler {
 	return &PackagesHandler{
 		db:              db,
 		packageRepo:     packageRepo,
+		tgUserRepo:      tgUserRepo,
+		orderRepo:       orderRepo,
 		telegramFactory: factory,
 		encryptionKey:   encKey,
 		log:             log,
@@ -50,6 +55,21 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 	if err != nil {
 		h.log.Error("failed to fetch packages", zap.Error(err))
 		return err
+	}
+
+	// Resolve member purchase counts per package (for max_purchases_per_member).
+	// Member yang belum pernah checkout → tidak ada query, semua paket normal.
+	var purchaseCounts map[uuid.UUID]int64
+	if tu, err := h.tgUserRepo.FindByTelegramID(ctx, h.db.Gorm, msg.From.ID); err == nil && tu != nil {
+		pkgIDs := make([]uuid.UUID, 0, len(packages))
+		for _, p := range packages {
+			pkgIDs = append(pkgIDs, p.ID)
+		}
+		if counts, err := h.orderRepo.CountPaidByUserAndPackages(ctx, h.db.Gorm, tu.ID, pkgIDs); err == nil {
+			purchaseCounts = counts
+		} else {
+			h.log.Warn("failed to fetch purchase counts", zap.Error(err))
+		}
 	}
 
 	// Format Response
@@ -79,6 +99,11 @@ func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, 
 				responseText.WriteString(fmt.Sprintf("   <i>%s</i>\n", pkg.Description))
 			}
 			responseText.WriteString("\n")
+
+			if pkg.MaxPurchasesPerMember > 0 && purchaseCounts[pkg.ID] >= int64(pkg.MaxPurchasesPerMember) {
+				responseText.WriteString("   🚫 <i>Sudah mencapai batas pembelian</i>\n\n")
+				continue // tanpa tombol "Pilih"
+			}
 
 			// Add button for this package
 			callbackData := fmt.Sprintf("pkg_sel:%s", pkg.ID.String())

@@ -222,6 +222,11 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 	customerPhone = tgUser.Phone
 	}
 
+	// 3.5. Check purchase limit (max_purchases_per_member, lifetime)
+	if err := uc.checkPurchaseLimit(ctx, uc.db.Gorm, userUUID, pkg); err != nil {
+		return nil, err
+	}
+
 	// 4. Check for existing pending orders for this package to prevent duplicate links
 	existingPending, err := uc.orderRepo.FindPendingOrderByUserAndPackage(ctx, uc.db.Gorm, userUUID, req.PackageID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -809,6 +814,24 @@ func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID
 }
 
 // ── Private Helpers ──────────────────────────────────────────
+
+// checkPurchaseLimit menolak checkout bila member sudah mencapai
+// max_purchases_per_member (lifetime, dihitung dari order berstatus paid).
+// 0 atau negatif = unlimited.
+func (uc *memberOrderUseCase) checkPurchaseLimit(ctx context.Context, tx *gorm.DB, userID uuid.UUID, pkg *entity.Package) error {
+	if pkg == nil || pkg.MaxPurchasesPerMember <= 0 {
+		return nil
+	}
+	count, err := uc.orderRepo.CountPaidByUserAndPackage(ctx, tx, userID, pkg.ID)
+	if err != nil {
+		uc.log.Warn("member order: failed to count paid purchases for limit check", zap.String("package_id", pkg.ID.String()), zap.Error(err))
+		return fmt.Errorf("gagal memverifikasi batas pembelian paket")
+	}
+	if count >= int64(pkg.MaxPurchasesPerMember) {
+		return helper.NewBadRequest(fmt.Sprintf("Paket ini sudah mencapai batas maksimum pembelian (%d kali)", pkg.MaxPurchasesPerMember))
+	}
+	return nil
+}
 
 func (uc *memberOrderUseCase) getMidtransClient(ctx context.Context, client *entity.Client) (*midtrans.Client, error) {
 	var serverKeyEnc, clientKeyEnc *string

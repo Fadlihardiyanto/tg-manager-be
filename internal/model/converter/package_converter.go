@@ -20,17 +20,18 @@ func PackageToResponse(pkg *entity.Package) *model.PackageResponse {
 	}
 
 	return &model.PackageResponse{
-		ID:           pkg.ID,
-		ClientID:     pkg.ClientID,
-		Name:         pkg.Name,
-		Description:  pkg.Description,
-		Price:        pkg.Price,
-		DurationDays: pkg.DurationDays,
-		IsAllAccess:  pkg.IsAllAccess,
-		IsActive:     pkg.IsActive,
-		CreatedAt:    pkg.CreatedAt,
-		UpdatedAt:    pkg.UpdatedAt,
-		Groups:       groupResponses,
+		ID:                    pkg.ID,
+		ClientID:              pkg.ClientID,
+		Name:                  pkg.Name,
+		Description:           pkg.Description,
+		Price:                 pkg.Price,
+		DurationDays:          pkg.DurationDays,
+		IsAllAccess:           pkg.IsAllAccess,
+		IsActive:              pkg.IsActive,
+		MaxPurchasesPerMember: pkg.MaxPurchasesPerMember,
+		CreatedAt:             pkg.CreatedAt,
+		UpdatedAt:             pkg.UpdatedAt,
+		Groups:                groupResponses,
 	}
 }
 

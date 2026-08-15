@@ -158,6 +158,7 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 	members := protected.Group("/members")
 	members.Get("/", middleware.TenantRequirePermission("members.read"), c.MemberController.List)
 	members.Post("/bulk/kick", middleware.TenantRequirePermission("members.update"), c.MemberController.BulkKick)
+	members.Post("/bulk/extend", middleware.TenantRequirePermission("members.update"), c.MemberController.BulkExtend)
 	members.Get("/:id", middleware.TenantRequirePermission("members.read"), c.MemberController.Get)
 	members.Post("/:id/kick", middleware.TenantRequirePermission("members.update"), c.MemberController.Kick)
 	members.Post("/:id/extend", middleware.TenantRequirePermission("members.update"), c.MemberController.Extend)

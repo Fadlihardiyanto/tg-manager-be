@@ -294,7 +294,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 
 	// Bot Handlers & Registry
 	startHandler := handler.NewStartHandler(config.TelegramFactory, config.Config.App.EncryptionKey, config.Log, config.DB, customCommandRepo)
-	packagesHandler := handler.NewPackagesHandler(config.DB, packageRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	packagesHandler := handler.NewPackagesHandler(config.DB, packageRepo, telegramUserRepo, orderRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	packageSelectHandler := handler.NewPackageSelectHandler(memberOrderUC, config.TelegramFactory, config.Config.App.EncryptionKey, config.Redis, config.Log)
 	mySubHandler := handler.NewMySubHandler(config.DB, subscriptionRepo, groupRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
 	statusHandler := handler.NewStatusAliasHandler(mySubHandler) // /status → same logic as /mysub

@@ -28,3 +28,15 @@ type BulkMemberKickItem struct {
 type BulkMemberKickRequest struct {
 	Items []BulkMemberKickItem `json:"items" validate:"required,min=1,max=100,dive"`
 }
+
+// BulkMemberExtendItem pairs a member with the specific subscription to extend by N days.
+type BulkMemberExtendItem struct {
+	MemberID       uuid.UUID `json:"member_id" validate:"required,uuid"`
+	SubscriptionID uuid.UUID `json:"subscription_id" validate:"required,uuid"`
+	AdditionalDays int       `json:"additional_days" validate:"required,min=1"`
+}
+
+// BulkMemberExtendRequest is the body for best-effort bulk extend subscription.
+type BulkMemberExtendRequest struct {
+	Items []BulkMemberExtendItem `json:"items" validate:"required,min=1,max=100,dive"`
+}

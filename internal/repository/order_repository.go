@@ -18,6 +18,8 @@ type IOrderRepository interface {
 	FindByExternalIDWithPackage(ctx context.Context, tx *gorm.DB, externalID string) (*entity.Order, error)
 	FindBySubscriptionID(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID) (*entity.Order, error)
 	FindPendingOrderByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (*entity.Order, error)
+	CountPaidByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (int64, error)
+	CountPaidByUserAndPackages(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageIDs []uuid.UUID) (map[uuid.UUID]int64, error)
 	FindExpiredPendingOrders(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Order, error)
 	FindRecentByTelegramUserID(ctx context.Context, tx *gorm.DB, telegramUserID int64, clientID uuid.UUID, limit int) ([]entity.Order, error)
 	FindTransactionsByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.TransactionFilterRequest) ([]entity.Order, error)
@@ -83,6 +85,43 @@ func (r *OrderRepository) FindPendingOrderByUserAndPackage(ctx context.Context, 
 		return nil, err
 	}
 	return &order, nil
+}
+
+// CountPaidByUserAndPackage counts paid orders for a (member, package) pair —
+// basis untuk batas pembelian paket per member (lifetime).
+func (r *OrderRepository) CountPaidByUserAndPackage(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageID uuid.UUID) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Model(&entity.Order{}).
+		Where("telegram_user_id = ? AND package_id = ? AND status = ? AND deleted_at IS NULL", userID, packageID, "paid").
+		Count(&count).Error
+	return count, err
+}
+
+// CountPaidByUserAndPackages returns grouped paid-order counts per package for
+// one member — satu query untuk daftar paket di bot.
+func (r *OrderRepository) CountPaidByUserAndPackages(ctx context.Context, tx *gorm.DB, userID uuid.UUID, packageIDs []uuid.UUID) (map[uuid.UUID]int64, error) {
+	counts := make(map[uuid.UUID]int64)
+	if len(packageIDs) == 0 {
+		return counts, nil
+	}
+	var rows []struct {
+		PackageID uuid.UUID
+		Count     int64
+	}
+	err := tx.WithContext(ctx).
+		Model(&entity.Order{}).
+		Select("package_id, COUNT(*) as count").
+		Where("telegram_user_id = ? AND package_id IN ? AND status = ? AND deleted_at IS NULL", userID, packageIDs, "paid").
+		Group("package_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.PackageID] = row.Count
+	}
+	return counts, nil
 }
 
 func (r *OrderRepository) FindExpiredPendingOrders(ctx context.Context, tx *gorm.DB, limit int) ([]entity.Order, error) {

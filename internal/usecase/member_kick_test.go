@@ -46,7 +46,7 @@ func setupMemberKickTest(t *testing.T) (*memberUseCase, *entity.Database, uuid.U
 		id TEXT PRIMARY KEY, client_id TEXT NOT NULL,
 		name TEXT NOT NULL, description TEXT, price REAL NOT NULL,
 		duration_days INTEGER NOT NULL, is_all_access INTEGER DEFAULT 0,
-		is_active INTEGER DEFAULT 1,
+		is_active INTEGER DEFAULT 1, max_purchases_per_member INTEGER DEFAULT 0,
 		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 	)`)
 	createTable(`CREATE TABLE groups (

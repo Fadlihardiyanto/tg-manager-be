@@ -192,6 +192,29 @@ func (c *MemberController) BulkKick(ctx fiber.Ctx) error {
 	return helper.Success(ctx, "Bulk kick member selesai", result)
 }
 
+// BulkExtend godoc
+// POST /api/v1/tenant/members/bulk/extend
+func (c *MemberController) BulkExtend(ctx fiber.Ctx) error {
+	log := logger.FromContext(ctx.Context(), c.log)
+	log.Info("member controller bulk extend request")
+
+	clientID := middleware.GetTenantClientID(ctx)
+
+	var req model.BulkMemberExtendRequest
+	if err := ctx.Bind().JSON(&req); err != nil {
+		log.Warn("member controller bulk extend bind failed", zap.Error(err))
+		return helper.BadRequest(ctx, "Format request tidak valid")
+	}
+	if errs := helper.ValidateStruct(c.validator, req); errs != nil {
+		log.Warn("member controller bulk extend validation failed", zap.Any("errors", errs))
+		return helper.UnprocessableEntity(ctx, errs)
+	}
+
+	result := c.memberUC.BulkExtendMembers(ctx.Context(), clientID, req.Items)
+	log.Info("member controller bulk extend finished", zap.Int("deleted", result.Deleted), zap.Int("failed", len(result.Failed)))
+	return helper.Success(ctx, "Bulk perpanjang langganan selesai", result)
+}
+
 // Extend godoc
 // POST /api/v1/tenant/members/:id/extend
 func (c *MemberController) Extend(ctx fiber.Ctx) error {

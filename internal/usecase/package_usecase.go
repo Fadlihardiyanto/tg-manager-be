@@ -76,16 +76,17 @@ func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *m
 	}
 
 	pkg := &entity.Package{
-		ID:           uuid.New(),
-		ClientID:     clientID,
-		Name:         req.Name,
-		Description:  req.Description,
-		Price:        req.Price,
-		DurationDays: req.DurationDays,
-		IsAllAccess:  req.IsAllAccess,
-		IsActive:     true,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:                    uuid.New(),
+		ClientID:              clientID,
+		Name:                  req.Name,
+		Description:           req.Description,
+		Price:                 req.Price,
+		DurationDays:          req.DurationDays,
+		IsAllAccess:           req.IsAllAccess,
+		MaxPurchasesPerMember: req.MaxPurchasesPerMember,
+		IsActive:              true,
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
 	}
 
 	if err := uc.packageRepo.Create(ctx, uc.db.Gorm, pkg); err != nil {
@@ -171,6 +172,9 @@ func (uc *PackageUseCase) Update(ctx context.Context, clientID uuid.UUID, packag
 	}
 	if req.IsActive != nil {
 		pkg.IsActive = *req.IsActive
+	}
+	if req.MaxPurchasesPerMember != nil {
+		pkg.MaxPurchasesPerMember = *req.MaxPurchasesPerMember
 	}
 	pkg.UpdatedAt = time.Now()
 

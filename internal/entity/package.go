@@ -17,6 +17,7 @@ type Package struct {
 	DurationDays int             `gorm:"not null"`
 	IsAllAccess  bool            `gorm:"default:false"`
 	IsActive     bool            `gorm:"default:true"`
+	MaxPurchasesPerMember int    `gorm:"default:0"`
 	CreatedAt    time.Time       `gorm:"default:CURRENT_TIMESTAMP"`
 	UpdatedAt    time.Time       `gorm:"default:CURRENT_TIMESTAMP"`
 	DeletedAt    gorm.DeletedAt `gorm:"index"`

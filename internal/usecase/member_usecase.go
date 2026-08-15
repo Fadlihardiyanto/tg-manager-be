@@ -40,6 +40,11 @@ type IMemberUseCase interface {
 	// ExtendMember adds N days to a specific subscription's expiry.
 	ExtendMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID, req *model.ExtendMemberRequest) error
 
+	// BulkExtendMembers performs best-effort subscription extends for many
+	// (member, subscription, additional_days) items. Items whose subscription is
+	// missing, not owned, or not active are skipped silently (not counted, not failed).
+	BulkExtendMembers(ctx context.Context, clientID uuid.UUID, items []model.BulkMemberExtendItem) model.BulkDeleteResult
+
 	// SyncMember creates a sync_request outbox event.
 	SyncMember(ctx context.Context, clientID uuid.UUID, userID uuid.UUID) error
 
@@ -358,29 +363,92 @@ func (uc *memberUseCase) ExtendMember(ctx context.Context, clientID uuid.UUID, u
 			return err
 		}
 
-		auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{
-			"subscription_id":  sub.ID.String(),
-			"additional_days":  req.AdditionalDays,
-			"old_expiry":       oldExpiry.Format(time.RFC3339),
-			"new_expiry":       sub.ExpiredAt.Format(time.RFC3339),
-		})
-		if marshalErr != nil {
-			uc.log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))
-		}
-		auditLog := entity.AuditLog{
-			ClientID:   &clientID,
-			EntityType: "subscription",
-			EntityID:   sub.ID,
-			Action:     "extend_expiry",
-			ActorType:  "system",
-			ActorID:    "system",
-			Metadata:   datatypes.JSON(auditLogMeta),
-		}
-		if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
-			log.Warn("failed to create audit log for extend", zap.Error(err))
-		}
-		return nil
+		return uc.writeExtendAuditLog(ctx, tx, clientID, sub, req.AdditionalDays, oldExpiry)
 	})
+}
+
+// BulkExtendMembers performs best-effort subscription extends. Items whose
+// subscription is missing, not owned, or not active are skipped silently.
+func (uc *memberUseCase) BulkExtendMembers(ctx context.Context, clientID uuid.UUID, items []model.BulkMemberExtendItem) model.BulkDeleteResult {
+	log := logger.FromContext(ctx, uc.log)
+
+	result := model.BulkDeleteResult{Deleted: 0, Failed: []model.BulkDeleteFailure{}}
+	for _, item := range items {
+		skipped := false
+		err := uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			user, err := uc.tgUserRepo.FindMemberDetailByID(ctx, tx, item.MemberID, clientID)
+			if err != nil {
+				return err
+			}
+			if user == nil {
+				skipped = true // member not in this tenant → skip
+				return nil
+			}
+
+			var sub entity.Subscription
+			if err := uc.subscriptionRepo.FindById(ctx, tx, &sub, item.SubscriptionID); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					skipped = true // subscription missing → skip
+					return nil
+				}
+				return err
+			}
+			if sub.TelegramUserID != item.MemberID || sub.ClientID != clientID || sub.Status != "active" {
+				skipped = true // not owned or not active → skip
+				return nil
+			}
+
+			oldExpiry := sub.ExpiredAt
+			sub.ExpiredAt = sub.ExpiredAt.AddDate(0, 0, item.AdditionalDays)
+			if err := uc.subscriptionRepo.Update(ctx, tx, &sub); err != nil {
+				return err
+			}
+
+			return uc.writeExtendAuditLog(ctx, tx, clientID, sub, item.AdditionalDays, oldExpiry)
+		})
+		if err != nil {
+			log.Warn("member usecase BulkExtendMembers item failed", zap.String("member_id", item.MemberID.String()), zap.String("subscription_id", item.SubscriptionID.String()), zap.Error(err))
+			result.Failed = append(result.Failed, model.BulkDeleteFailure{ID: item.MemberID, Error: err.Error()})
+			continue
+		}
+		if skipped {
+			continue
+		}
+		result.Deleted++
+	}
+
+	if len(result.Failed) == 0 {
+		result.Failed = nil
+	}
+	return result
+}
+
+// writeExtendAuditLog writes an extend_expiry audit log entry.
+func (uc *memberUseCase) writeExtendAuditLog(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, sub entity.Subscription, additionalDays int, oldExpiry time.Time) error {
+	log := logger.FromContext(ctx, uc.log)
+
+	auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{
+		"subscription_id":  sub.ID.String(),
+		"additional_days":  additionalDays,
+		"old_expiry":       oldExpiry.Format(time.RFC3339),
+		"new_expiry":       sub.ExpiredAt.Format(time.RFC3339),
+	})
+	if marshalErr != nil {
+		uc.log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))
+	}
+	auditLog := entity.AuditLog{
+		ClientID:   &clientID,
+		EntityType: "subscription",
+		EntityID:   sub.ID,
+		Action:     "extend_expiry",
+		ActorType:  "system",
+		ActorID:    "system",
+		Metadata:   datatypes.JSON(auditLogMeta),
+	}
+	if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
+		log.Warn("failed to create audit log for extend", zap.Error(err))
+	}
+	return nil
 }
 
 // SyncMember creates a sync_request outbox event.
