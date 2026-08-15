@@ -236,7 +236,7 @@ func (uc *memberUseCase) writeKickAuditLog(ctx context.Context, tx *gorm.DB, cli
 
 	auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{"reason": "manual_kick"})
 	if marshalErr != nil {
-		uc.log.Warn("member usecase: failed to marshal audit log meta", zap.Error(marshalErr))
+		return marshalErr
 	}
 	auditLog := entity.AuditLog{
 		ClientID:   &clientID,
@@ -248,7 +248,8 @@ func (uc *memberUseCase) writeKickAuditLog(ctx context.Context, tx *gorm.DB, cli
 		Metadata:   datatypes.JSON(auditLogMeta),
 	}
 	if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
-		log.Warn("failed to create audit log for kick", zap.Error(err))
+		log.Error("failed to create audit log for kick", zap.Error(err))
+		return err
 	}
 	return nil
 }
