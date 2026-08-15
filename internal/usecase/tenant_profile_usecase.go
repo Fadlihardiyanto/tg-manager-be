@@ -13,6 +13,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/midtrans"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -59,9 +60,10 @@ type ecdhSession struct {
 }
 
 func (uc *tenantProfileUseCase) InitiateKeyExchange(ctx context.Context, clientID uuid.UUID, clientPubKeyB64 string) (*model.KeyExchangeResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	serverPriv, serverPub, err := crypto.ECDHGenerateKeyPair()
 	if err != nil {
-		uc.log.Error("failed to generate ECDH key pair", zap.Error(err))
+		log.Error("failed to generate ECDH key pair", zap.Error(err))
 		return nil, helper.NewUnprocessable("Gagal memulai key exchange")
 	}
 
@@ -78,11 +80,11 @@ func (uc *tenantProfileUseCase) InitiateKeyExchange(ctx context.Context, clientI
 
 	payload, marshalErr := json.Marshal(session)
 	if marshalErr != nil {
-		uc.log.Warn("tenant profile: failed to marshal ECDH session", zap.Error(marshalErr))
+		log.Warn("tenant profile: failed to marshal ECDH session", zap.Error(marshalErr))
 	}
 	key := fmt.Sprintf("ecdh:%s:%s", clientID.String(), sessionID.String())
 	if err := uc.redisClient.Set(ctx, key, payload, 5*time.Minute).Err(); err != nil {
-		uc.log.Error("failed to store ECDH session in redis", zap.Error(err))
+		log.Error("failed to store ECDH session in redis", zap.Error(err))
 		return nil, helper.NewUnprocessable("Gagal menyimpan sesi key exchange")
 	}
 
@@ -93,6 +95,7 @@ func (uc *tenantProfileUseCase) InitiateKeyExchange(ctx context.Context, clientI
 }
 
 func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Context, clientID uuid.UUID, req *model.PaymentSettingsUpdateEncryptedRequest) (*model.PaymentSettingsResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	key := fmt.Sprintf("ecdh:%s:%s", clientID.String(), req.SessionID.String())
 	raw, err := uc.redisClient.Get(ctx, key).Result()
 	if err != nil {
@@ -125,7 +128,7 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 
 	info, marshalErr := req.SessionID.MarshalBinary()
 	if marshalErr != nil {
-		uc.log.Warn("tenant profile: failed to marshal session id", zap.Error(marshalErr))
+		log.Warn("tenant profile: failed to marshal session id", zap.Error(marshalErr))
 	}
 	derivedKey, err := crypto.ECDHDeriveKey(sharedSecret, info)
 	if err != nil {
@@ -133,17 +136,17 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 	}
 
 	if err := uc.redisClient.Del(ctx, key).Err(); err != nil {
-		uc.log.Warn("failed to delete ECDH session", zap.Error(err))
+		log.Warn("failed to delete ECDH session", zap.Error(err))
 	}
 
 	encrypted := &paymentSettingsInput{
-		isSandbox:              *req.IsSandbox,
-		sandboxServerKey:       nil,
-		sandboxClientKey:       nil,
-		sandboxMerchantID:      nil,
-		productionServerKey:    nil,
-		productionClientKey:    nil,
-		productionMerchantID:   nil,
+		isSandbox:            *req.IsSandbox,
+		sandboxServerKey:     nil,
+		sandboxClientKey:     nil,
+		sandboxMerchantID:    nil,
+		productionServerKey:  nil,
+		productionClientKey:  nil,
+		productionMerchantID: nil,
 	}
 
 	if req.SandboxServerKey != "" {
@@ -193,9 +196,9 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 }
 
 type paymentSettingsInput struct {
-	sandboxServerKey, sandboxClientKey, sandboxMerchantID         *string
+	sandboxServerKey, sandboxClientKey, sandboxMerchantID          *string
 	productionServerKey, productionClientKey, productionMerchantID *string
-	isSandbox bool
+	isSandbox                                                      bool
 }
 
 func (uc *tenantProfileUseCase) applyPaymentSettings(ctx context.Context, clientID uuid.UUID, in *paymentSettingsInput) (*model.PaymentSettingsResponse, error) {
@@ -255,16 +258,17 @@ func (uc *tenantProfileUseCase) applyPaymentSettings(ctx context.Context, client
 }
 
 func (uc *tenantProfileUseCase) UpdatePaymentSettings(ctx context.Context, clientID uuid.UUID, req *model.PaymentSettingsUpdateRequest) (*model.PaymentSettingsResponse, error) {
-	uc.log.Info("updating payment settings", zap.String("client_id", clientID.String()))
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("updating payment settings", zap.String("client_id", clientID.String()))
 
 	return uc.applyPaymentSettings(ctx, clientID, &paymentSettingsInput{
-		sandboxServerKey:       req.SandboxServerKey,
-		sandboxClientKey:       req.SandboxClientKey,
-		sandboxMerchantID:      req.SandboxMerchantID,
-		productionServerKey:    req.ProductionServerKey,
-		productionClientKey:    req.ProductionClientKey,
-		productionMerchantID:   req.ProductionMerchantID,
-		isSandbox:              *req.IsSandbox,
+		sandboxServerKey:     req.SandboxServerKey,
+		sandboxClientKey:     req.SandboxClientKey,
+		sandboxMerchantID:    req.SandboxMerchantID,
+		productionServerKey:  req.ProductionServerKey,
+		productionClientKey:  req.ProductionClientKey,
+		productionMerchantID: req.ProductionMerchantID,
+		isSandbox:            *req.IsSandbox,
 	})
 }
 
@@ -300,18 +304,19 @@ func (uc *tenantProfileUseCase) GetPaymentSettings(ctx context.Context, clientID
 }
 
 func (uc *tenantProfileUseCase) UpdateProfile(ctx context.Context, clientID uuid.UUID, req *model.ClientUpdateRequest) (*model.ClientResponse, error) {
-	uc.log.Info("updating client profile", zap.String("client_id", clientID.String()))
+	log := logger.FromContext(ctx, uc.log)
+	log.Info("updating client profile", zap.String("client_id", clientID.String()))
 
 	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
-		uc.log.Error("failed to find client", zap.Error(err))
+		log.Error("failed to find client", zap.Error(err))
 		return nil, helper.NewNotFound("Klien tidak ditemukan")
 	}
 
 	if req.Slug != "" && req.Slug != client.Slug {
 		existing, err := uc.clientRepo.FindBySlug(ctx, uc.db.Gorm, req.Slug)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			uc.log.Error("failed to check slug availability", zap.Error(err))
+			log.Error("failed to check slug availability", zap.Error(err))
 			return nil, fmt.Errorf("gagal memvalidasi slug")
 		}
 		if existing != nil {
@@ -334,7 +339,7 @@ func (uc *tenantProfileUseCase) UpdateProfile(ctx context.Context, clientID uuid
 	}
 
 	if err := uc.clientRepo.Update(ctx, uc.db.Gorm, client); err != nil {
-		uc.log.Error("failed to update client profile", zap.Error(err))
+		log.Error("failed to update client profile", zap.Error(err))
 		return nil, fmt.Errorf("gagal menyimpan profil bisnis")
 	}
 

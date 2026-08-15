@@ -197,9 +197,9 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 	var customerName string
 	var customerPhone string
 	if tgUser == nil {
-	userUUID = uuid.New()
-	customerName = buildCustomerName(req.FirstName, req.LastName, req.Username, req.TelegramUserID)
-	customerPhone = req.Phone
+		userUUID = uuid.New()
+		customerName = buildCustomerName(req.FirstName, req.LastName, req.Username, req.TelegramUserID)
+		customerPhone = req.Phone
 
 		newUser := &entity.TelegramUser{
 			ID:             userUUID,
@@ -217,9 +217,9 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 			return nil, fmt.Errorf("gagal mendaftarkan user baru")
 		}
 	} else {
-	userUUID = tgUser.ID
-	customerName = buildCustomerName(tgUser.FirstName, tgUser.LastName, tgUser.Username, tgUser.TelegramUserID)
-	customerPhone = tgUser.Phone
+		userUUID = tgUser.ID
+		customerName = buildCustomerName(tgUser.FirstName, tgUser.LastName, tgUser.Username, tgUser.TelegramUserID)
+		customerPhone = tgUser.Phone
 	}
 
 	// 3.5. Check purchase limit (max_purchases_per_member, lifetime)
@@ -533,7 +533,6 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 		log.Debug("member order webhook updating order status", zap.String("order_id", order.ID.String()), zap.String("new_status", newStatus))
 		rowsAffected, err := uc.orderRepo.AtomicUpdateStatus(ctx, tx, order.ID, "pending", updates)
 		if err != nil {
-			log.Error("member order webhook failed to update order status", zap.String("order_id", order.ID.String()), zap.Error(err))
 			return err
 		}
 
@@ -552,7 +551,6 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 
 		if (newStatus == "expired" || newStatus == "failed") && order.DiscountID != nil {
 			if err := uc.discountUC.RollbackUsage(ctx, tx, order.ID, *order.DiscountID); err != nil {
-				log.Error("member order webhook rollback usage failed", zap.Error(err))
 				return err
 			}
 			log.Info("member order webhook discount usage rolled back", zap.String("order_id", req.OrderID), zap.String("discount_id", order.DiscountID.String()))
@@ -569,11 +567,9 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				UsedAt:         now,
 			}
 			if err := uc.discountRepo.CreateUsage(ctx, tx, usage); err != nil {
-				log.Error("member order webhook record discount usage failed", zap.Error(err))
-				return fmt.Errorf("gagal menyimpan usage diskon")
+				return fmt.Errorf("gagal menyimpan usage diskon: %w", err)
 			}
 			if err := uc.discountRepo.IncrementUsage(ctx, tx, *order.DiscountID); err != nil {
-				log.Error("member order webhook increment discount usage failed", zap.Error(err))
 				return err
 			}
 		}
@@ -643,10 +639,10 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 			// Outbox Pattern: Publish subscription activated event reliably
 			// Log event to outbox table
 			var tgUser entity.TelegramUser
-			var tgID int64
-			if err := uc.telegramUserRepo.FindById(ctx, tx, &tgUser, order.TelegramUserID); err == nil {
-				tgID = tgUser.TelegramUserID
+			if err := uc.telegramUserRepo.FindById(ctx, tx, &tgUser, order.TelegramUserID); err != nil {
+				return fmt.Errorf("member order webhook: failed to load telegram user %s for outbox event: %w", order.TelegramUserID, err)
 			}
+			tgID := tgUser.TelegramUserID
 
 			highPriority := false
 			billing, err := uc.billingRepo.FindActiveByClientID(ctx, tx, order.ClientID)
@@ -855,7 +851,7 @@ func (uc *memberOrderUseCase) getMidtransClient(ctx context.Context, client *ent
 
 	clientKey, err := crypto.Decrypt(*clientKeyEnc, uc.encryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("gagal membaca client key Midtrans client")
+		return nil, fmt.Errorf("gagal membaca client key Midtrans client: %w", err)
 	}
 
 	baseURL, snapURL := midtrans.EnvironmentURLs(client.MidtransIsSandbox)

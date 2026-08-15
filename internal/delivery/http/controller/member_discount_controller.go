@@ -1,8 +1,8 @@
 package controller
 
 import (
+	"errors"
 	"strconv"
-	"strings"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
@@ -30,27 +30,35 @@ func NewMemberDiscountController(discountUC usecase.IMemberDiscountUseCase, log 
 }
 
 func (c *MemberDiscountController) handleError(ctx fiber.Ctx, err error) error {
-	if e, ok := err.(*fiber.Error); ok {
-		switch e.Code {
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) {
+		switch fiberErr.Code {
 		case fiber.StatusUnauthorized:
-			return helper.Unauthorized(ctx, e.Message)
+			return helper.Unauthorized(ctx, fiberErr.Message)
 		case fiber.StatusForbidden:
-			return helper.Forbidden(ctx, e.Message)
+			return helper.Forbidden(ctx, fiberErr.Message)
 		case fiber.StatusNotFound:
-			return helper.NotFound(ctx, e.Message)
+			return helper.NotFound(ctx, fiberErr.Message)
 		case fiber.StatusConflict:
-			return helper.Conflict(ctx, e.Message)
+			return helper.Conflict(ctx, fiberErr.Message)
 		}
 	}
 
-	msg := err.Error()
-	switch {
-	case strings.Contains(msg, "tidak ditemukan"):
-		return helper.NotFound(ctx, msg)
-	case strings.Contains(msg, "sudah digunakan"):
-		return helper.Conflict(ctx, msg)
-	case strings.Contains(msg, "forbidden"):
-		return helper.Forbidden(ctx, msg)
+	var errBadRequest *helper.ErrBadRequest
+	if errors.As(err, &errBadRequest) {
+		return helper.BadRequest(ctx, errBadRequest.Error())
+	}
+	var errNotFound *helper.ErrNotFound
+	if errors.As(err, &errNotFound) {
+		return helper.NotFound(ctx, errNotFound.Error())
+	}
+	var errConflict *helper.ErrConflict
+	if errors.As(err, &errConflict) {
+		return helper.Conflict(ctx, errConflict.Error())
+	}
+	var errForbidden *helper.ErrForbidden
+	if errors.As(err, &errForbidden) {
+		return helper.Forbidden(ctx, errForbidden.Error())
 	}
 
 	c.log.Error("unhandled error in member discount controller", zap.Error(err))

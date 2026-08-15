@@ -23,12 +23,12 @@ type IAdminImpersonationUseCase interface {
 }
 
 type adminImpersonationUseCase struct {
-	db                    *entity.Database
-	adminRepo             repository.IAdminUserRepository
-	clientRepo            repository.IClientRepository
-	impersonationLogRepo  repository.IAdminImpersonationLogRepository
-	jwtConfig             *pkg_jwt.JWTConfig
-	log                   *zap.Logger
+	db                   *entity.Database
+	adminRepo            repository.IAdminUserRepository
+	clientRepo           repository.IClientRepository
+	impersonationLogRepo repository.IAdminImpersonationLogRepository
+	jwtConfig            *pkg_jwt.JWTConfig
+	log                  *zap.Logger
 }
 
 func NewAdminImpersonationUseCase(
@@ -51,7 +51,7 @@ func NewAdminImpersonationUseCase(
 
 func (uc *adminImpersonationUseCase) Start(ctx context.Context, req *model.AdminImpersonateClientActionRequest) (*model.AdminImpersonateResponse, error) {
 	if !rbac.HasPermission(req.Payload.CallerPermissions, "clients.impersonate") {
-		return nil, helper.NewForbidden("forbidden: requires 'clients.impersonate' permission")
+		return nil, helper.NewForbiddenPermission("clients.impersonate")
 	}
 
 	client, err := uc.clientRepo.FindByID(ctx, uc.db.Gorm, req.ClientID)
@@ -100,7 +100,7 @@ func (uc *adminImpersonationUseCase) End(ctx context.Context, adminID, logID uui
 
 func (uc *adminImpersonationUseCase) ListByAdmin(ctx context.Context, adminUserID uuid.UUID, page, limit int, callerPermissions []string) ([]model.AdminImpersonationLogResponse, int64, error) {
 	if !rbac.HasPermission(callerPermissions, "clients.read") {
-		return nil, 0, helper.NewForbidden("forbidden: requires 'clients.read' permission")
+		return nil, 0, helper.NewForbiddenPermission("clients.read")
 	}
 
 	offset := (page - 1) * limit
@@ -114,7 +114,7 @@ func (uc *adminImpersonationUseCase) ListByAdmin(ctx context.Context, adminUserI
 
 func (uc *adminImpersonationUseCase) ListByClient(ctx context.Context, clientID uuid.UUID, page, limit int, callerPermissions []string) ([]model.AdminImpersonationLogResponse, int64, error) {
 	if !rbac.HasPermission(callerPermissions, "clients.read") {
-		return nil, 0, helper.NewForbidden("forbidden: requires 'clients.read' permission")
+		return nil, 0, helper.NewForbiddenPermission("clients.read")
 	}
 
 	offset := (page - 1) * limit

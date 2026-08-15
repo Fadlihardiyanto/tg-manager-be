@@ -53,7 +53,7 @@ func (uc *UploadUseCase) GeneratePresignedURL(ctx context.Context, clientID uuid
 	}, req.ContentType)
 	if err != nil {
 		log.Error("failed to generate presigned PUT URL", zap.Error(err))
-		return nil, fmt.Errorf("Gagal membuat URL unggah: %w", err)
+		return nil, fmt.Errorf("gagal membuat URL unggah: %w", err)
 	}
 
 	publicURL := uc.s3Client.GetPublicURL(key)

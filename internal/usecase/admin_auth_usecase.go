@@ -130,10 +130,14 @@ func (uc *AdminAuthUseCase) Login(ctx context.Context, req *model.AdminLoginRequ
 	// 3. Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
 		log.Warn("admin auth login password mismatch", zap.String("email", req.Email))
-		uc.adminRepo.IncrementFailedLogin(ctx, uc.db.Gorm, admin.ID)
+		if incErr := uc.adminRepo.IncrementFailedLogin(ctx, uc.db.Gorm, admin.ID); incErr != nil {
+			log.Error("admin auth login failed to increment failed login counter", zap.String("admin_id", admin.ID.String()), zap.Error(incErr))
+		}
 		admin, err := uc.adminRepo.FindByEmail(ctx, uc.db.Gorm, req.Email)
 		if err == nil && admin.FailedLoginCount >= 5 {
-			uc.adminRepo.LockAccount(ctx, uc.db.Gorm, admin.ID, time.Now().Add(15*time.Minute))
+			if lockErr := uc.adminRepo.LockAccount(ctx, uc.db.Gorm, admin.ID, time.Now().Add(15*time.Minute)); lockErr != nil {
+				log.Error("admin auth login failed to lock account", zap.String("admin_id", admin.ID.String()), zap.Error(lockErr))
+			}
 		}
 		return nil, helper.NewUnauthorized("invalid email or password")
 	}
@@ -157,7 +161,10 @@ func (uc *AdminAuthUseCase) Login(ctx context.Context, req *model.AdminLoginRequ
 		// Generate TempToken (random UUID stored in Redis mapping to admin ID)
 		tempToken := uuid.New().String()
 		redisKey := fmt.Sprintf("auth:temp_token:%s", tempToken)
-		uc.redis.Set(ctx, redisKey, admin.ID.String(), 5*time.Minute)
+		if err := uc.redis.Set(ctx, redisKey, admin.ID.String(), 5*time.Minute).Err(); err != nil {
+			log.Error("admin auth login failed to store temp token", zap.Error(err))
+			return nil, fmt.Errorf("failed to store temp token: %w", err)
+		}
 		log.Info("admin auth login temp token issued", zap.String("admin_id", admin.ID.String()))
 
 		return &model.AdminLoginResponse{

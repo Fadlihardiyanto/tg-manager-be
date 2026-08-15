@@ -6,6 +6,7 @@ import (
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -35,6 +36,7 @@ func NewTenantAnalyticsUseCase(
 }
 
 func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid.UUID) (*model.TenantAnalyticsOverviewResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	var overview model.TenantAnalyticsOverviewResponse
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -43,7 +45,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 	g.Go(func() error {
 		count, err := uc.analyticsRepo.CountActiveMembers(ctx, uc.db, clientID)
 		if err != nil {
-			uc.log.Error("failed to count active members", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to count active members", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.TotalActiveMembers = count
@@ -57,7 +59,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 
 		revenue, err := uc.analyticsRepo.SumRevenueThisMonth(ctx, uc.db, clientID, startOfMonth)
 		if err != nil {
-			uc.log.Error("failed to calculate revenue this month", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to calculate revenue this month", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.TotalRevenueThisMonth = revenue
@@ -68,7 +70,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 	g.Go(func() error {
 		count, err := uc.analyticsRepo.CountGroups(ctx, uc.db, clientID)
 		if err != nil {
-			uc.log.Error("failed to count groups", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to count groups", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.TotalGroups = count
@@ -79,7 +81,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 	g.Go(func() error {
 		total, err := uc.analyticsRepo.SumMembersInGroups(ctx, uc.db, clientID)
 		if err != nil {
-			uc.log.Error("failed to calculate total members in groups", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to calculate total members in groups", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.TotalMembersInGroups = total
@@ -90,7 +92,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 	g.Go(func() error {
 		count, err := uc.analyticsRepo.CountSuccessTransactions(ctx, uc.db, clientID)
 		if err != nil {
-			uc.log.Error("failed to count success transactions", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to count success transactions", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.SuccessTransactions = count
@@ -104,7 +106,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 
 		chartData, err := uc.analyticsRepo.GetDailyRevenueTrend(ctx, uc.db, clientID, startDate)
 		if err != nil {
-			uc.log.Error("failed to fetch revenue chart data", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to fetch revenue chart data", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.RevenueChart = chartData
@@ -115,7 +117,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 	g.Go(func() error {
 		recentOrders, err := uc.analyticsRepo.GetRecentOrders(ctx, uc.db, clientID, 5)
 		if err != nil {
-			uc.log.Error("failed to fetch recent orders", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to fetch recent orders", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.RecentOrders = recentOrders
@@ -126,7 +128,7 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 	g.Go(func() error {
 		popularity, err := uc.analyticsRepo.GetPackagePopularity(ctx, uc.db, clientID)
 		if err != nil {
-			uc.log.Error("failed to fetch package popularity", zap.Error(err), zap.String("client_id", clientID.String()))
+			log.Error("failed to fetch package popularity", zap.Error(err), zap.String("client_id", clientID.String()))
 			return err
 		}
 		overview.PackagePopularity = popularity
@@ -139,5 +141,3 @@ func (uc *tenantAnalyticsUseCase) GetOverview(ctx context.Context, clientID uuid
 
 	return &overview, nil
 }
-
-

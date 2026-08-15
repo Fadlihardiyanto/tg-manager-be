@@ -134,7 +134,7 @@ func (uc *MigrationMemberUseCase) ImportMembers(ctx context.Context, clientID uu
 	existingSet, err := uc.migrationRepo.FindExistingUsernames(ctx, uc.db.Gorm, clientID, packageID, usernames)
 	if err != nil {
 		log.Error("migration member import check existing failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal memeriksa data yang ada")
+		return nil, fmt.Errorf("gagal memeriksa data yang ada")
 	}
 
 	// build entities, skip duplicates
@@ -190,7 +190,7 @@ func (uc *MigrationMemberUseCase) ImportMembers(ctx context.Context, clientID uu
 
 		if err := uc.migrationRepo.BulkInsert(ctx, uc.db.Gorm, toInsert); err != nil {
 			log.Error("migration member import bulk insert failed", zap.Error(err))
-			return nil, fmt.Errorf("Gagal menyimpan data migrasi")
+			return nil, fmt.Errorf("gagal menyimpan data migrasi")
 		}
 		imported = len(toInsert)
 	}
@@ -224,13 +224,13 @@ func (uc *MigrationMemberUseCase) List(ctx context.Context, clientID uuid.UUID, 
 	members, err := uc.migrationRepo.FindByClientID(ctx, uc.db.Gorm, clientID, filter)
 	if err != nil {
 		log.Error("migration member list find failed", zap.Error(err))
-		return nil, 0, fmt.Errorf("Gagal mengambil data migrasi")
+		return nil, 0, fmt.Errorf("gagal mengambil data migrasi")
 	}
 
 	total, err := uc.migrationRepo.CountByClientID(ctx, uc.db.Gorm, clientID, filter)
 	if err != nil {
 		log.Error("migration member list count failed", zap.Error(err))
-		return nil, 0, fmt.Errorf("Gagal menghitung data migrasi")
+		return nil, 0, fmt.Errorf("gagal menghitung data migrasi")
 	}
 
 	return converter.MigrationMembersToResponse(members), total, nil
@@ -243,7 +243,7 @@ func (uc *MigrationMemberUseCase) ExportCSV(ctx context.Context, clientID uuid.U
 	members, err := uc.migrationRepo.FindAllByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		log.Error("migration member export find failed", zap.Error(err))
-		return "", fmt.Errorf("Gagal mengambil data migrasi")
+		return "", fmt.Errorf("gagal mengambil data migrasi")
 	}
 
 	var buf bytes.Buffer
@@ -268,7 +268,7 @@ func (uc *MigrationMemberUseCase) ExportCSV(ctx context.Context, clientID uuid.U
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		log.Error("migration member export csv write failed", zap.Error(err))
-		return "", fmt.Errorf("Gagal membuat file CSV")
+		return "", fmt.Errorf("gagal membuat file CSV")
 	}
 
 	return buf.String(), nil

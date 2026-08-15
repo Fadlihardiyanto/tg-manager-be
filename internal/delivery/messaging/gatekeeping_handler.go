@@ -85,7 +85,7 @@ func (h *GatekeepingHandler) Handle(ctx context.Context, body []byte) error {
 		return err // Retryable
 	}
 	if bot == nil {
-		err := fmt.Errorf("gatekeeping handler: bot not found: %s", payload.BotID.String())
+		err := fmt.Errorf("gatekeeping handler: bot not found")
 		h.logger.Error("gatekeeping handler: failed to find bot", append(logFields, zap.Error(err))...)
 		return err // Retryable
 	}

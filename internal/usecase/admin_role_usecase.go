@@ -110,7 +110,11 @@ func (uc *adminRoleUseCase) CreateRole(ctx context.Context, req *model.AdminRole
 	}
 
 	// Cek duplikasi nama
-	existing, _ := uc.roleRepo.FindByName(ctx, uc.db.Gorm, req.Name)
+	existing, err := uc.roleRepo.FindByName(ctx, uc.db.Gorm, req.Name)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Error("admin role create duplicate check failed", zap.Error(err))
+		return nil, err
+	}
 	if existing != nil {
 		log.Warn("admin role create duplicate", zap.String("name", req.Name))
 		return nil, helper.NewConflict(fmt.Sprintf("role with name '%s' already exists", req.Name))
@@ -351,7 +355,7 @@ func (uc *adminRoleUseCase) RevokeRoleFromAdmin(ctx context.Context, req *model.
 // saat token di-generate di finalizeLogin.
 func requirePermission(callerPermissions []string, required string) error {
 	if !rbac.HasPermission(callerPermissions, required) {
-		return helper.NewForbidden(fmt.Sprintf("forbidden: requires '%s' permission", required))
+		return helper.NewForbiddenPermission(required)
 	}
 	return nil
 }

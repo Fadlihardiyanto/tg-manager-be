@@ -9,6 +9,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/datatypes"
@@ -36,12 +37,13 @@ func NewAuditLogUseCase(db *gorm.DB, auditRepo repository.IAuditLogRepository, l
 }
 
 func (uc *auditLogUseCase) Record(ctx context.Context, tx *gorm.DB, clientID *uuid.UUID, entityType string, entityID uuid.UUID, action string, actorType string, actorID string, metadata map[string]interface{}) error {
+	log := logger.FromContext(ctx, uc.log)
 	metaBytes, err := json.Marshal(metadata)
 	if err != nil {
-		uc.log.Warn("audit log: failed to marshal metadata", zap.String("entity_type", entityType), zap.String("entity_id", entityID.String()), zap.String("action", action), zap.Error(err))
+		log.Warn("audit log: failed to marshal metadata", zap.String("entity_type", entityType), zap.String("entity_id", entityID.String()), zap.String("action", action), zap.Error(err))
 	}
 
-	log := &entity.AuditLog{
+	entry := &entity.AuditLog{
 		ClientID:   clientID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -52,18 +54,19 @@ func (uc *auditLogUseCase) Record(ctx context.Context, tx *gorm.DB, clientID *uu
 		CreatedAt:  time.Now(),
 	}
 
-	if err := uc.auditRepo.Create(ctx, tx, log); err != nil {
-		uc.log.Error("failed to create audit log", zap.Error(err))
+	if err := uc.auditRepo.Create(ctx, tx, entry); err != nil {
+		log.Error("failed to create audit log", zap.Error(err))
 		return err
 	}
 	return nil
 }
 
 func (uc *auditLogUseCase) GetLogsByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.AuditLogResponse, int64, error) {
+	log := logger.FromContext(ctx, uc.log)
 	offset := (page - 1) * limit
 	logs, total, err := uc.auditRepo.FindAllByClient(ctx, uc.db, clientID, limit, offset)
 	if err != nil {
-		uc.log.Error("failed to get client audit logs", zap.Error(err))
+		log.Error("failed to get client audit logs", zap.Error(err))
 		return nil, 0, err
 	}
 
@@ -71,10 +74,11 @@ func (uc *auditLogUseCase) GetLogsByClient(ctx context.Context, clientID uuid.UU
 }
 
 func (uc *auditLogUseCase) GetPlatformLogs(ctx context.Context, page, limit int) ([]model.AuditLogResponse, int64, error) {
+	log := logger.FromContext(ctx, uc.log)
 	offset := (page - 1) * limit
 	logs, total, err := uc.auditRepo.FindAllPlatform(ctx, uc.db, limit, offset)
 	if err != nil {
-		uc.log.Error("failed to get platform audit logs", zap.Error(err))
+		log.Error("failed to get platform audit logs", zap.Error(err))
 		return nil, 0, err
 	}
 

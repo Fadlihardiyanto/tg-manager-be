@@ -59,13 +59,13 @@ func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *m
 	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		log.Error("package usecase create find billing failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal memeriksa status billing")
+		return nil, fmt.Errorf("gagal memeriksa status billing")
 	}
 	if billing != nil && billing.Plan.MaxPackages != -1 {
 		currentCount, err := uc.packageRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
 		if err != nil {
 			log.Error("package usecase create count packages failed", zap.Error(err))
-			return nil, fmt.Errorf("Gagal menghitung jumlah paket")
+			return nil, fmt.Errorf("gagal menghitung jumlah paket")
 		}
 		if currentCount >= int64(billing.Plan.MaxPackages) {
 			return nil, helper.NewBadRequest(fmt.Sprintf(
@@ -91,7 +91,7 @@ func (uc *PackageUseCase) Create(ctx context.Context, clientID uuid.UUID, req *m
 
 	if err := uc.packageRepo.Create(ctx, uc.db.Gorm, pkg); err != nil {
 		log.Error("package usecase create save failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal menyimpan data paket")
+		return nil, fmt.Errorf("gagal menyimpan data paket")
 	}
 
 	log.Info("package usecase create success", zap.String("package_id", pkg.ID.String()))
@@ -252,7 +252,7 @@ func (uc *PackageUseCase) AssociateGroups(ctx context.Context, clientID uuid.UUI
 
 	if err := uc.packageRepo.AssociateGroups(ctx, uc.db.Gorm, pkg, groups); err != nil {
 		log.Error("package usecase associate save failed", zap.Error(err))
-		return fmt.Errorf("Gagal mengaitkan paket dengan grup")
+		return fmt.Errorf("gagal mengaitkan paket dengan grup")
 	}
 
 	log.Info("package usecase associate success", zap.String("package_id", packageID.String()), zap.Int("group_count", len(groups)))

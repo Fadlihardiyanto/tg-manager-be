@@ -12,6 +12,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model/converter"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/midtrans"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/pdf"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
@@ -104,6 +105,7 @@ func NewClientBillingUseCase(
 }
 
 func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientCheckoutPlanRequest) (*model.CheckoutResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	unlockFn, err := uc.acquireBillingLock(ctx, req.ClientID)
 	if err != nil {
 		return nil, err
@@ -166,7 +168,7 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		// Tidak ada kode — cari diskon otomatis, tidak error jika tidak ada
 		preview, err := uc.platformDiscountUC.ApplyAuto(ctx, req.ClientID, req.PlanID, originalAmount)
 		if err != nil {
-			uc.log.Warn("checkout: gagal cek diskon otomatis", zap.Error(err))
+			log.Error("checkout: gagal cek diskon otomatis", zap.Error(err))
 			// Non-fatal: lanjut tanpa diskon
 		}
 		if preview != nil {
@@ -247,7 +249,7 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 	snapResp, err := uc.midtransClient.CreateSnapToken(ctx, snapReq)
 	if err != nil {
 		metrics.MidtransSnapTokenFailed.Inc()
-		uc.log.Error("client billing: create snap token",
+		log.Error("client billing: create snap token",
 			zap.String("external_id", externalID),
 			zap.String("client_id", req.ClientID.String()),
 			zap.String("plan_id", plan.ID.String()),
@@ -291,27 +293,27 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		// Jika payment gagal, admin bisa manual reset atau pakai expired cleanup job
 		if appliedDiscountID != nil {
 			if err := uc.platformDiscountRepo.IncrementUsage(ctx, tx, *appliedDiscountID); err != nil {
-				uc.log.Warn("checkout: gagal increment diskon usage", zap.Error(err))
-				// Non-fatal untuk sekarang, tapi log — pertimbangkan jadikan fatal
-				// jika quota enforcement sangat ketat
+				log.Error("checkout: gagal increment diskon usage", zap.Error(err))
+				// Non-fatal: oversold di-handle oleh cleanup job, tapi level Error
+				// supaya muncul di monitoring
 			}
 		}
 
 		return nil
 	})
 	if err != nil {
-		uc.log.Error("client billing: save billing transaction",
+		log.Error("client billing: save billing transaction",
 			zap.String("external_id", externalID),
 			zap.String("client_id", req.ClientID.String()),
 			zap.Error(err))
 		// Orphaned Snap token: DB save failed after Midtrans created the token.
 		// Best-effort cancel so the payment link doesn't dangle; failure is only logged.
 		if cancelErr := uc.midtransClient.CancelTransaction(ctx, externalID); cancelErr != nil {
-			uc.log.Error("client billing: failed to cancel orphaned snap token",
+			log.Error("client billing: failed to cancel orphaned snap token",
 				zap.String("external_id", externalID),
 				zap.Error(cancelErr))
 		} else {
-			uc.log.Info("client billing: cancelled orphaned snap token", zap.String("external_id", externalID))
+			log.Info("client billing: cancelled orphaned snap token", zap.String("external_id", externalID))
 		}
 		return nil, fmt.Errorf("gagal menyimpan billing")
 	}
@@ -332,6 +334,7 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 }
 
 func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.MidtransWebhookRequest) error {
+	log := logger.FromContext(ctx, uc.log)
 	notification := &midtrans.WebhookNotification{
 		TransactionTime:   req.TransactionTime,
 		TransactionStatus: req.TransactionStatus,
@@ -346,7 +349,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 
 	// 1. Verifikasi signature — tolak jika tidak valid
 	if !uc.midtransClient.VerifySignature(notification) {
-		uc.log.Warn("client billing webhook: invalid signature",
+		log.Warn("client billing webhook: invalid signature",
 			zap.String("order_id", req.OrderID))
 		return ErrWebhookInvalidSignature
 	}
@@ -362,12 +365,12 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		ok, redisErr := uc.redis.SetNX(ctx, webhookLockKey, "1", 60*time.Second).Result()
 		if redisErr != nil {
 			// Redis error — lanjut tanpa lock, atomic DB update jadi safety net
-			uc.log.Warn("client billing webhook: gagal acquire webhook lock",
+			log.Warn("client billing webhook: gagal acquire webhook lock",
 				zap.String("order_id", req.OrderID),
 				zap.Error(redisErr))
 		} else if !ok {
 			// Lock sudah dipegang webhook lain — tolak dengan aman
-			uc.log.Info("client billing webhook: duplicate webhook rejected via lock",
+			log.Info("client billing webhook: duplicate webhook rejected via lock",
 				zap.String("order_id", req.OrderID))
 			return nil // return nil agar controller tetap kirim 200 ke Midtrans
 		}
@@ -385,14 +388,14 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		return fmt.Errorf("gagal mencari billing")
 	}
 	if billing == nil {
-		uc.log.Warn("client billing webhook: billing not found",
+		log.Warn("client billing webhook: billing not found",
 			zap.String("order_id", req.OrderID))
 		return ErrWebhookNotFound
 	}
 
 	// 4. Early idempotency check (optimistic — bisa race, dikuatkan oleh atomic UPDATE di bawah)
 	if billing.Status != "pending" {
-		uc.log.Info("client billing webhook: already processed, skipping",
+		log.Info("client billing webhook: already processed, skipping",
 			zap.String("order_id", req.OrderID),
 			zap.String("status", billing.Status))
 		return nil
@@ -402,7 +405,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 	newStatus, handled := mapClientBillingWebhookStatus(notification)
 	if !handled {
 		// Status tidak dikenal (e.g. 'pending', 'authorize') — skip, tunggu webhook berikutnya
-		uc.log.Info("client billing webhook: unhandled transaction status, skipping",
+		log.Info("client billing webhook: unhandled transaction status, skipping",
 			zap.String("order_id", req.OrderID),
 			zap.String("transaction_status", req.TransactionStatus))
 		return nil
@@ -434,7 +437,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		// RowsAffected = 0: billing sudah diupdate oleh concurrent webhook
 		// Ini adalah lapisan keamanan terakhir — tidak perlu retry
 		if rowsAffected == 0 {
-			uc.log.Info("client billing webhook: concurrent duplicate detected via atomic update, skipping",
+			log.Info("client billing webhook: concurrent duplicate detected via atomic update, skipping",
 				zap.String("order_id", req.OrderID),
 				zap.String("billing_id", billing.ID.String()))
 			return nil
@@ -445,7 +448,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 			if err := uc.activateClientPlan(ctx, tx, billing); err != nil {
 				return err
 			}
-			uc.log.Info("client billing webhook: payment success, plan activated",
+			log.Info("client billing webhook: payment success, plan activated",
 				zap.String("order_id", req.OrderID),
 				zap.String("client_id", billing.ClientID.String()),
 				zap.String("new_status", newStatus))
@@ -464,7 +467,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 	// 7. Generate receipt on successful payment (non-fatal if fails)
 	if newStatus == "active" && uc.s3Client != nil && uc.pdfClient != nil {
 		if err := uc.generateBillingReceipt(ctx, billing); err != nil {
-			uc.log.Warn("client billing webhook: receipt generation failed",
+			log.Warn("client billing webhook: receipt generation failed",
 				zap.String("billing_id", billing.ID.String()),
 				zap.Error(err))
 		}
@@ -474,9 +477,10 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 }
 
 func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.AdminAssignPlanRequest) (*model.ClientBillingResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	// Layer 2 permission check
 	if !rbac.HasPermission(req.CallerPermissions, "billing.manage") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return nil, helper.NewForbiddenPermission("billing.manage")
 	}
 
 	// ── Distributed Lock: cegah concurrent admin assign ke client yang sama ──
@@ -500,7 +504,7 @@ func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.
 	// Cancel billing aktif atau pending jika ada
 	existing, err := uc.billingRepo.FindActiveOrPendingByClientID(ctx, uc.db.Gorm, req.ClientID)
 	if err != nil {
-		uc.log.Warn("client billing: failed to find active/pending billing before assign", zap.String("client_id", req.ClientID.String()), zap.Error(err))
+		log.Warn("client billing: failed to find active/pending billing before assign", zap.String("client_id", req.ClientID.String()), zap.Error(err))
 	}
 
 	// Hitung amount & expired_at
@@ -559,14 +563,14 @@ func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.
 		return uc.activateClientPlan(ctx, tx, billing)
 	})
 	if err != nil {
-		uc.log.Error("client billing: admin assign plan", zap.Error(err))
+		log.Error("client billing: admin assign plan", zap.Error(err))
 		return nil, fmt.Errorf("gagal assign plan")
 	}
 
 	// Fetch ulang dengan relasi
 	created, err := uc.billingRepo.FindByID(ctx, uc.db.Gorm, billing.ID)
 	if err != nil || created == nil {
-		uc.log.Error("client billing: failed to refetch billing after assign, falling back to in-memory billing", zap.String("billing_id", billing.ID.String()), zap.Error(err))
+		log.Error("client billing: failed to refetch billing after assign, falling back to in-memory billing", zap.String("billing_id", billing.ID.String()), zap.Error(err))
 		created = billing
 	}
 	resp := uc.toBillingResponse(created)
@@ -575,7 +579,7 @@ func (uc *clientBillingUseCase) AdminAssignPlan(ctx context.Context, req *model.
 
 func (uc *clientBillingUseCase) ListBillings(ctx context.Context, req *model.AdminListBillingRequest) ([]model.ClientBillingResponse, int64, error) {
 	if !rbac.HasPermission(req.CallerPermissions, "billing.read") {
-		return nil, 0, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+		return nil, 0, helper.NewForbiddenPermission("billing.read")
 	}
 
 	if req.Page < 1 {
@@ -600,7 +604,7 @@ func (uc *clientBillingUseCase) ListBillings(ctx context.Context, req *model.Adm
 
 func (uc *clientBillingUseCase) CancelBilling(ctx context.Context, req *model.CancelBillingRequest) error {
 	if !rbac.HasPermission(req.CallerPermissions, "billing.manage") {
-		return helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return helper.NewForbiddenPermission("billing.manage")
 	}
 
 	billing, err := uc.billingRepo.FindByID(ctx, uc.db.Gorm, req.BillingID)
@@ -635,6 +639,7 @@ func (uc *clientBillingUseCase) CancelBilling(ctx context.Context, req *model.Ca
 }
 
 func (uc *clientBillingUseCase) CancelPendingBilling(ctx context.Context, clientID uuid.UUID) error {
+	log := logger.FromContext(ctx, uc.log)
 	billing, err := uc.billingRepo.FindActiveOrPendingByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		return fmt.Errorf("gagal mengambil billing: %w", err)
@@ -650,7 +655,7 @@ func (uc *clientBillingUseCase) CancelPendingBilling(ctx context.Context, client
 	}
 
 	if err := uc.midtransClient.CancelTransaction(ctx, billing.ExternalID); err != nil {
-		uc.log.Warn("CancelPendingBilling: midtrans cancel failed", zap.Error(err), zap.String("external_id", billing.ExternalID))
+		log.Warn("CancelPendingBilling: midtrans cancel failed", zap.Error(err), zap.String("external_id", billing.ExternalID))
 	}
 
 	now := time.Now()
@@ -664,7 +669,7 @@ func (uc *clientBillingUseCase) CancelPendingBilling(ctx context.Context, client
 
 	if billing.DiscountID != nil {
 		if err := uc.platformDiscountRepo.DecrementUsage(ctx, uc.db.Gorm, *billing.DiscountID); err != nil {
-			uc.log.Error("CancelPendingBilling: failed to rollback discount", zap.Error(err), zap.String("discount_id", billing.DiscountID.String()))
+			log.Error("CancelPendingBilling: failed to rollback discount", zap.Error(err), zap.String("discount_id", billing.DiscountID.String()))
 		}
 	}
 
@@ -672,26 +677,27 @@ func (uc *clientBillingUseCase) CancelPendingBilling(ctx context.Context, client
 }
 
 func (uc *clientBillingUseCase) GetActiveBilling(ctx context.Context, clientID uuid.UUID) (*model.ClientBillingResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("gagal mengambil billing aktif")
 	}
 	if billing == nil {
 		if err := uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, "free"); err != nil {
-			uc.log.Error("client billing: failed to sync subscription tier to free", zap.String("client_id", clientID.String()), zap.Error(err))
+			log.Error("client billing: failed to sync subscription tier to free", zap.String("client_id", clientID.String()), zap.Error(err))
 		}
 		return nil, nil
 	}
 
 	if err := uc.clientRepo.UpdateSubscriptionTier(ctx, uc.db.Gorm, clientID, billing.Plan.Name); err != nil {
-		uc.log.Error("client billing: failed to sync subscription tier", zap.String("client_id", clientID.String()), zap.String("plan", billing.Plan.Name), zap.Error(err))
+		log.Error("client billing: failed to sync subscription tier", zap.String("client_id", clientID.String()), zap.String("plan", billing.Plan.Name), zap.Error(err))
 	}
 
 	resp := uc.toBillingResponse(billing)
 	if uc.featureGateUC != nil {
 		usage, err := uc.featureGateUC.GetUsage(ctx, clientID)
 		if err != nil {
-			uc.log.Warn("failed to get usage for active billing", zap.Error(err))
+			log.Warn("failed to get usage for active billing", zap.Error(err))
 		} else {
 			resp.Usage = usage
 		}
@@ -773,6 +779,7 @@ func (uc *clientBillingUseCase) calculateBillingWithTransition(plan *entity.Plat
 // For upgrades (immediate activation): cancels other active billings, updates subscription_tier.
 // For downgrades (delayed activation, StartedAt > now): skips — old plan keeps running.
 func (uc *clientBillingUseCase) activateClientPlan(ctx context.Context, tx *gorm.DB, billing *entity.ClientBilling) error {
+	log := logger.FromContext(ctx, uc.log)
 	plan, err := uc.planRepo.FindByID(ctx, tx, billing.PlanID)
 	if err != nil || plan == nil {
 		return fmt.Errorf("plan tidak ditemukan saat aktivasi")
@@ -780,7 +787,7 @@ func (uc *clientBillingUseCase) activateClientPlan(ctx context.Context, tx *gorm
 
 	// Downgrade: startedAt di masa depan → jangan ganggu plan aktif, biarkan jalan sampai habis
 	if billing.StartedAt.After(time.Now()) {
-		uc.log.Info("client billing: downgrade detected, delaying activation",
+		log.Info("client billing: downgrade detected, delaying activation",
 			zap.String("billing_id", billing.ID.String()),
 			zap.Time("started_at", billing.StartedAt))
 		return nil
@@ -904,26 +911,27 @@ func (uc *clientBillingUseCase) toBillingResponse(b *entity.ClientBilling) model
 const billingLockTTL = 30 * time.Second
 
 func (uc *clientBillingUseCase) acquireBillingLock(ctx context.Context, clientID uuid.UUID) (func(), error) {
+	log := logger.FromContext(ctx, uc.log)
 	lockKey := fmt.Sprintf("billing:lock:%s", clientID.String())
 	noop := func() {} // fungsi kosong untuk kasus Redis tidak tersedia
 
 	if uc.redis == nil {
 		// Redis tidak diinisialisasi — skip lock, fallback ke DB constraint
-		uc.log.Warn("client billing: redis nil, skipping distributed lock",
+		log.Warn("client billing: redis nil, skipping distributed lock",
 			zap.String("client_id", clientID.String()))
 		return noop, nil
 	}
 
 	ok, err := uc.redis.SetNX(ctx, lockKey, "1", billingLockTTL).Result()
 	if err != nil {
-		uc.log.Warn("client billing: gagal acquire redis lock, melanjutkan tanpa lock",
+		log.Warn("client billing: gagal acquire redis lock, melanjutkan tanpa lock",
 			zap.String("client_id", clientID.String()),
 			zap.Error(err))
 		return noop, nil
 	}
 
 	if !ok {
-		uc.log.Warn("client billing: duplicate checkout detected via redis lock",
+		log.Warn("client billing: duplicate checkout detected via redis lock",
 			zap.String("client_id", clientID.String()))
 		return noop, helper.NewConflict("operasi billing sedang diproses, silakan tunggu dan coba lagi")
 	}
@@ -934,7 +942,7 @@ func (uc *clientBillingUseCase) acquireBillingLock(ctx context.Context, clientID
 		delCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if delErr := uc.redis.Del(delCtx, lockKey).Err(); delErr != nil {
-			uc.log.Warn("client billing: gagal release redis lock",
+			log.Warn("client billing: gagal release redis lock",
 				zap.String("lock_key", lockKey),
 				zap.Error(delErr))
 		}

@@ -78,13 +78,13 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		log.Error("custom command usecase create find billing failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal memeriksa status billing")
+		return nil, fmt.Errorf("gagal memeriksa status billing")
 	}
 	if billing != nil && billing.Plan.MaxCustomCommands != -1 {
 		currentCount, err := uc.commandRepo.CountByClientID(ctx, uc.db.Gorm, clientID, nil, nil)
 		if err != nil {
 			log.Error("custom command usecase create count failed", zap.Error(err))
-			return nil, fmt.Errorf("Gagal menghitung jumlah command")
+			return nil, fmt.Errorf("gagal menghitung jumlah command")
 		}
 		if currentCount >= int64(billing.Plan.MaxCustomCommands) {
 			return nil, helper.NewBadRequest(fmt.Sprintf(
@@ -135,7 +135,7 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 			return nil, helper.NewConflict("Command trigger sudah digunakan pada bot ini")
 		}
 		log.Error("custom command usecase create save failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal menyimpan custom command")
+		return nil, fmt.Errorf("gagal menyimpan custom command")
 	}
 
 	uc.invalidateCommand(ctx, clientID, cmd.BotUUID, trigger)
@@ -333,11 +333,11 @@ func validateResponseTextLength(responseType string, responseText string) error 
 	charCount := utf8.RuneCountInString(responseText)
 	if responseType == "text" {
 		if charCount > 4096 {
-			return fmt.Errorf("Panjang isi pesan balasan teks maksimal 4096 karakter (saat ini %d karakter)", charCount)
+			return fmt.Errorf("panjang isi pesan balasan teks maksimal 4096 karakter (saat ini %d karakter)", charCount)
 		}
 	} else if responseType == "photo" || responseType == "document" {
 		if charCount > 1024 {
-			return fmt.Errorf("Panjang keterangan (caption) untuk tipe %s maksimal 1024 karakter (saat ini %d karakter)", responseType, charCount)
+			return fmt.Errorf("panjang keterangan (caption) untuk tipe %s maksimal 1024 karakter (saat ini %d karakter)", responseType, charCount)
 		}
 	}
 	return nil

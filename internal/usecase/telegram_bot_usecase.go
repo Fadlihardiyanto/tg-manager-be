@@ -67,13 +67,13 @@ func (uc *TelegramBotUseCase) Create(ctx context.Context, clientID uuid.UUID, re
 	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		log.Error("bot usecase create find billing failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal memeriksa status billing")
+		return nil, fmt.Errorf("gagal memeriksa status billing")
 	}
 	if billing != nil && billing.Plan.MaxBots != -1 {
 		currentCount, err := uc.botRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
 		if err != nil {
 			log.Error("bot usecase create count bots failed", zap.Error(err))
-			return nil, fmt.Errorf("Gagal menghitung jumlah bot")
+			return nil, fmt.Errorf("gagal menghitung jumlah bot")
 		}
 		if currentCount >= int64(billing.Plan.MaxBots) {
 			return nil, helper.NewBadRequest(fmt.Sprintf(

@@ -592,7 +592,7 @@ func (uc *TelegramWebhookUseCase) handleConnectCommand(ctx context.Context, bot 
 	redisKey := fmt.Sprintf("connect_group:%s", token)
 	val, err := uc.redisClient.Get(ctx, redisKey).Result()
 	if err != nil {
-		log.Warn("failed to get connect token from redis", zap.String("token", token), zap.Error(err))
+		log.Warn("failed to get connect token from redis", zap.Error(err))
 		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Kode koneksi tidak valid atau sudah kedaluwarsa.")
 	}
 
@@ -687,7 +687,7 @@ func (uc *TelegramWebhookUseCase) handleTransferCommand(ctx context.Context, bot
 	redisKey := fmt.Sprintf("connect_group:%s", token)
 	val, err := uc.redisClient.Get(ctx, redisKey).Result()
 	if err != nil {
-		log.Warn("failed to get connect token from redis for transfer", zap.String("token", token), zap.Error(err))
+		log.Warn("failed to get connect token from redis for transfer", zap.Error(err))
 		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Kode transfer tidak valid atau sudah kedaluwarsa.")
 	}
 
@@ -802,8 +802,8 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 			callbackConfig := tgbotapi.NewCallback(cb.ID, "❌ Kode koneksi kedaluwarsa.")
 			callbackConfig.ShowAlert = true
 			if _, err := botClient.Request(ctx, callbackConfig); err != nil {
-			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
-		}
+				uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+			}
 
 			editMsg := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, "❌ Koneksi gagal: Kode koneksi tidak valid atau sudah kedaluwarsa.")
 			_, err = botClient.Send(ctx, editMsg)
@@ -882,8 +882,8 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 			callbackConfig := tgbotapi.NewCallback(cb.ID, "❌ Kode transfer kedaluwarsa.")
 			callbackConfig.ShowAlert = true
 			if _, err := botClient.Request(ctx, callbackConfig); err != nil {
-			uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
-		}
+				uc.log.Warn("telegram webhook: failed to answer callback query", zap.String("callback_id", cb.ID), zap.Error(err))
+			}
 
 			editMsg := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, "❌ Pengalihan gagal: Kode transfer tidak valid atau sudah kedaluwarsa.")
 			_, err = botClient.Send(ctx, editMsg)
@@ -963,7 +963,7 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 
 func (uc *TelegramWebhookUseCase) handleDeepLinkConnect(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message, code string) error {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("deep link connect", zap.String("code", code), zap.Int64("chat_id", msg.Chat.ID))
+	log.Info("deep link connect", zap.Int64("chat_id", msg.Chat.ID))
 
 	// Verify token in Redis
 	redisKey := fmt.Sprintf("connect_group:%s", code)

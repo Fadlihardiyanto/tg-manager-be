@@ -156,7 +156,7 @@ func (w *EnforcerWorker) processExpiredSubscription(ctx context.Context, sub *en
 
 			payloadBytes, err := json.Marshal(payload)
 			if err != nil {
-				return fmt.Errorf("enforcer worker: failed to marshal payload for group %s: %w", group.ID, err)
+				return fmt.Errorf("enforcer worker: failed to marshal payload: %w", err)
 			}
 
 			outbox := &entity.Outbox{

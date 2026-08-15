@@ -429,10 +429,10 @@ func (uc *memberUseCase) writeExtendAuditLog(ctx context.Context, tx *gorm.DB, c
 	log := logger.FromContext(ctx, uc.log)
 
 	auditLogMeta, marshalErr := sonic.Marshal(map[string]interface{}{
-		"subscription_id":  sub.ID.String(),
-		"additional_days":  additionalDays,
-		"old_expiry":       oldExpiry.Format(time.RFC3339),
-		"new_expiry":       sub.ExpiredAt.Format(time.RFC3339),
+		"subscription_id": sub.ID.String(),
+		"additional_days": additionalDays,
+		"old_expiry":      oldExpiry.Format(time.RFC3339),
+		"new_expiry":      sub.ExpiredAt.Format(time.RFC3339),
 	})
 	if marshalErr != nil {
 		uc.log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))

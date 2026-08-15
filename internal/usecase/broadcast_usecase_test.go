@@ -495,7 +495,7 @@ func TestCreateBroadcast_WithTargetTypeMemberAndSpecificGroupIDs(t *testing.T) {
 
 	result, err := uc.Create(context.Background(), clientID, req)
 	if err != nil {
-		if err.Error() == "Tidak ditemukan target penerima aktif untuk broadcast ini" {
+		if err.Error() == "tidak ditemukan target penerima aktif untuk broadcast ini" {
 			t.Log("correctly found 0 members for Group 1 only (subscription is on Pkg2→other group)")
 			return
 		}

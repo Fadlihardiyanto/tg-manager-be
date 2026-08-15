@@ -3,9 +3,9 @@ package usecase
 import (
 	"context"
 	"crypto/rand"
-	json "github.com/bytedance/sonic"
 	"errors"
 	"fmt"
+	json "github.com/bytedance/sonic"
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
@@ -79,13 +79,13 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		log.Error("group usecase create find billing failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal memeriksa status billing")
+		return nil, fmt.Errorf("gagal memeriksa status billing")
 	}
 	if billing != nil && billing.Plan.MaxGroups != -1 {
 		currentCount, err := uc.groupRepo.CountByClientID(ctx, uc.db.Gorm, clientID)
 		if err != nil {
 			log.Error("group usecase create count groups failed", zap.Error(err))
-			return nil, fmt.Errorf("Gagal menghitung jumlah grup")
+			return nil, fmt.Errorf("gagal menghitung jumlah grup")
 		}
 		if currentCount >= int64(billing.Plan.MaxGroups) {
 			return nil, helper.NewBadRequest(fmt.Sprintf(
@@ -119,7 +119,7 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	token, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
 	if err != nil {
 		log.Error("group usecase create decrypt token failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal mendekripsi token bot")
+		return nil, fmt.Errorf("gagal mendekripsi token bot")
 	}
 
 	// 4. Verify bot is admin in the chat via Telegram API
@@ -156,7 +156,7 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 
 	if err := uc.groupRepo.Create(ctx, uc.db.Gorm, group); err != nil {
 		log.Error("group usecase create save db failed", zap.Error(err))
-		return nil, fmt.Errorf("Gagal menyimpan data grup")
+		return nil, fmt.Errorf("gagal menyimpan data grup")
 	}
 
 	log.Info("group usecase create success", zap.String("group_id", group.ID.String()))
@@ -298,24 +298,24 @@ func (uc *TelegramGroupUseCase) Disconnect(ctx context.Context, clientID uuid.UU
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, group.BotUUID)
 	if err != nil {
 		log.Error("group usecase disconnect find bot failed", zap.Error(err))
-		return fmt.Errorf("Gagal menemukan bot")
+		return fmt.Errorf("gagal menemukan bot")
 	}
 
 	token, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
 	if err != nil {
 		log.Error("group usecase disconnect decrypt token failed", zap.Error(err))
-		return fmt.Errorf("Gagal mendekripsi token bot")
+		return fmt.Errorf("gagal mendekripsi token bot")
 	}
 
 	tgClient, err := uc.telegramFactory.NewClient(token)
 	if err != nil {
 		log.Error("group usecase disconnect tg client init failed", zap.Error(err))
-		return fmt.Errorf("Gagal menghubungi Telegram API")
+		return fmt.Errorf("gagal menghubungi Telegram API")
 	}
 
 	if err := tgClient.LeaveChat(ctx, group.TelegramChatID); err != nil {
 		log.Error("group usecase disconnect leave chat failed", zap.Error(err))
-		return fmt.Errorf("Gagal disconnect bot dari grup Telegram")
+		return fmt.Errorf("gagal disconnect bot dari grup Telegram")
 	}
 
 	group.IsActive = false
@@ -367,7 +367,7 @@ func (uc *TelegramGroupUseCase) GenerateConnectToken(ctx context.Context, client
 	err = uc.redisClient.Set(ctx, redisKey, string(val), 15*time.Minute).Err()
 	if err != nil {
 		log.Error("failed to save connect token to redis", zap.Error(err))
-		return "", "", fmt.Errorf("Gagal membuat token koneksi")
+		return "", "", fmt.Errorf("gagal membuat token koneksi")
 	}
 
 	return code, bot.Username, nil
@@ -419,7 +419,14 @@ func (uc *TelegramGroupUseCase) SyncMemberCounts(ctx context.Context) error {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("group usecase sync member counts start")
 
-	go uc.syncFunc(context.Background())
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				uc.log.Error("group usecase sync member counts panicked", zap.Any("panic", r))
+			}
+		}()
+		uc.syncFunc(context.Background())
+	}()
 
 	return nil
 }

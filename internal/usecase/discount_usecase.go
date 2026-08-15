@@ -10,6 +10,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	pkgDiscount "github.com/Fadlihardiyanto/telegram-management-app/pkg/discount"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -47,7 +48,7 @@ func NewPlatformDiscountUseCase(
 
 func (uc *platformDiscountUseCase) List(ctx context.Context, onlyActive bool, callerPermissions []string) ([]model.PlatformDiscountResponse, error) {
 	if !rbac.HasPermission(callerPermissions, "billing.read") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+		return nil, helper.NewForbiddenPermission("billing.read")
 	}
 	discounts, err := uc.discountRepo.FindAll(ctx, uc.db.Gorm, onlyActive)
 	if err != nil {
@@ -62,7 +63,7 @@ func (uc *platformDiscountUseCase) List(ctx context.Context, onlyActive bool, ca
 
 func (uc *platformDiscountUseCase) GetByID(ctx context.Context, id uuid.UUID, callerPermissions []string) (*model.PlatformDiscountResponse, error) {
 	if !rbac.HasPermission(callerPermissions, "billing.read") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+		return nil, helper.NewForbiddenPermission("billing.read")
 	}
 	d, err := uc.discountRepo.FindByID(ctx, uc.db.Gorm, id)
 	if err != nil || d == nil {
@@ -73,13 +74,17 @@ func (uc *platformDiscountUseCase) GetByID(ctx context.Context, id uuid.UUID, ca
 }
 
 func (uc *platformDiscountUseCase) Create(ctx context.Context, req *model.CreatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	if !rbac.HasPermission(req.CallerPermissions, "billing.manage") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return nil, helper.NewForbiddenPermission("billing.manage")
 	}
 
 	// Cek duplikasi kode jika ada
 	if req.Code != nil && *req.Code != "" {
-		existing, _ := uc.discountRepo.FindByCode(ctx, uc.db.Gorm, *req.Code)
+		existing, err := uc.discountRepo.FindByCode(ctx, uc.db.Gorm, *req.Code)
+		if err != nil {
+			return nil, fmt.Errorf("gagal memeriksa duplikasi kode diskon: %w", err)
+		}
 		if existing != nil {
 			return nil, helper.NewConflict(fmt.Sprintf("kode diskon '%s' sudah digunakan", *req.Code))
 		}
@@ -110,7 +115,7 @@ func (uc *platformDiscountUseCase) Create(ctx context.Context, req *model.Create
 	}
 
 	if err := uc.discountRepo.Create(ctx, uc.db.Gorm, d); err != nil {
-		uc.log.Error("platform discount: create", zap.Error(err))
+		log.Error("platform discount: create", zap.Error(err))
 		return nil, fmt.Errorf("gagal membuat diskon")
 	}
 
@@ -120,7 +125,7 @@ func (uc *platformDiscountUseCase) Create(ctx context.Context, req *model.Create
 
 func (uc *platformDiscountUseCase) Update(ctx context.Context, req *model.UpdatePlatformDiscountRequest) (*model.PlatformDiscountResponse, error) {
 	if !rbac.HasPermission(req.CallerPermissions, "billing.manage") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return nil, helper.NewForbiddenPermission("billing.manage")
 	}
 
 	d, err := uc.discountRepo.FindByID(ctx, uc.db.Gorm, req.DiscountID)
@@ -161,7 +166,7 @@ func (uc *platformDiscountUseCase) Update(ctx context.Context, req *model.Update
 
 func (uc *platformDiscountUseCase) Delete(ctx context.Context, id uuid.UUID, callerPermissions []string) error {
 	if !rbac.HasPermission(callerPermissions, "billing.manage") {
-		return helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return helper.NewForbiddenPermission("billing.manage")
 	}
 	d, err := uc.discountRepo.FindByID(ctx, uc.db.Gorm, id)
 	if err != nil || d == nil {
@@ -277,9 +282,13 @@ func (uc *memberDiscountUseCase) ListByClient(ctx context.Context, clientID uuid
 }
 
 func (uc *memberDiscountUseCase) Create(ctx context.Context, req *model.CreateMemberDiscountRequest) (*model.MemberDiscountResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	// Cek duplikasi kode dalam client yang sama
 	if req.Code != nil && *req.Code != "" {
-		existing, _ := uc.discountRepo.FindByCode(ctx, uc.db.Gorm, req.ClientID, *req.Code)
+		existing, err := uc.discountRepo.FindByCode(ctx, uc.db.Gorm, req.ClientID, *req.Code)
+		if err != nil {
+			return nil, fmt.Errorf("gagal memeriksa duplikasi kode diskon: %w", err)
+		}
 		if existing != nil {
 			return nil, helper.NewConflict(fmt.Sprintf("kode diskon '%s' sudah digunakan", *req.Code))
 		}
@@ -308,7 +317,7 @@ func (uc *memberDiscountUseCase) Create(ctx context.Context, req *model.CreateMe
 	}
 
 	if err := uc.discountRepo.Create(ctx, uc.db.Gorm, d); err != nil {
-		uc.log.Error("member discount: create", zap.Error(err))
+		log.Error("member discount: create", zap.Error(err))
 		return nil, fmt.Errorf("gagal membuat diskon")
 	}
 
@@ -444,7 +453,7 @@ func (uc *memberDiscountUseCase) applyMemberDiscount(ctx context.Context, d *ent
 	if d.MaxUsagePerUser > 0 {
 		usageCount, err := uc.discountRepo.CountUsageByUser(ctx, uc.db.Gorm, d.ID, req.TelegramUserID)
 		if err != nil {
-			return nil, fmt.Errorf("gagal cek penggunaan diskon")
+			return nil, fmt.Errorf("gagal cek penggunaan diskon: %w", err)
 		}
 		if int(usageCount) >= d.MaxUsagePerUser {
 			return nil, helper.NewBadRequest(fmt.Sprintf("Anda sudah menggunakan diskon ini sebanyak %d kali", d.MaxUsagePerUser))

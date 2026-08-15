@@ -7,6 +7,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"go.uber.org/zap"
 )
 
@@ -19,6 +20,10 @@ func NewFiber(cfg *AppConfig) *fiber.App {
 		JSONDecoder:  sonic.Unmarshal,
 		BodyLimit:    1 * 1024 * 1024,
 	})
+
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
 
 	app.Use(cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {

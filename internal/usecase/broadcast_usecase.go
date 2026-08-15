@@ -2,8 +2,8 @@ package usecase
 
 import (
 	"context"
-	json "github.com/bytedance/sonic"
 	"fmt"
+	json "github.com/bytedance/sonic"
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
@@ -75,7 +75,7 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 	billing, err := uc.billingRepo.FindActiveByClientID(ctx, uc.db.Gorm, clientID)
 	if err != nil {
 		log.Error("broadcast usecase: failed to fetch billing", zap.Error(err))
-		return nil, fmt.Errorf("Gagal memeriksa status billing")
+		return nil, fmt.Errorf("gagal memeriksa status billing")
 	}
 	if billing != nil && billing.Plan.MaxBroadcasts != -1 {
 		// Hitung jumlah broadcast bulan ini
@@ -88,7 +88,7 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 			Count(&count).Error
 		if err != nil {
 			log.Error("broadcast usecase: failed to count broadcasts", zap.Error(err))
-			return nil, fmt.Errorf("Gagal menghitung kuota broadcast")
+			return nil, fmt.Errorf("gagal menghitung kuota broadcast")
 		}
 
 		if count >= int64(billing.Plan.MaxBroadcasts) {
@@ -116,16 +116,16 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 	// 2. Simpan entitas Broadcast
 	broadcastID := uuid.New()
 	broadcast := &entity.Broadcast{
-		ID:           broadcastID,
-		ClientID:     clientID,
-		BotUUID:      req.BotID,
-		TargetType:   req.TargetType,
-		MessageType:  req.MessageType,
-		MessageText:  req.MessageText,
-		FileUrl:      req.FileUrl,
-		ScheduledAt:  req.ScheduledAt,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:          broadcastID,
+		ClientID:    clientID,
+		BotUUID:     req.BotID,
+		TargetType:  req.TargetType,
+		MessageType: req.MessageType,
+		MessageText: req.MessageText,
+		FileUrl:     req.FileUrl,
+		ScheduledAt: req.ScheduledAt,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	if len(req.GroupIDs) > 0 {
@@ -142,7 +142,7 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 		broadcast.TotalTargets = 0
 		if err := uc.broadcastRepo.Create(ctx, uc.db.Gorm, broadcast); err != nil {
 			log.Error("broadcast usecase: failed to create scheduled broadcast", zap.Error(err))
-			return nil, fmt.Errorf("Gagal membuat jadwal broadcast")
+			return nil, fmt.Errorf("gagal membuat jadwal broadcast")
 		}
 	} else {
 		broadcast.Status = "pending"
@@ -183,7 +183,7 @@ func (uc *BroadcastUseCase) distribute(ctx context.Context, tx *gorm.DB, broadca
 		groups, err := uc.groupRepo.FindByBotID(ctx, tx, broadcast.BotUUID)
 		if err != nil {
 			log.Error("broadcast usecase: failed to fetch groups", zap.Error(err))
-			return fmt.Errorf("Gagal mencari grup penerima")
+			return fmt.Errorf("gagal mencari grup penerima")
 		}
 		for _, g := range groups {
 			if !g.IsActive {
@@ -203,12 +203,12 @@ func (uc *BroadcastUseCase) distribute(ctx context.Context, tx *gorm.DB, broadca
 		targetChatIDs, err = uc.subRepo.FindActiveMemberIDsByBotID(ctx, tx, broadcast.ClientID, broadcast.BotUUID, gids)
 		if err != nil {
 			log.Error("broadcast usecase: failed to fetch active member subscriptions", zap.Error(err))
-			return fmt.Errorf("Gagal mencari member aktif penerima")
+			return fmt.Errorf("gagal mencari member aktif penerima")
 		}
 	}
 
 	if len(targetChatIDs) == 0 {
-		return fmt.Errorf("Tidak ditemukan target penerima aktif untuk broadcast ini")
+		return fmt.Errorf("tidak ditemukan target penerima aktif untuk broadcast ini")
 	}
 
 	// 2. Update status and total targets
@@ -309,13 +309,13 @@ func (uc *BroadcastUseCase) List(ctx context.Context, clientID uuid.UUID, botID 
 	list, err := uc.broadcastRepo.FindByClientID(ctx, uc.db.Gorm, clientID, &botID, filter.Page, filter.Limit)
 	if err != nil {
 		log.Error("broadcast usecase: list failed", zap.Error(err))
-		return nil, 0, fmt.Errorf("Gagal mengambil riwayat broadcast")
+		return nil, 0, fmt.Errorf("gagal mengambil riwayat broadcast")
 	}
 
 	total, err := uc.broadcastRepo.CountByClientID(ctx, uc.db.Gorm, clientID, &botID)
 	if err != nil {
 		log.Error("broadcast usecase: count failed", zap.Error(err))
-		return nil, 0, fmt.Errorf("Gagal menghitung riwayat broadcast")
+		return nil, 0, fmt.Errorf("gagal menghitung riwayat broadcast")
 	}
 
 	return converter.BroadcastListToResponse(list), total, nil
@@ -335,7 +335,7 @@ func (uc *BroadcastUseCase) GetReach(ctx context.Context, clientID uuid.UUID, bo
 	groups, err := uc.groupRepo.FindByBotID(ctx, uc.db.Gorm, botID)
 	if err != nil {
 		log.Error("broadcast reach: failed to fetch groups", zap.Error(err))
-		return nil, fmt.Errorf("Gagal mengambil data grup")
+		return nil, fmt.Errorf("gagal mengambil data grup")
 	}
 
 	activeCount := 0
@@ -348,7 +348,7 @@ func (uc *BroadcastUseCase) GetReach(ctx context.Context, clientID uuid.UUID, bo
 	memberCount, err := uc.subRepo.CountActiveMembersByBotID(ctx, uc.db.Gorm, clientID, botID)
 	if err != nil {
 		log.Error("broadcast reach: failed to count members", zap.Error(err))
-		return nil, fmt.Errorf("Gagal menghitung jumlah member")
+		return nil, fmt.Errorf("gagal menghitung jumlah member")
 	}
 
 	return &model.BroadcastReachResponse{

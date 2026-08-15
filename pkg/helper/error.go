@@ -78,13 +78,16 @@ func (e *ErrConflict) Error() string {
 }
 
 type ErrForbidden struct {
-	Message string
+	Message    string
+	Permission string
 }
 
 func (e *ErrForbidden) Error() string {
 	message := strings.TrimSpace(e.Message)
 	lower := strings.ToLower(message)
 	switch {
+	case e.Permission != "":
+		return fmt.Sprintf("Anda memerlukan izin %s", e.Permission)
 	case strings.HasPrefix(lower, "forbidden:"):
 		message = strings.TrimSpace(strings.TrimPrefix(message, "forbidden:"))
 		switch {
@@ -157,6 +160,12 @@ func NewConflict(message string) error {
 
 func NewForbidden(message string) error {
 	return &ErrForbidden{Message: message}
+}
+
+// NewForbiddenPermission returns a forbidden error with the permission name
+// stored as a structured field instead of being scraped out of the message.
+func NewForbiddenPermission(permission string) error {
+	return &ErrForbidden{Message: fmt.Sprintf("forbidden: requires '%s' permission", permission), Permission: permission}
 }
 
 func NewUnauthorized(message string) error {

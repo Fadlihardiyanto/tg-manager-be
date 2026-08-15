@@ -10,6 +10,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model/converter"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -47,8 +48,9 @@ func NewPlatformPlanUseCase(
 }
 
 func (uc *platformPlanUseCase) List(ctx context.Context, req *model.PlatformPlanFilterRequest, callerPermissions []string) ([]model.PlatformPlanResponse, int64, error) {
+	log := logger.FromContext(ctx, uc.log)
 	if !rbac.HasPermission(callerPermissions, "billing.read") {
-		return nil, 0, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+		return nil, 0, helper.NewForbiddenPermission("billing.read")
 	}
 
 	onlyActive := false
@@ -58,13 +60,13 @@ func (uc *platformPlanUseCase) List(ctx context.Context, req *model.PlatformPlan
 
 	plans, err := uc.planRepo.FindAll(ctx, uc.db.Gorm, onlyActive, req.IsLandingPage, req.Page, req.Limit)
 	if err != nil {
-		uc.log.Error("platform plan: list", zap.Error(err))
+		log.Error("platform plan: list", zap.Error(err))
 		return nil, 0, fmt.Errorf("failed to fetch plans")
 	}
 
 	total, err := uc.planRepo.CountAll(ctx, uc.db.Gorm, onlyActive, req.IsLandingPage)
 	if err != nil {
-		uc.log.Error("platform plan: count", zap.Error(err))
+		log.Error("platform plan: count", zap.Error(err))
 		return nil, 0, fmt.Errorf("failed to fetch plans count")
 	}
 
@@ -76,11 +78,12 @@ func (uc *platformPlanUseCase) List(ctx context.Context, req *model.PlatformPlan
 }
 
 func (uc *platformPlanUseCase) ListPublic(ctx context.Context) ([]model.PlatformPlanResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	isActive := true
 	isLandingPage := true
 	plans, err := uc.planRepo.FindAll(ctx, uc.db.Gorm, isActive, &isLandingPage, 0, 0)
 	if err != nil {
-		uc.log.Error("platform plan: list public", zap.Error(err))
+		log.Error("platform plan: list public", zap.Error(err))
 		return nil, fmt.Errorf("failed to fetch public plans")
 	}
 
@@ -93,7 +96,7 @@ func (uc *platformPlanUseCase) ListPublic(ctx context.Context) ([]model.Platform
 
 func (uc *platformPlanUseCase) GetByID(ctx context.Context, id uuid.UUID, callerPermissions []string) (*model.PlatformPlanResponse, error) {
 	if !rbac.HasPermission(callerPermissions, "billing.read") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.read' permission")
+		return nil, helper.NewForbiddenPermission("billing.read")
 	}
 
 	plan, err := uc.planRepo.FindByID(ctx, uc.db.Gorm, id)
@@ -109,8 +112,9 @@ func (uc *platformPlanUseCase) GetByID(ctx context.Context, id uuid.UUID, caller
 }
 
 func (uc *platformPlanUseCase) Create(ctx context.Context, req *model.CreatePlatformPlanRequest, callerPermissions []string) (*model.PlatformPlanResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	if !rbac.HasPermission(callerPermissions, "billing.manage") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return nil, helper.NewForbiddenPermission("billing.manage")
 	}
 
 	// Cek duplikasi nama
@@ -137,31 +141,31 @@ func (uc *platformPlanUseCase) Create(ctx context.Context, req *model.CreatePlat
 	}
 
 	plan := &entity.PlatformPlan{
-		ID:           uuid.New(),
-		Name:         req.Name,
-		DisplayName:  req.DisplayName,
-		PriceMonthly: req.PriceMonthly,
-		PriceYearly:  req.PriceYearly,
-		MaxBots:      req.MaxBots,
-		MaxGroups:    req.MaxGroups,
-		MaxPackages:  req.MaxPackages,
-		MaxMembers:   req.MaxMembers,
-		MaxCustomCommands: req.MaxCustomCommands,
-		MaxBroadcasts:     req.MaxBroadcasts,
+		ID:                  uuid.New(),
+		Name:                req.Name,
+		DisplayName:         req.DisplayName,
+		PriceMonthly:        req.PriceMonthly,
+		PriceYearly:         req.PriceYearly,
+		MaxBots:             req.MaxBots,
+		MaxGroups:           req.MaxGroups,
+		MaxPackages:         req.MaxPackages,
+		MaxMembers:          req.MaxMembers,
+		MaxCustomCommands:   req.MaxCustomCommands,
+		MaxBroadcasts:       req.MaxBroadcasts,
 		AllowMediaBroadcast: req.AllowMediaBroadcast,
 		AllowDiscountSystem: req.AllowDiscountSystem,
 		AllowReportsExport:  req.AllowReportsExport,
 		AllowHighPriority:   req.AllowHighPriority,
 		TransactionLimit:    req.TransactionLimit,
-		Features:     features,
-		IsActive:     req.IsActive,
-		IsLandingPage: req.IsLandingPage,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		Features:            features,
+		IsActive:            req.IsActive,
+		IsLandingPage:       req.IsLandingPage,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if err := uc.planRepo.Create(ctx, uc.db.Gorm, plan); err != nil {
-		uc.log.Error("platform plan: create", zap.Error(err))
+		log.Error("platform plan: create", zap.Error(err))
 		return nil, fmt.Errorf("failed to create plan")
 	}
 
@@ -170,8 +174,9 @@ func (uc *platformPlanUseCase) Create(ctx context.Context, req *model.CreatePlat
 }
 
 func (uc *platformPlanUseCase) Update(ctx context.Context, id uuid.UUID, req *model.UpdatePlatformPlanRequest, callerPermissions []string) (*model.PlatformPlanResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	if !rbac.HasPermission(callerPermissions, "billing.manage") {
-		return nil, helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return nil, helper.NewForbiddenPermission("billing.manage")
 	}
 
 	plan, err := uc.planRepo.FindByID(ctx, uc.db.Gorm, id)
@@ -244,7 +249,7 @@ func (uc *platformPlanUseCase) Update(ctx context.Context, id uuid.UUID, req *mo
 	plan.UpdatedAt = time.Now()
 
 	if err := uc.planRepo.Update(ctx, uc.db.Gorm, plan); err != nil {
-		uc.log.Error("platform plan: update", zap.Error(err))
+		log.Error("platform plan: update", zap.Error(err))
 		return nil, fmt.Errorf("failed to update plan")
 	}
 
@@ -254,7 +259,7 @@ func (uc *platformPlanUseCase) Update(ctx context.Context, id uuid.UUID, req *mo
 
 func (uc *platformPlanUseCase) Delete(ctx context.Context, id uuid.UUID, callerPermissions []string) error {
 	if !rbac.HasPermission(callerPermissions, "billing.manage") {
-		return helper.NewForbidden("forbidden: requires 'billing.manage' permission")
+		return helper.NewForbiddenPermission("billing.manage")
 	}
 
 	plan, err := uc.planRepo.FindByID(ctx, uc.db.Gorm, id)
