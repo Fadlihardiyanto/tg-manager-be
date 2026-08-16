@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -60,6 +61,9 @@ type botFactoryImpl struct {
 
 // NewBotFactory creates a new BotFactory.
 func NewBotFactory(timeout time.Duration, logger *zap.Logger) BotFactory {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &botFactoryImpl{
 		httpClient: &http.Client{
 			Timeout: timeout,
@@ -135,7 +139,10 @@ func (c *botClientImpl) retryOnRateLimit(ctx context.Context, operation func() e
 			return nil
 		}
 
-		if apiErr, ok := err.(*tgbotapi.Error); ok && apiErr.Code == 429 {
+		// errors.As: closure di bawah membungkus error dengan %w, jadi type
+		// assertion langsung tidak pernah match — 429 retry mati di 7 endpoint.
+		var apiErr *tgbotapi.Error
+		if errors.As(err, &apiErr) && apiErr.Code == 429 {
 			retryAfter := apiErr.ResponseParameters.RetryAfter
 			if retryAfter == 0 {
 				retryAfter = 5 // Fallback to 5 seconds if not provided

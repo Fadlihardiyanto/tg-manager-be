@@ -130,6 +130,10 @@ func (c *Connection) handleReconnect() {
 // reconnect attempts to re-establish the connection with exponential backoff.
 func (c *Connection) reconnect() {
 	delay := c.config.ReconnectDelay
+	// Guard: config 0/negatif → time.Sleep(0) hot-loop hammering amqp.Dial.
+	if delay < time.Second {
+		delay = time.Second
+	}
 	attempt := 0
 
 	for {
@@ -162,7 +166,17 @@ func (c *Connection) reconnect() {
 			continue
 		}
 
+		// Shutdown race: Close() bisa terjadi selama Sleep/Dial di atas —
+		// dial yang selesai setelah close harus di-close, jangan bocor.
 		c.mu.Lock()
+		select {
+		case <-c.closed:
+			c.mu.Unlock()
+			conn.Close()
+			c.logger.Info("rabbitmq: reconnected after close, closing leaked connection")
+			return
+		default:
+		}
 		c.conn = conn
 		c.mu.Unlock()
 

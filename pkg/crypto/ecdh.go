@@ -21,10 +21,16 @@ func ECDHGenerateKeyPair() (*ecdh.PrivateKey, *ecdh.PublicKey, error) {
 }
 
 func ECDHComputeSharedSecret(priv *ecdh.PrivateKey, pub *ecdh.PublicKey) ([]byte, error) {
+	if priv == nil || pub == nil {
+		return nil, errors.New("ecdh: nil key")
+	}
 	return priv.ECDH(pub)
 }
 
 func ECDHDeriveKey(sharedSecret []byte, info []byte) ([]byte, error) {
+	if len(sharedSecret) == 0 {
+		return nil, errors.New("ecdh: empty shared secret")
+	}
 	return hkdf.Key(sha256.New, sharedSecret, nil, string(info), 32)
 }
 
@@ -71,6 +77,9 @@ func ECDHDecryptPayload(cipherBase64 string, key []byte) (string, error) {
 }
 
 func ECDHEncodePublicKey(pub *ecdh.PublicKey) string {
+	if pub == nil {
+		return ""
+	}
 	return base64.StdEncoding.EncodeToString(pub.Bytes())
 }
 
@@ -83,6 +92,9 @@ func ECDHDecodePublicKey(encoded string) (*ecdh.PublicKey, error) {
 }
 
 func ECDHEncodePrivateKey(priv *ecdh.PrivateKey) string {
+	if priv == nil {
+		return ""
+	}
 	return base64.StdEncoding.EncodeToString(priv.Bytes())
 }
 

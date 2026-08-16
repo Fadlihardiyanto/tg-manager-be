@@ -148,8 +148,9 @@ func (s *EmailOTPService) VerifyOTP(ctx context.Context, purpose, identifier, co
 		return fmt.Errorf("otp: increment attempts: %w", err)
 	}
 
-	// Check max attempts
-	if int(attempts) > s.maxAttempts {
+	// Check max attempts — off-by-one fix: invalidasi pada percobaan ke-N
+	// (dokumentasi "max N percobaan"), bukan ke-N+1.
+	if int(attempts) >= s.maxAttempts {
 		// Invalidate the OTP — too many wrong attempts
 		s.redis.Del(ctx, codeKey, attemptsKey)
 		return helper.NewTooManyRequestsError("Terlalu banyak percobaan, kode OTP telah dibatalkan. Silakan minta kode baru")

@@ -218,6 +218,15 @@ func (c *Client) CreateSnapToken(ctx context.Context, req *SnapRequest) (*SnapRe
 		if err := json.Unmarshal(bodyBytes, &snapResp); err != nil {
 			return nil, fmt.Errorf("decode response: %w", err)
 		}
+		// json.Unmarshal tidak error pada field yang hilang — 2xx dengan
+		// payload partial/proxy HTML menghasilkan token kosong sebagai sukses.
+		// Checkout dengan token kosong = payment silently broken.
+		if snapResp.Token == "" {
+			c.log().Error("midtrans: snap create returned empty token",
+				zap.String("order_id", req.TransactionDetails.OrderID),
+				zap.String("response", string(bodyBytes)))
+			return nil, fmt.Errorf("midtrans: empty snap token in response")
+		}
 
 		c.log().Info("midtrans: snap token created",
 			zap.String("order_id", req.TransactionDetails.OrderID),

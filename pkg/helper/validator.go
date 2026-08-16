@@ -8,13 +8,22 @@ import (
 )
 
 func ValidateStruct(v *validator.Validate, data interface{}) map[string]string {
+	if v == nil {
+		return map[string]string{"_": "validator tidak dikonfigurasi"}
+	}
 	err := v.Struct(data)
 	if err == nil {
 		return nil
 	}
 
+	// Bare assertion panic pada InvalidValidationError (nil/non-struct input).
+	validationErrors, ok := err.(validator.ValidationErrors)
+	if !ok {
+		return map[string]string{"_": "data tidak dapat divalidasi"}
+	}
+
 	errors := make(map[string]string)
-	for _, e := range err.(validator.ValidationErrors) {
+	for _, e := range validationErrors {
 		errors[e.Field()] = translateError(e)
 	}
 	return errors

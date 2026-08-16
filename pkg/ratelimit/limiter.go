@@ -60,6 +60,14 @@ type RateLimiter struct {
 }
 
 func New(rdb *redis.Client, cfg Config) *RateLimiter {
+	// Config guard: Capacity=0 → deny-all (429 storm); RefillRate<=0 → token
+	// tidak pernah ter-refill (selamanya terkunci). Default yang masuk akal.
+	if cfg.Capacity <= 0 {
+		cfg.Capacity = 60
+	}
+	if cfg.RefillRate <= 0 {
+		cfg.RefillRate = 1
+	}
 	return &RateLimiter{
 		rdb:    rdb,
 		script: redis.NewScript(tokenBucketScript),

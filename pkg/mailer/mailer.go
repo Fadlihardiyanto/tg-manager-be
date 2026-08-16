@@ -97,7 +97,9 @@ func (m *Mailer) send(to, subject, htmlBody string) error {
 
 	from := m.config.FromEmail
 	if m.config.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", m.config.FromName, m.config.FromEmail)
+		// FromName harus di-sanitize seperti Subject — CRLF di FromName =
+		// header injection (From: header bisa disuntik baris baru).
+		from = fmt.Sprintf("%s <%s>", sanitizeHeader(m.config.FromName), m.config.FromEmail)
 	}
 
 	// Build MIME message

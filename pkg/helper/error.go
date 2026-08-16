@@ -10,6 +10,9 @@ type ErrNotFound struct {
 }
 
 func (e *ErrNotFound) Error() string {
+	if e == nil {
+		return "resource tidak ditemukan"
+	}
 	resource := strings.TrimSpace(e.Resource)
 	lower := strings.ToLower(resource)
 	if strings.Contains(lower, "tidak ditemukan") {
@@ -27,6 +30,9 @@ type ErrBadRequest struct {
 }
 
 func (e *ErrBadRequest) Error() string {
+	if e == nil {
+		return "request tidak valid"
+	}
 	message := strings.TrimSpace(e.Message)
 	lower := strings.ToLower(message)
 	switch {
@@ -60,6 +66,9 @@ type ErrConflict struct {
 }
 
 func (e *ErrConflict) Error() string {
+	if e == nil {
+		return "terjadi konflik data"
+	}
 	message := strings.TrimSpace(e.Message)
 	lower := strings.ToLower(message)
 	switch {
@@ -90,6 +99,9 @@ type ErrForbidden struct {
 }
 
 func (e *ErrForbidden) Error() string {
+	if e == nil {
+		return "Anda tidak memiliki izin untuk melakukan aksi ini"
+	}
 	message := strings.TrimSpace(e.Message)
 	lower := strings.ToLower(message)
 	switch {
@@ -127,6 +139,9 @@ type ErrUnauthorized struct {
 }
 
 func (e *ErrUnauthorized) Error() string {
+	if e == nil {
+		return "tidak terautentikasi"
+	}
 	message := strings.TrimSpace(e.Message)
 	lower := strings.ToLower(message)
 	switch {
@@ -150,6 +165,9 @@ type ErrUnprocessable struct {
 }
 
 func (e *ErrUnprocessable) Error() string {
+	if e == nil {
+		return "data tidak dapat diproses"
+	}
 	return e.Message
 }
 
@@ -164,6 +182,9 @@ func NewBadRequest(message string) error {
 // NewBadRequestWrap sanitizes the user-facing message but keeps the original
 // error in the chain via Cause, so errors.Is/As still match downstream.
 func NewBadRequestWrap(err error) error {
+	if err == nil {
+		return NewBadRequest("request tidak valid")
+	}
 	return &ErrBadRequest{Message: err.Error(), Cause: err}
 }
 

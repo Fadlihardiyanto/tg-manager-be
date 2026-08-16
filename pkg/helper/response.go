@@ -127,6 +127,14 @@ func TooManyRequests(c fiber.Ctx, message string) error {
 }
 
 func NewMeta(page, limit int, total int64) *Meta {
+	// Guard: limit=0 (query param tidak ter-clamp di beberapa controller)
+	// → division by zero → panic. Default 1 halaman per limit 20.
+	if limit < 1 {
+		limit = 20
+	}
+	if page < 1 {
+		page = 1
+	}
 	totalPages := int(total) / limit
 	if int(total)%limit > 0 {
 		totalPages++

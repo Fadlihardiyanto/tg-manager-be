@@ -73,13 +73,16 @@ func sanitize(s string) string {
 }
 
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	// Rune-aware: len() menghitung bytes — slicing byte bisa memotong UTF-8
+	// rune (emoji/aksen di nama item) → invalid UTF-8 → korupsi '?'.
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
 	if max <= 3 {
-		return s[:max]
+		return string(runes[:max])
 	}
-	return s[:max-3] + "..."
+	return string(runes[:max-3]) + "..."
 }
 
 func PaymentTypeLabel(pt string) string {

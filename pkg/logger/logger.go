@@ -62,6 +62,14 @@ func NewContextWithDefaults(ctx context.Context) context.Context {
 // FromContext extracts request_id and client_id from context and returns
 // a new logger with those fields attached.
 func FromContext(ctx context.Context, log *zap.Logger) *zap.Logger {
+	// Nil guard: nil logger / nil ctx tidak boleh panic — nop logger aman.
+	if log == nil {
+		log = zap.NewNop()
+	}
+	if ctx == nil {
+		return log
+	}
+
 	fields := []zap.Field{}
 
 	if reqID := RequestID(ctx); reqID != "" {

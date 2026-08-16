@@ -215,6 +215,25 @@ func toFintechReceipt(data *ReceiptData, cfg *Config) FintechReceipt {
 func buildCardHeader(data FintechReceipt) core.Row {
 	header := col.New(12).WithStyle(&props.Cell{BackgroundColor: receiptNavy})
 
+	// Total sudah berformat via FormatCurrency (prefix "Rp " atau "$ ") —
+	// deteksi label currency dari prefix, jangan hardcode "Rp".
+	currencyLabel := "Rp"
+	if strings.HasPrefix(data.Total, "$") {
+		currencyLabel = "$"
+	}
+	// Font adaptif: total panjang (≥15 char, mis. ≥100 juta) di 26pt akan
+	// clip/overlap di halaman 110mm — turunkan size bertahap.
+	totalText := strings.TrimPrefix(strings.TrimPrefix(data.Total, "Rp "), "$ ")
+	totalSize := 26.0
+	switch {
+	case len(totalText) > 18:
+		totalSize = 15
+	case len(totalText) > 15:
+		totalSize = 18
+	case len(totalText) > 12:
+		totalSize = 22
+	}
+
 	return row.New(48).Add(
 		header.Add(
 			text.New(data.Brand, props.Text{
@@ -254,17 +273,17 @@ func buildCardHeader(data FintechReceipt) core.Row {
 				Color: receiptSlate500,
 				Align: align.Left,
 			}),
-			text.New("Rp", props.Text{
+			text.New(currencyLabel, props.Text{
 				Top:   28,
 				Left:  8,
 				Size:  11,
 				Color: receiptSlate400,
 				Align: align.Left,
 			}),
-			text.New(stripRp(data.Total), props.Text{
+			text.New(totalText, props.Text{
 				Top:   25,
 				Left:  16,
-				Size:  26,
+				Size:  totalSize,
 				Style: fontstyle.Bold,
 				Color: white,
 				Align: align.Left,
@@ -564,10 +583,6 @@ func buildCardFooter(data FintechReceipt) core.Row {
 
 func spacer(height float64) core.Row {
 	return row.New(height).Add(col.New(12))
-}
-
-func stripRp(amount string) string {
-	return strings.TrimPrefix(amount, "Rp ")
 }
 
 func displayDash(value string) string {

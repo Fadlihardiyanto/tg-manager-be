@@ -121,6 +121,9 @@ func NewClient(cfg *Config, logger *zap.Logger) (*Client, error) {
 
 // Upload uploads a file to S3 and returns the result with public URL.
 func (c *Client) Upload(ctx context.Context, input *UploadInput) (*UploadOutput, error) {
+	if input == nil {
+		return nil, fmt.Errorf("s3: upload input is nil")
+	}
 	putInput := &s3.PutObjectInput{
 		Bucket:      aws.String(c.bucket),
 		Key:         aws.String(input.Key),
@@ -196,8 +199,11 @@ func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
 			return fmt.Errorf("s3: batch delete failed (chunk %d-%d): %w", start, end-1, err)
 		}
 
-		// Report individual object-level errors (non-fatal, logged as warnings)
+		// Report individual object-level errors — partial delete bukan silent
+		// success: caller (mis. purge data user) harus tahu objek tersisa.
+		perr := false
 		for _, e := range resp.Errors {
+			perr = true
 			key := ""
 			if e.Key != nil {
 				key = *e.Key
@@ -216,6 +222,9 @@ func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
 				zap.String("message", message),
 			)
 		}
+		if perr {
+			return fmt.Errorf("s3: batch delete partial failure in chunk %d-%d", start, end-1)
+		}
 	}
 
 	return nil
@@ -223,6 +232,9 @@ func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
 
 // PresignGet generates a presigned GET URL for temporary access to a private file.
 func (c *Client) PresignGet(ctx context.Context, input *PresignInput) (string, error) {
+	if input == nil {
+		return "", fmt.Errorf("s3: presign input is nil")
+	}
 	presignClient := s3.NewPresignClient(c.s3Client)
 
 	resp, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
@@ -238,6 +250,9 @@ func (c *Client) PresignGet(ctx context.Context, input *PresignInput) (string, e
 
 // PresignPut generates a presigned PUT URL for direct client uploads.
 func (c *Client) PresignPut(ctx context.Context, input *PresignInput, contentType string) (string, error) {
+	if input == nil {
+		return "", fmt.Errorf("s3: presign input is nil")
+	}
 	presignClient := s3.NewPresignClient(c.s3Client)
 
 	resp, err := presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
