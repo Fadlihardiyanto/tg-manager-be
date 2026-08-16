@@ -32,6 +32,7 @@ func (r *AuditLogRepository) FindByEntity(ctx context.Context, tx *gorm.DB, enti
 func (r *AuditLogRepository) FindAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, limit, offset int) ([]entity.AuditLog, int64, error) {
 	var logs []entity.AuditLog
 	var total int64
+	offset, limit = clampOffsetLimit(offset, limit)
 
 	query := db.WithContext(ctx).Model(&entity.AuditLog{}).Where("client_id = ?", clientID)
 
@@ -46,6 +47,7 @@ func (r *AuditLogRepository) FindAllByClient(ctx context.Context, db *gorm.DB, c
 func (r *AuditLogRepository) FindAllPlatform(ctx context.Context, db *gorm.DB, limit, offset int) ([]entity.AuditLog, int64, error) {
 	var logs []entity.AuditLog
 	var total int64
+	offset, limit = clampOffsetLimit(offset, limit)
 
 	query := db.WithContext(ctx).Model(&entity.AuditLog{})
 

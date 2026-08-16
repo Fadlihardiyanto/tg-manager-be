@@ -80,7 +80,7 @@ func (r *ClientUserRepository) FindByClientAndUserID(ctx context.Context, tx *go
 
 func (r *ClientUserRepository) FindAllByClientIDPaginated(ctx context.Context, tx *gorm.DB, req *model.AdminTenantUserListRequest) ([]entity.ClientUser, int64, error) {
 	log := logger.FromContext(ctx, r.log)
-	log.Info("client user repo find all paginated start", zap.String("client_id", req.ClientID.String()), zap.String("user_id", req.UserID), zap.String("email", helper.HashIdentifier(req.Email)), zap.String("role", req.Role), zap.String("verified", req.Verified), zap.Int("page", req.Page), zap.Int("size", req.Size))
+	log.Info("client user repo find all paginated start", zap.String("client_id", req.ClientID.String()), zap.String("user_id", req.UserID), zap.String("email", helper.HashIdentifier(req.Email)), zap.String("role", req.Role), zap.String("verified", req.Verified), zap.Int("page", req.Page), zap.Int("limit", req.Limit))
 
 	var clientUsers []entity.ClientUser
 	var total int64
@@ -95,12 +95,16 @@ func (r *ClientUserRepository) FindAllByClientIDPaginated(ctx context.Context, t
 		return nil, 0, err
 	}
 
-	offset := (req.Page - 1) * req.Size
+	// FIX: controller & usecase mengisi req.Limit (bukan req.Size) — sebelumnya
+	// repo membaca Size yang selalu 0 → validasi 422 di endpoint list tenant
+	// users, atau (tanpa validasi) Limit(0) = query tanpa batas.
+	page, limit := clampPagination(req.Page, req.Limit)
+	offset := (page - 1) * limit
 
 	err := db.
 		Preload("User", "deleted_at IS NULL").
 		Offset(offset).
-		Limit(req.Size).
+		Limit(limit).
 		Order("created_at DESC").
 		Find(&clientUsers).Error
 	if err != nil {

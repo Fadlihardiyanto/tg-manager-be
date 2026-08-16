@@ -175,6 +175,7 @@ func (r *AdminUserRepository) FindAllPaginated(ctx context.Context, tx *gorm.DB,
 
 	var admins []entity.AdminUser
 	var total int64
+	offset, limit = clampOffsetLimit(offset, limit)
 
 	db := tx.WithContext(ctx).Model(&entity.AdminUser{}).Where("deleted_at IS NULL")
 
@@ -205,6 +206,7 @@ func (r *AdminUserRepository) FindAllPaginatedWithRoles(ctx context.Context, tx 
 
 	var admins []entity.AdminUser
 	var total int64
+	offset, limit = clampOffsetLimit(offset, limit)
 
 	db := tx.WithContext(ctx).Model(&entity.AdminUser{}).Where("deleted_at IS NULL")
 

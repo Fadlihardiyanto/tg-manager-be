@@ -13,6 +13,42 @@ func escapeLike(s string) string {
 	return strings.NewReplacer("%", "\\%", "_", "\\_").Replace(s)
 }
 
+// clampPagination membatasi page/limit supaya (page-1)*limit tidak overflow
+// (offset negatif -> Postgres error -> 500) dan limit=0 tidak menghasilkan
+// query tanpa batas. Behavior-preserving untuk semua nilai wajar.
+func clampPagination(page, limit int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	const maxPage = 1_000_000
+	if page > maxPage {
+		page = maxPage
+	}
+	return page, limit
+}
+
+// clampOffsetLimit membatasi offset/limit yang diterima langsung dari caller
+// (sudah dihitung di usecase): offset negatif -> Postgres error 500;
+// limit <= 0 -> query tanpa batas.
+func clampOffsetLimit(offset, limit int) (int, int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return offset, limit
+}
+
 // IRepository is the base generic interface for all repositories
 type IRepository[T any] interface {
 	Create(ctx context.Context, tx *gorm.DB, entity *T) error

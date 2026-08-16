@@ -30,6 +30,7 @@ func NewTelegramBotRepository() ITelegramBotRepository {
 
 func (r *TelegramBotRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.TelegramBot, error) {
 	var bots []entity.TelegramBot
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	err := tx.WithContext(ctx).
 		Where("client_id = ? AND deleted_at IS NULL", clientID).

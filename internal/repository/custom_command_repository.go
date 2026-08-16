@@ -34,6 +34,7 @@ func (r *CustomCommandRepository) FindByBotIDAndTrigger(ctx context.Context, tx 
 
 func (r *CustomCommandRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, botID *uuid.UUID, isActive *bool, page, limit int) ([]entity.CustomCommand, error) {
 	var commands []entity.CustomCommand
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 
 	query := tx.WithContext(ctx).Where("client_id = ? AND deleted_at IS NULL", clientID)

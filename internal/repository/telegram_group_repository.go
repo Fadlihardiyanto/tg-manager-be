@@ -51,6 +51,7 @@ func (r *TelegramGroupRepository) FindAllActive(ctx context.Context, tx *gorm.DB
 
 func (r *TelegramGroupRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.Group, error) {
 	var groups []entity.Group
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	err := tx.WithContext(ctx).
 		Preload("Bot").

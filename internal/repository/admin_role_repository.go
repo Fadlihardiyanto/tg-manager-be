@@ -209,8 +209,13 @@ func (r *adminRoleRepository) SyncPermissions(ctx context.Context, db *gorm.DB, 
 		permissions[i] = entity.AdminPermission{ID: pid}
 	}
 
-	// Replace = hapus semua lama, assign yang baru dalam satu operasi
-	if err := db.WithContext(ctx).Model(role).Association("Permissions").Replace(permissions); err != nil {
+	// Replace = hapus semua lama, assign yang baru — bungkus dalam transaction:
+	// gagal di tengah (koneksi putus, FK) tidak boleh meninggalkan role dengan
+	// permission kosong (atau admin tanpa roles sama sekali).
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Model(role).Association("Permissions").Replace(permissions)
+	})
+	if err != nil {
 		log.Error("admin role repo sync permissions failed", zap.Error(err))
 		return err
 	}
@@ -261,7 +266,12 @@ func (r *adminRoleRepository) SyncAdminRoles(ctx context.Context, db *gorm.DB, a
 		roles[i] = entity.AdminRole{ID: rid}
 	}
 
-	if err := db.WithContext(ctx).Model(admin).Association("Roles").Replace(roles); err != nil {
+	// Replace dalam transaction — gagal di tengah tidak boleh membuat admin
+	// kehilangan SEMUA roles (lihat SyncPermissions).
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Model(admin).Association("Roles").Replace(roles)
+	})
+	if err != nil {
 		log.Error("admin role repo sync admin roles failed", zap.Error(err))
 		return err
 	}

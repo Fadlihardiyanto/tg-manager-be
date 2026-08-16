@@ -26,6 +26,7 @@ func NewBroadcastRepository() IBroadcastRepository {
 
 func (r *BroadcastRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, botID *uuid.UUID, page, limit int) ([]entity.Broadcast, error) {
 	var broadcasts []entity.Broadcast
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 
 	query := tx.WithContext(ctx).Where("client_id = ? AND deleted_at IS NULL", clientID)

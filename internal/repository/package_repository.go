@@ -40,6 +40,7 @@ func (r *PackageRepository) FindByGroupID(ctx context.Context, tx *gorm.DB, grou
 
 func (r *PackageRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, page, limit int) ([]entity.Package, error) {
 	var packages []entity.Package
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	err := tx.WithContext(ctx).
 		Preload("Groups").
@@ -67,14 +68,7 @@ func (r *PackageRepository) AssociateGroups(ctx context.Context, tx *gorm.DB, pk
 
 func (r *PackageRepository) FindPackages(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, filter model.PackageFilterRequest) ([]entity.Package, error) {
 	var packages []entity.Package
-	page := filter.Page
-	limit := filter.Limit
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 20
-	}
+	page, limit := clampPagination(filter.Page, filter.Limit)
 	offset := (page - 1) * limit
 
 	query := tx.WithContext(ctx).Preload("Groups").Where("client_id = ? AND deleted_at IS NULL", clientID)

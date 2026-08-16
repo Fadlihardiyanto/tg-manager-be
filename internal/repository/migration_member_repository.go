@@ -40,17 +40,28 @@ func (r *MigrationMemberRepository) FindExistingUsernames(ctx context.Context, t
 		return map[string]bool{}, nil
 	}
 
-	var existing []entity.MigrationMember
-	err := tx.WithContext(ctx).
-		Where("client_id = ? AND package_id = ? AND username IN ? AND status = ?", clientID, packageID, usernames, "pending").
-		Find(&existing).Error
-	if err != nil {
-		return nil, err
-	}
+	// Chunk per 1000 — Postgres cap 65.535 parameter per query; import CSV
+	// besar (10k+ baris) gagal wholesale tanpa chunking.
+	result := make(map[string]bool, len(usernames))
+	const chunkSize = 1000
+	for i := 0; i < len(usernames); i += chunkSize {
+		end := i + chunkSize
+		if end > len(usernames) {
+			end = len(usernames)
+		}
+		chunk := usernames[i:end]
 
-	result := make(map[string]bool, len(existing))
-	for _, m := range existing {
-		result[m.Username] = true
+		var existing []entity.MigrationMember
+		err := tx.WithContext(ctx).
+			Where("client_id = ? AND package_id = ? AND username IN ? AND status = ?", clientID, packageID, chunk, "pending").
+			Find(&existing).Error
+		if err != nil {
+			return nil, err
+		}
+
+		for _, m := range existing {
+			result[m.Username] = true
+		}
 	}
 	return result, nil
 }

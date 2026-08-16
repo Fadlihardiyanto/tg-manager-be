@@ -45,6 +45,9 @@ func (r *adminPermissionRepository) FindPermissionNamesByAdminUserID(ctx context
 		Distinct("admin_permissions.name").
 		Joins("JOIN admin_role_permissions arp ON arp.admin_permission_id = admin_permissions.id").
 		Joins("JOIN admin_user_roles aur ON aur.admin_role_id = arp.admin_role_id").
+		// Soft-deleted role harus dikecualikan — tanpa ini, permission role yang
+		// sudah dihapus tetap mengalir ke JWT claims (revoked admin tetap punya akses).
+		Joins("JOIN admin_roles ar ON ar.id = arp.admin_role_id AND ar.deleted_at IS NULL").
 		Where("aur.admin_user_id = ? AND admin_permissions.deleted_at IS NULL", adminID).
 		Pluck("admin_permissions.name", &names).Error
 
@@ -68,6 +71,8 @@ func (r *adminPermissionRepository) FindAllByAdminUserID(ctx context.Context, db
 		Model(&entity.AdminPermission{}).
 		Joins("JOIN admin_role_permissions arp ON arp.admin_permission_id = admin_permissions.id").
 		Joins("JOIN admin_user_roles aur ON aur.admin_role_id = arp.admin_role_id").
+		// Soft-deleted role harus dikecualikan (lihat FindPermissionNamesByAdminUserID).
+		Joins("JOIN admin_roles ar ON ar.id = arp.admin_role_id AND ar.deleted_at IS NULL").
 		Where("aur.admin_user_id = ? AND admin_permissions.deleted_at IS NULL", adminID).
 		Find(&permissions).Error
 	if err != nil {

@@ -278,11 +278,9 @@ type AdminTenantUserListRequest struct {
 	Email             string    `json:"email" validate:"omitempty,max=255"`
 	Role              string    `json:"role" validate:"omitempty,max=50"`
 	Verified          string    `json:"verified" validate:"omitempty,oneof=true false"`
-	Page              int       `json:"page" validate:"min=1"`
-	Size              int       `json:"size" validate:"min=1,max=100"`
-	Offset            int
-	Limit             int
-	CallerPermissions []string `json:"-" validate:"-"`
+	Page              int       `json:"page" validate:"omitempty,min=1"`
+	Limit             int       `json:"limit" validate:"omitempty,min=1,max=100"`
+	CallerPermissions []string  `json:"-" validate:"-"`
 }
 
 type AdminTenantUserGetRequest struct {

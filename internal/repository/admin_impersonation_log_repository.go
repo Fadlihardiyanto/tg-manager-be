@@ -52,6 +52,7 @@ func (r *AdminImpersonationLogRepository) EndSession(ctx context.Context, tx *go
 func (r *AdminImpersonationLogRepository) FindByAdminID(ctx context.Context, tx *gorm.DB, adminUserID uuid.UUID, offset, limit int) ([]entity.AdminImpersonationLog, int64, error) {
 	var logs []entity.AdminImpersonationLog
 	var total int64
+	offset, limit = clampOffsetLimit(offset, limit)
 
 	db := tx.WithContext(ctx).Model(&entity.AdminImpersonationLog{}).
 		Where("admin_user_id = ?", adminUserID)
@@ -72,6 +73,7 @@ func (r *AdminImpersonationLogRepository) FindByAdminID(ctx context.Context, tx 
 func (r *AdminImpersonationLogRepository) FindByClientID(ctx context.Context, tx *gorm.DB, clientID uuid.UUID, offset, limit int) ([]entity.AdminImpersonationLog, int64, error) {
 	var logs []entity.AdminImpersonationLog
 	var total int64
+	offset, limit = clampOffsetLimit(offset, limit)
 
 	db := tx.WithContext(ctx).Model(&entity.AdminImpersonationLog{}).
 		Where("client_id = ?", clientID)

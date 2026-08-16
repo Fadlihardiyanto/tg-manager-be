@@ -66,11 +66,12 @@ func (r *ClientRepository) FindAllPaginated(ctx context.Context, tx *gorm.DB, re
 		return nil, 0, err
 	}
 
-	offset := (req.Page - 1) * req.Size
+	page, limit := clampPagination(req.Page, req.Size)
+	offset := (page - 1) * limit
 
 	err := db.
 		Offset(offset).
-		Limit(req.Size).
+		Limit(limit).
 		Order("created_at DESC").
 		Find(&clients).Error
 	if err != nil {
