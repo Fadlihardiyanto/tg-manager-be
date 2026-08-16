@@ -246,7 +246,7 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 	midtransClient, err := uc.getMidtransClient(ctx, client)
 	if err != nil {
 		log.Warn("member order checkout midtrans client init failed", zap.String("client_id", client.ID.String()), zap.Error(err))
-		return nil, helper.NewBadRequest(err.Error())
+		return nil, helper.NewBadRequestWrap(err)
 	}
 
 	// 6. Calculate amounts and apply discount (Member Discount)
@@ -733,7 +733,7 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 	midtransClient, err := uc.getMidtransClient(ctx, client)
 	if err != nil {
 		log.Warn("GetCheckoutDetail: midtrans client init failed", zap.String("client_id", client.ID.String()), zap.Error(err))
-		return nil, helper.NewBadRequest(err.Error())
+		return nil, helper.NewBadRequestWrap(err)
 	}
 
 	var botUsername string
@@ -788,7 +788,7 @@ func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID
 	midtransClient, err := uc.getMidtransClient(ctx, client)
 	if err != nil {
 		log.Warn("CancelPendingOrder: midtrans client init failed", zap.Error(err))
-		return helper.NewBadRequest(err.Error())
+		return helper.NewBadRequestWrap(err)
 	}
 
 	if err := midtransClient.CancelTransaction(ctx, order.ExternalID); err != nil {

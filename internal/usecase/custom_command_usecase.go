@@ -104,7 +104,7 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 
 	// Validasi panjang karakter response_text
 	if err := validateResponseTextLength(req.ResponseType, req.ResponseText); err != nil {
-		return nil, helper.NewBadRequest(err.Error())
+		return nil, helper.NewBadRequestWrap(err)
 	}
 
 	cmd := &entity.CustomCommand{
@@ -209,7 +209,7 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		nextText = *req.ResponseText
 	}
 	if err := validateResponseTextLength(nextType, nextText); err != nil {
-		return nil, helper.NewBadRequest(err.Error())
+		return nil, helper.NewBadRequestWrap(err)
 	}
 
 	if req.ResponseType != nil {

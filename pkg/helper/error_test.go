@@ -1,6 +1,9 @@
 package helper
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestErrNotFound_Error(t *testing.T) {
 	tests := []struct {
@@ -21,6 +24,22 @@ func TestErrNotFound_Error(t *testing.T) {
 				t.Errorf("Error() = %q, want %q", err.Error(), tt.want)
 			}
 		})
+	}
+}
+
+func TestNewBadRequestWrap_PreservesChain(t *testing.T) {
+	cause := errors.New("underlying db failure")
+	err := NewBadRequestWrap(cause)
+
+	if err.Error() != "underlying db failure" {
+		t.Errorf("Error() = %q, want sanitized message", err.Error())
+	}
+	if !errors.Is(err, cause) {
+		t.Error("errors.Is(err, cause) = false, want true (Unwrap must preserve the chain)")
+	}
+	var typed *ErrBadRequest
+	if !errors.As(err, &typed) {
+		t.Error("errors.As to ErrBadRequest = false, want true")
 	}
 }
 

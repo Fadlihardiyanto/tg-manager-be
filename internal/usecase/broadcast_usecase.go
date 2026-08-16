@@ -154,7 +154,7 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 		})
 		if err != nil {
 			log.Error("broadcast usecase: immediate distribution failed", zap.Error(err))
-			return nil, helper.NewBadRequest(err.Error())
+			return nil, helper.NewBadRequestWrap(err)
 		}
 	}
 

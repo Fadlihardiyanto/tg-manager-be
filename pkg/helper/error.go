@@ -23,6 +23,7 @@ func (e *ErrNotFound) Error() string {
 
 type ErrBadRequest struct {
 	Message string
+	Cause   error
 }
 
 func (e *ErrBadRequest) Error() string {
@@ -46,6 +47,12 @@ func (e *ErrBadRequest) Error() string {
 	default:
 		return message
 	}
+}
+
+// Unwrap preserves the cause chain so errors.Is/As can still match the
+// underlying error after user-facing sanitization.
+func (e *ErrBadRequest) Unwrap() error {
+	return e.Cause
 }
 
 type ErrConflict struct {
@@ -152,6 +159,12 @@ func NewNotFound(resource string) error {
 
 func NewBadRequest(message string) error {
 	return &ErrBadRequest{Message: message}
+}
+
+// NewBadRequestWrap sanitizes the user-facing message but keeps the original
+// error in the chain via Cause, so errors.Is/As still match downstream.
+func NewBadRequestWrap(err error) error {
+	return &ErrBadRequest{Message: err.Error(), Cause: err}
 }
 
 func NewConflict(message string) error {
