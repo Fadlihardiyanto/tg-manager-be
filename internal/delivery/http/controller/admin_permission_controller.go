@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
@@ -28,6 +29,7 @@ func NewAdminPermissionController(
 // GET /admin/v1/permissions
 func (c *AdminPermissionController) List(ctx fiber.Ctx) error {
 	var req model.AdminPermissionListRequest
+	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
 	permissions, err := c.permissionUC.ListPermissions(ctx.Context(), &req)
 	if err != nil {
 		c.log.Error("admin permission controller: list", zap.Error(err))
@@ -46,6 +48,7 @@ func (c *AdminPermissionController) GetByID(ctx fiber.Ctx) error {
 	}
 
 	req := &model.AdminPermissionGetRequest{PermissionID: id}
+	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
 	permission, err := c.permissionUC.GetPermission(ctx.Context(), req)
 	if err != nil {
 		c.log.Error("admin permission controller: get by id", zap.Error(err))

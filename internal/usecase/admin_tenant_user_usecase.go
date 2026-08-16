@@ -45,6 +45,11 @@ func NewAdminTenantUserUseCase(
 	log *zap.Logger,
 	bcryptCost int,
 ) IAdminTenantUserUseCase {
+	// Fail-fast: db/log dipakai di semua method — zero value = panic di
+	// runtime tanpa jejak wiring yang salah.
+	if db == nil || log == nil {
+		panic("admin tenant user usecase: db and log are required")
+	}
 	return &adminTenantUserUseCase{
 		db:             db,
 		clientRepo:     clientRepo,
@@ -243,21 +248,27 @@ func (uc *adminTenantUserUseCase) DeleteTenantUser(ctx context.Context, req *mod
 		return err
 	}
 
-	if err := uc.clientUserRepo.SoftDelete(ctx, uc.db.Gorm, clientUser.ID); err != nil {
-		log.Error("admin tenant user delete client user failed", zap.Error(err))
-		return err
-	}
-
-	remaining, err := uc.clientUserRepo.CountActiveByUserID(ctx, uc.db.Gorm, clientUser.UserID)
-	if err != nil {
-		log.Error("admin tenant user delete count failed", zap.Error(err))
-		return err
-	}
-	if remaining == 0 {
-		if err := uc.userRepo.SoftDelete(ctx, uc.db.Gorm, clientUser.UserID); err != nil {
-			log.Error("admin tenant user delete user failed", zap.Error(err))
+	// Cascade dalam satu transaction — kegagalan di tengah tidak boleh
+	// meninggalkan client-user terhapus tapi user aktif yatim.
+	err = uc.db.Gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := uc.clientUserRepo.SoftDelete(ctx, tx, clientUser.ID); err != nil {
 			return err
 		}
+
+		remaining, err := uc.clientUserRepo.CountActiveByUserID(ctx, tx, clientUser.UserID)
+		if err != nil {
+			return err
+		}
+		if remaining == 0 {
+			if err := uc.userRepo.SoftDelete(ctx, tx, clientUser.UserID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Error("admin tenant user delete cascade failed", zap.Error(err))
+		return err
 	}
 
 	log.Info("admin tenant user delete success", zap.String("user_id", req.UserID.String()))

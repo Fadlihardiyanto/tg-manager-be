@@ -65,9 +65,9 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("custom command usecase create start", zap.String("client_id", clientID.String()))
 
-	// Validasi Bot
+	// Validasi Bot (botRepo return (nil, nil) saat not-found — guard bot == nil)
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, req.BotID)
-	if err != nil {
+	if err != nil || bot == nil {
 		return nil, helper.NewBadRequest("Bot tidak valid")
 	}
 	if bot.ClientID != clientID {
@@ -144,6 +144,9 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 }
 
 func (uc *CustomCommandUseCase) FindAllByClient(ctx context.Context, clientID uuid.UUID, req *model.CustomCommandFilterRequest) ([]model.CustomCommandResponse, int64, error) {
+	if req == nil {
+		return nil, 0, helper.NewBadRequest("filter tidak valid")
+	}
 	commands, err := uc.commandRepo.FindByClientID(ctx, uc.db.Gorm, clientID, req.BotID, req.IsActive, req.Page, req.Limit)
 	if err != nil {
 		return nil, 0, err
@@ -229,7 +232,9 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 				}
 			}
 		}
-		cmd.FileUrl = req.FileUrl
+		// ponytail: salin nilai, jangan simpan pointer milik caller ke entity
+		fileUrl := *req.FileUrl
+		cmd.FileUrl = &fileUrl
 		// Reset telegram_file_id karena file mungkin berubah
 		cmd.TelegramFileID = nil
 	}

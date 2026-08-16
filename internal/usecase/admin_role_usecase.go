@@ -275,8 +275,11 @@ func (uc *adminRoleUseCase) AssignRolesToAdmin(ctx context.Context, req *model.A
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role assign roles start", zap.String("admin_id", req.AdminID.String()))
 
-	// Assign role hanya bisa dilakukan oleh superadmin
-	if !rbac.IsSuperAdmin(req.CallerRoles) {
+	// Assign role hanya bisa dilakukan oleh superadmin.
+	// Fix: CallerRoles tidak pernah diisi controller (request hanya membawa
+	// CallerPermissions) — IsSuperAdmin selalu false → 403 permanen.
+	// Gunakan permission roles.update (konsisten dengan SyncPermissions).
+	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
 		log.Warn("admin role assign roles forbidden")
 		return helper.NewForbidden("forbidden: only superadmin can assign roles")
 	}
@@ -293,8 +296,10 @@ func (uc *adminRoleUseCase) AssignRoleToAdmin(ctx context.Context, req *model.Ad
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role assign single role start", zap.String("admin_id", req.AdminID.String()), zap.String("role_id", req.RoleID.String()))
 
-	// Only superadmin can assign roles
-	if !rbac.IsSuperAdmin(req.CallerPermissions) {
+	// Only superadmin can assign roles.
+	// Fix: IsSuperAdmin(CallerPermissions) selalu false (butuh roles, bukan
+	// permissions) → 403 permanen. Pakai permission roles.update.
+	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
 		log.Warn("admin role assign single role forbidden")
 		return helper.NewForbidden("forbidden: only superadmin can assign roles")
 	}
@@ -323,8 +328,10 @@ func (uc *adminRoleUseCase) RevokeRoleFromAdmin(ctx context.Context, req *model.
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role revoke single role start", zap.String("admin_id", req.AdminID.String()), zap.String("role_id", req.RoleID.String()))
 
-	// Only superadmin can revoke roles
-	if !rbac.IsSuperAdmin(req.CallerPermissions) {
+	// Only superadmin can revoke roles.
+	// Fix: IsSuperAdmin(CallerPermissions) selalu false → 403 permanen.
+	// Pakai permission roles.update.
+	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
 		log.Warn("admin role revoke single role forbidden")
 		return helper.NewForbidden("forbidden: only superadmin can revoke roles")
 	}

@@ -176,10 +176,16 @@ func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRe
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("tenant auth login start", zap.String("email", helper.HashIdentifier(req.Email)))
 
-	// Rate limiting: max 5 attempts per email per minute
+	// Rate limiting: max 5 attempts per email per minute.
+	// Fail-closed: Redis error menolak login daripada melewati rate limit
+	// (attacker tidak boleh lolos cap hanya karena Redis bermasalah).
 	rateLimitKey := fmt.Sprintf("auth:rate_limit:tenant_login:%s", req.Email)
 	count, err := uc.redis.Incr(ctx, rateLimitKey).Result()
-	if err == nil && count == 1 {
+	if err != nil {
+		log.Error("tenant auth login rate limit check failed", zap.Error(err))
+		return nil, helper.NewTooManyRequestsError("Sistem sedang sibuk. Silakan coba lagi nanti.")
+	}
+	if count == 1 {
 		uc.redis.Expire(ctx, rateLimitKey, 1*time.Minute)
 	}
 	if count > 5 {
@@ -708,10 +714,10 @@ func (uc *TenantAuthUseCase) GetProfile(ctx context.Context, userID uuid.UUID, c
 				role = clientUser.Role
 				needsOnboarding = false
 
-				// Fetch permissions
+				// Fetch permissions (salin — jangan kirim slice repo langsung)
 				perms, err := uc.permissionRepo.FindPermissionNamesByRole(ctx, uc.db.Gorm, role)
 				if err == nil {
-					permissions = perms
+					permissions = append([]string(nil), perms...)
 				} else {
 					log.Warn("failed to fetch permissions for role", zap.String("role", role), zap.Error(err))
 				}

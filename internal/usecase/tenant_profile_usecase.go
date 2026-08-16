@@ -97,7 +97,11 @@ func (uc *tenantProfileUseCase) InitiateKeyExchange(ctx context.Context, clientI
 func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Context, clientID uuid.UUID, req *model.PaymentSettingsUpdateEncryptedRequest) (*model.PaymentSettingsResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	key := fmt.Sprintf("ecdh:%s:%s", clientID.String(), req.SessionID.String())
-	raw, err := uc.redisClient.Get(ctx, key).Result()
+	// GetDel: atomik get-and-delete — dua request konkuren dengan session yang
+	// sama: satu dapat value, satu redis.Nil. Tutup race check-then-delete
+	// (replay session). Session single-use dibakar sebelum decrypt (sama dengan
+	// perilaku Del lama) — user bisa minta session baru.
+	raw, err := uc.redisClient.GetDel(ctx, key).Result()
 	if err != nil {
 		return nil, helper.NewBadRequest("Sesi key exchange tidak valid atau sudah kadaluarsa")
 	}
@@ -135,8 +139,8 @@ func (uc *tenantProfileUseCase) UpdatePaymentSettingsEncrypted(ctx context.Conte
 		return nil, helper.NewUnprocessable("Gagal derive encryption key")
 	}
 
-	if err := uc.redisClient.Del(ctx, key).Err(); err != nil {
-		log.Warn("failed to delete ECDH session", zap.Error(err))
+	if req.IsSandbox == nil {
+		return nil, helper.NewBadRequest("is_sandbox wajib diisi")
 	}
 
 	encrypted := &paymentSettingsInput{
@@ -225,7 +229,9 @@ func (uc *tenantProfileUseCase) applyPaymentSettings(ctx context.Context, client
 		client.MidtransSandboxClientKey = &enc
 	}
 	if in.sandboxMerchantID != nil && *in.sandboxMerchantID != "" {
-		client.MidtransSandboxMerchantID = in.sandboxMerchantID
+		// ponytail: salin nilai, jangan simpan pointer milik caller ke entity
+		merchantID := *in.sandboxMerchantID
+		client.MidtransSandboxMerchantID = &merchantID
 	}
 	if in.productionServerKey != nil && *in.productionServerKey != "" {
 		if err := midtrans.ValidateServerKey(ctx, *in.productionServerKey, false); err != nil {
@@ -245,7 +251,9 @@ func (uc *tenantProfileUseCase) applyPaymentSettings(ctx context.Context, client
 		client.MidtransProductionClientKey = &enc
 	}
 	if in.productionMerchantID != nil && *in.productionMerchantID != "" {
-		client.MidtransProductionMerchantID = in.productionMerchantID
+		// ponytail: salin nilai, jangan simpan pointer milik caller ke entity
+		merchantID := *in.productionMerchantID
+		client.MidtransProductionMerchantID = &merchantID
 	}
 
 	client.MidtransIsSandbox = in.isSandbox
@@ -260,6 +268,10 @@ func (uc *tenantProfileUseCase) applyPaymentSettings(ctx context.Context, client
 func (uc *tenantProfileUseCase) UpdatePaymentSettings(ctx context.Context, clientID uuid.UUID, req *model.PaymentSettingsUpdateRequest) (*model.PaymentSettingsResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("updating payment settings", zap.String("client_id", clientID.String()))
+
+	if req.IsSandbox == nil {
+		return nil, helper.NewBadRequest("is_sandbox wajib diisi")
+	}
 
 	return uc.applyPaymentSettings(ctx, clientID, &paymentSettingsInput{
 		sandboxServerKey:     req.SandboxServerKey,
@@ -372,6 +384,11 @@ func toPaymentSettingsResponse(client *entity.Client) *model.PaymentSettingsResp
 func maskKey(key string) string {
 	if len(key) <= 4 {
 		return "****"
+	}
+	// Key pendek (5-8): len(key)-8 <= 0 membuat Repeat("") — seluruh key
+	// ter-reveal. Mask penuh untuk key pendek.
+	if len(key) <= 8 {
+		return strings.Repeat("*", len(key))
 	}
 	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
 }

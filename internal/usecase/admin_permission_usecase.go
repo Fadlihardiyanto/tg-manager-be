@@ -33,6 +33,12 @@ func (uc *adminPermissionUseCase) ListPermissions(ctx context.Context, req *mode
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin permission usecase list start")
 
+	// Authz — konsisten dengan sibling admin usecase (katalog permission
+	// tidak boleh dibaca oleh admin mana pun).
+	if err := requirePermission(req.CallerPermissions, "roles.read"); err != nil {
+		return nil, err
+	}
+
 	permissions, err := uc.permissionRepo.FindAll(ctx, uc.db.Gorm)
 	if err != nil {
 		log.Error("admin permission usecase list failed", zap.Error(err))
@@ -47,6 +53,11 @@ func (uc *adminPermissionUseCase) ListPermissions(ctx context.Context, req *mode
 func (uc *adminPermissionUseCase) GetPermission(ctx context.Context, req *model.AdminPermissionGetRequest) (*model.AdminPermissionResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin permission usecase get start", zap.String("permission_id", req.PermissionID.String()))
+
+	// Authz — konsisten dengan sibling admin usecase.
+	if err := requirePermission(req.CallerPermissions, "roles.read"); err != nil {
+		return nil, err
+	}
 
 	permission, err := uc.permissionRepo.FindByID(ctx, uc.db.Gorm, req.PermissionID)
 	if err != nil {

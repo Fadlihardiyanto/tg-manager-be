@@ -96,13 +96,15 @@ func (uc *TelegramGroupUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	}
 
 	// 2. Verify Bot belongs to client
+	// botRepo.FindByID return (nil, nil) saat bot tidak ditemukan / soft-deleted
+	// (konvensi repo — bukan gorm.ErrRecordNotFound), jadi guard bot == nil.
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, req.BotID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, helper.NewNotFound("Bot tidak ditemukan")
-		}
 		log.Error("group usecase create find bot failed", zap.Error(err))
 		return nil, err
+	}
+	if bot == nil {
+		return nil, helper.NewNotFound("Bot tidak ditemukan")
 	}
 
 	if bot.ClientID != clientID {
@@ -223,9 +225,12 @@ func (uc *TelegramGroupUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		group.Name = req.Name
 	}
 	if req.BotID != uuid.Nil {
-		// Verify new Bot belongs to client
+		// Verify new Bot belongs to client (botRepo return (nil, nil) saat not-found)
 		bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, req.BotID)
-		if err != nil || bot.ClientID != clientID {
+		if err != nil {
+			return nil, err
+		}
+		if bot == nil || bot.ClientID != clientID {
 			return nil, helper.NewBadRequest("Bot tidak valid")
 		}
 		group.BotUUID = req.BotID
@@ -297,6 +302,13 @@ func (uc *TelegramGroupUseCase) Disconnect(ctx context.Context, clientID uuid.UU
 		log.Error("group usecase disconnect find bot failed", zap.Error(err))
 		return fmt.Errorf("gagal menemukan bot")
 	}
+	if bot == nil {
+		log.Warn("group usecase disconnect bot not found, marking group inactive",
+			zap.String("group_id", groupID.String()))
+		group.IsActive = false
+		group.InactiveReason = "Bot deleted"
+		return uc.groupRepo.Update(ctx, uc.db.Gorm, group)
+	}
 
 	token, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
 	if err != nil {
@@ -331,14 +343,14 @@ func (uc *TelegramGroupUseCase) GenerateConnectToken(ctx context.Context, client
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("generating group connect token", zap.String("client_id", clientID.String()), zap.String("bot_id", botID.String()))
 
-	// 1. Verify Bot belongs to client
+	// 1. Verify Bot belongs to client (botRepo return (nil, nil) saat not-found)
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, botID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", "", helper.NewNotFound("Bot tidak ditemukan")
-		}
 		log.Error("group usecase generate token find bot failed", zap.Error(err))
 		return "", "", err
+	}
+	if bot == nil {
+		return "", "", helper.NewNotFound("Bot tidak ditemukan")
 	}
 
 	if bot.ClientID != clientID {
@@ -347,6 +359,10 @@ func (uc *TelegramGroupUseCase) GenerateConnectToken(ctx context.Context, client
 
 	// 2. Generate random 6 characters code
 	code := uc.generateRandomCode(6)
+	if code == "" {
+		log.Error("group usecase generate token: failed to generate secure code")
+		return "", "", fmt.Errorf("gagal membuat token koneksi")
+	}
 
 	// 3. Save to Redis
 	redisKey := fmt.Sprintf("connect_group:%s", code)
@@ -372,14 +388,11 @@ func (uc *TelegramGroupUseCase) GenerateConnectToken(ctx context.Context, client
 func (uc *TelegramGroupUseCase) generateRandomCode(length int) string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // avoid confusing characters
 	b := make([]byte, length)
-	_, err := rand.Read(b)
-	if err != nil {
-		uc.log.Error("group usecase: crypto/rand failed, falling back to time-seeded code", zap.Error(err))
-		// ponytail: crypto/rand failure is virtually unreachable; fall back to
-		// non-crypto pseudo-random rather than failing the connect flow
-		for i := range b {
-			b[i] = byte(time.Now().UnixNano() >> (i * 3) % 256)
-		}
+	if _, err := rand.Read(b); err != nil {
+		// ponytail: crypto/rand failure is virtually unreachable — gagal flow
+		// daripada mengeluarkan kode yang bisa ditebak (time-seeded).
+		uc.log.Error("group usecase: crypto/rand failed", zap.Error(err))
+		return ""
 	}
 	for i := range b {
 		b[i] = charset[int(b[i])%len(charset)]
@@ -429,6 +442,10 @@ func (uc *TelegramGroupUseCase) SyncMemberCounts(ctx context.Context) error {
 				uc.log.Error("group usecase sync member counts panicked", zap.Any("panic", r))
 			}
 		}()
+		if uc.syncFunc == nil {
+			uc.log.Warn("group usecase sync member counts: syncFunc not configured, skipping")
+			return
+		}
 		uc.syncFunc(context.Background())
 	}()
 

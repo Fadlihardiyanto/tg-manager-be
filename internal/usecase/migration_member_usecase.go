@@ -181,9 +181,13 @@ func (uc *MigrationMemberUseCase) ImportMembers(ctx context.Context, clientID uu
 			if err != nil {
 				log.Warn("migration member import quota check failed", zap.Error(err))
 			} else if limit != -1 && current+int64(len(toInsert)) > int64(limit) {
+				remaining := int64(limit) - current
+				if remaining < 0 {
+					remaining = 0
+				}
 				return nil, helper.NewBadRequest(fmt.Sprintf(
 					"Jumlah member yang diimpor melebihi batas maksimum paket Anda (Sisa kuota: %d member). Silakan upgrade paket.",
-					limit-int(current),
+					remaining,
 				))
 			}
 		}

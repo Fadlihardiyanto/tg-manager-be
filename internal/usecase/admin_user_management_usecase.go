@@ -45,6 +45,11 @@ func NewAdminUserManagementUseCase(
 	log *zap.Logger,
 	bcryptCost int,
 ) IAdminUserManagementUseCase {
+	// Fail-fast: db/log dipakai di semua method — zero value = panic di
+	// runtime tanpa jejak wiring yang salah.
+	if db == nil || log == nil {
+		panic("admin user management usecase: db and log are required")
+	}
 	return &adminUserManagementUseCase{
 		db:         db,
 		adminRepo:  adminRepo,

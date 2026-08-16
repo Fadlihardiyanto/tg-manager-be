@@ -115,6 +115,12 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 
 	// 2. Simpan entitas Broadcast
 	broadcastID := uuid.New()
+	// ponytail: salin nilai, jangan simpan pointer milik caller ke entity
+	var scheduledAt *time.Time
+	if req.ScheduledAt != nil {
+		s := *req.ScheduledAt
+		scheduledAt = &s
+	}
 	broadcast := &entity.Broadcast{
 		ID:          broadcastID,
 		ClientID:    clientID,
@@ -123,7 +129,7 @@ func (uc *BroadcastUseCase) Create(ctx context.Context, clientID uuid.UUID, req 
 		MessageType: req.MessageType,
 		MessageText: req.MessageText,
 		FileUrl:     req.FileUrl,
-		ScheduledAt: req.ScheduledAt,
+		ScheduledAt: scheduledAt,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -297,6 +303,10 @@ func (uc *BroadcastUseCase) List(ctx context.Context, clientID uuid.UUID, botID 
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("broadcast usecase: listing history", zap.String("client_id", clientID.String()))
 
+	if filter == nil {
+		filter = &model.BroadcastFilterRequest{}
+	}
+
 	// Validasi Bot milik Tenant
 	bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, botID)
 	if err != nil || bot == nil {
@@ -353,6 +363,6 @@ func (uc *BroadcastUseCase) GetReach(ctx context.Context, clientID uuid.UUID, bo
 
 	return &model.BroadcastReachResponse{
 		GroupCount:  activeCount,
-		MemberCount: int(memberCount),
+		MemberCount: clampToInt(memberCount),
 	}, nil
 }

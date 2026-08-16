@@ -578,6 +578,12 @@ func (uc *TelegramWebhookUseCase) handleConnectCommand(ctx context.Context, bot 
 		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Bot ini belum menjadi administrator di grup. Silakan jadikan bot sebagai administrator grup terlebih dahulu, lalu coba lagi.")
 	}
 
+	// Redis wajib ada untuk verifikasi token koneksi (mirror guard getCustomCommand)
+	if uc.redisClient == nil {
+		log.Warn("telegram webhook: redis not configured, cannot verify connect token")
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Sistem tidak dapat memproses kode koneksi saat ini.")
+	}
+
 	// Verify token in Redis
 	redisKey := fmt.Sprintf("connect_group:%s", token)
 	val, err := uc.redisClient.Get(ctx, redisKey).Result()
@@ -672,6 +678,12 @@ func (uc *TelegramWebhookUseCase) handleTransferCommand(ctx context.Context, bot
 		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Hanya Administrator grup yang dapat menjalankan perintah ini.")
 	}
 
+	// Redis wajib ada untuk verifikasi token transfer (mirror guard getCustomCommand)
+	if uc.redisClient == nil {
+		log.Warn("telegram webhook: redis not configured, cannot verify transfer token")
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Sistem tidak dapat memproses kode transfer saat ini.")
+	}
+
 	// Verify token in Redis
 	redisKey := fmt.Sprintf("connect_group:%s", token)
 	val, err := uc.redisClient.Get(ctx, redisKey).Result()
@@ -748,6 +760,21 @@ func (uc *TelegramWebhookUseCase) handleTransferCommand(ctx context.Context, bot
 
 func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot *entity.TelegramBot, cb *tgbotapi.CallbackQuery) error {
 	log := logger.FromContext(ctx, uc.log)
+
+	// callback_query.message bisa null di Telegram API (message sudah dihapus
+	// sebelum tombol ditekan) — untrusted input, jangan deref tanpa guard.
+	if cb.Message == nil {
+		log.Warn("telegram webhook: callback query without message, skipping",
+			zap.String("callback_id", cb.ID))
+		return nil
+	}
+
+	// Redis wajib ada untuk verifikasi token (mirror guard getCustomCommand)
+	if uc.redisClient == nil {
+		log.Warn("telegram webhook: redis not configured, cannot process connect callback")
+		return nil
+	}
+
 	decryptedToken, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
 	if err != nil {
 		return err
@@ -953,6 +980,12 @@ func (uc *TelegramWebhookUseCase) handleConnectCallback(ctx context.Context, bot
 func (uc *TelegramWebhookUseCase) handleDeepLinkConnect(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message, code string) error {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("deep link connect", zap.Int64("chat_id", msg.Chat.ID))
+
+	// Redis wajib ada untuk verifikasi token (mirror guard getCustomCommand)
+	if uc.redisClient == nil {
+		log.Warn("telegram webhook: redis not configured, cannot verify deep link token")
+		return uc.sendReply(ctx, bot, msg.Chat.ID, "❌ Sistem tidak dapat memproses kode koneksi saat ini.")
+	}
 
 	// Verify token in Redis
 	redisKey := fmt.Sprintf("connect_group:%s", code)

@@ -275,8 +275,12 @@ func (uc *platformPlanUseCase) Delete(ctx context.Context, id uuid.UUID, callerP
 		return helper.NewBadRequest("cannot delete the default 'free' plan")
 	}
 
-	// TODO: cek apakah ada client aktif yang pakai plan ini sebelum hapus
-	clientCount, _ := uc.clientBillingRepo.CountActiveByPlanID(ctx, uc.db.Gorm, id)
+	// Cek apakah ada client aktif yang pakai plan ini sebelum hapus —
+	// error query harus menggagalkan delete (jangan silent clientCount=0).
+	clientCount, err := uc.clientBillingRepo.CountActiveByPlanID(ctx, uc.db.Gorm, id)
+	if err != nil {
+		return fmt.Errorf("failed to check active clients: %w", err)
+	}
 	if clientCount > 0 {
 		return helper.NewConflict(fmt.Sprintf("cannot delete plan: %d active clients are using this plan", clientCount))
 	}

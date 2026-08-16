@@ -357,6 +357,9 @@ func (uc *memberUseCase) ExtendMember(ctx context.Context, clientID uuid.UUID, u
 		if sub.Status != "active" {
 			return helper.NewBadRequest("Hanya langganan aktif yang dapat diperpanjang")
 		}
+		if req.AdditionalDays <= 0 {
+			return helper.NewBadRequest("additional_days harus lebih dari 0")
+		}
 
 		oldExpiry := sub.ExpiredAt
 		sub.ExpiredAt = sub.ExpiredAt.AddDate(0, 0, req.AdditionalDays)
@@ -398,6 +401,10 @@ func (uc *memberUseCase) BulkExtendMembers(ctx context.Context, clientID uuid.UU
 				skipped = true // not owned or not active → skip
 				return nil
 			}
+			if item.AdditionalDays <= 0 {
+				skipped = true // nilai tidak valid → skip (best-effort bulk)
+				return nil
+			}
 
 			oldExpiry := sub.ExpiredAt
 			sub.ExpiredAt = sub.ExpiredAt.AddDate(0, 0, item.AdditionalDays)
@@ -436,6 +443,7 @@ func (uc *memberUseCase) writeExtendAuditLog(ctx context.Context, tx *gorm.DB, c
 	})
 	if marshalErr != nil {
 		log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))
+		return marshalErr
 	}
 	auditLog := entity.AuditLog{
 		ClientID:   &clientID,
@@ -448,6 +456,9 @@ func (uc *memberUseCase) writeExtendAuditLog(ctx context.Context, tx *gorm.DB, c
 	}
 	if err := uc.auditLogRepo.Create(ctx, tx, &auditLog); err != nil {
 		log.Warn("failed to create audit log for extend", zap.Error(err))
+		// Propagasi — konsisten dengan writeKickAuditLog: extend tanpa audit
+		// trail = kehilangan jejak; rollback transaction.
+		return err
 	}
 	return nil
 }

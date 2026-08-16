@@ -199,7 +199,20 @@ func (uc *AdminAuthUseCase) Verify2FA(ctx context.Context, req *model.AdminVerif
 		return nil, err
 	}
 
-	// 2. Verify OTP code
+	// 2. Verify OTP code — batasi percobaan brute-force (max 5 per temp token)
+	attemptKey := fmt.Sprintf("auth:2fa_attempts:%s", req.TempToken)
+	attempts, incrErr := uc.redis.Incr(ctx, attemptKey).Result()
+	if incrErr != nil {
+		log.Error("admin auth verify 2fa attempt counter failed", zap.Error(incrErr))
+		return nil, err
+	}
+	uc.redis.Expire(ctx, attemptKey, 10*time.Minute)
+	if attempts > 5 {
+		log.Warn("admin auth verify 2fa too many attempts", zap.String("admin_id", adminID.String()))
+		uc.redis.Del(ctx, redisKey)
+		return nil, helper.NewTooManyRequestsError("Terlalu banyak percobaan kode OTP. Silakan login ulang.")
+	}
+
 	if err := uc.otpService.VerifyOTP(ctx, "admin_login_2fa", adminID.String(), req.OTPCode); err != nil {
 		log.Warn("admin auth verify 2fa otp invalid", zap.String("admin_id", adminID.String()))
 		return nil, err
@@ -358,11 +371,14 @@ func (uc *AdminAuthUseCase) Logout(ctx context.Context, req *model.AdminLogoutRe
 		return err
 	}
 
-	// Blacklist the JTI
+	// Blacklist the JTI.
+	// Token tanpa exp claim / clock skew → time.Until <= 0 → blacklist tidak
+	// pernah di-set → logout gagal merevoke. Default TTL mencegah itu.
 	expiration := time.Until(claims.ExpiresAt.Time)
-	if expiration > 0 {
-		uc.redis.Set(ctx, "auth:blacklist:"+claims.ID, "logged_out", expiration)
+	if expiration <= 0 {
+		expiration = 24 * time.Hour
 	}
+	uc.redis.Set(ctx, "auth:blacklist:"+claims.ID, "logged_out", expiration)
 	log.Info("admin auth logout success", zap.String("admin_id", req.AdminID.String()))
 
 	return nil
@@ -384,12 +400,13 @@ func (uc *AdminAuthUseCase) finalizeLogin(ctx context.Context, adminID uuid.UUID
 	uc.adminRepo.ResetFailedLogin(ctx, uc.db.Gorm, adminID)
 	uc.adminRepo.UpdateLoginInfo(ctx, uc.db.Gorm, adminID, ip, time.Now())
 
-	// 3. Fetch flat permissions
+	// 3. Fetch flat permissions (salin — jangan kirim slice repo ke JWT claims)
 	permissions, err := uc.adminPermissionRepo.FindPermissionNamesByAdminUserID(ctx, uc.db.Gorm, adminID)
 	if err != nil {
 		log.Error("admin auth finalize login permissions failed", zap.Error(err))
 		return nil, err
 	}
+	permissions = append([]string(nil), permissions...)
 
 	// Extract role names for JWT claims
 	roles := []string{}

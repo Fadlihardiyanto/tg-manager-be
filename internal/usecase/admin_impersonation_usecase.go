@@ -40,6 +40,11 @@ func NewAdminImpersonationUseCase(
 	jwtConfig *pkg_jwt.JWTConfig,
 	log *zap.Logger,
 ) IAdminImpersonationUseCase {
+	// Fail-fast: db/log/jwtConfig dipakai di semua method — zero value =
+	// panic di runtime tanpa jejak wiring yang salah.
+	if db == nil || log == nil || jwtConfig == nil {
+		panic("admin impersonation usecase: db, log and jwtConfig are required")
+	}
 	return &adminImpersonationUseCase{
 		db:                   db,
 		adminRepo:            adminRepo,
@@ -52,6 +57,9 @@ func NewAdminImpersonationUseCase(
 
 func (uc *adminImpersonationUseCase) Start(ctx context.Context, req *model.AdminImpersonateClientActionRequest) (*model.AdminImpersonateResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
+	if req == nil || req.Payload == nil {
+		return nil, helper.NewBadRequest("payload impersonation wajib diisi")
+	}
 	if !rbac.HasPermission(req.Payload.CallerPermissions, "clients.impersonate") {
 		return nil, helper.NewForbiddenPermission("clients.impersonate")
 	}
@@ -105,6 +113,7 @@ func (uc *adminImpersonationUseCase) ListByAdmin(ctx context.Context, adminUserI
 		return nil, 0, helper.NewForbiddenPermission("clients.read")
 	}
 
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	logs, total, err := uc.impersonationLogRepo.FindByAdminID(ctx, uc.db.Gorm, adminUserID, offset, limit)
 	if err != nil {
@@ -119,6 +128,7 @@ func (uc *adminImpersonationUseCase) ListByClient(ctx context.Context, clientID 
 		return nil, 0, helper.NewForbiddenPermission("clients.read")
 	}
 
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	logs, total, err := uc.impersonationLogRepo.FindByClientID(ctx, uc.db.Gorm, clientID, offset, limit)
 	if err != nil {

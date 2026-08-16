@@ -74,7 +74,7 @@ func (uc *FeatureGateUseCase) CanUseFeature(ctx context.Context, clientID uuid.U
 		return false, nil
 	}
 
-	fmt.Println("billing plan", billing.Plan)
+	uc.log.Debug("feature gate: check plan flag", zap.String("feature", featureKey), zap.Any("plan", billing.Plan))
 	return check(&billing.Plan), nil
 }
 
@@ -84,6 +84,7 @@ var resourceKeyMap = map[string]func(*entity.PlatformPlan) int{
 	"packages":        func(p *entity.PlatformPlan) int { return p.MaxPackages },
 	"custom_commands": func(p *entity.PlatformPlan) int { return p.MaxCustomCommands },
 	"broadcasts":      func(p *entity.PlatformPlan) int { return p.MaxBroadcasts },
+	"members":         func(p *entity.PlatformPlan) int { return p.MaxMembers },
 }
 
 func (uc *FeatureGateUseCase) CheckQuota(ctx context.Context, clientID uuid.UUID, resourceType string) (bool, int64, int, error) {
@@ -124,6 +125,8 @@ func (uc *FeatureGateUseCase) countResource(ctx context.Context, clientID uuid.U
 		return uc.customCommandRepo.CountByClientID(ctx, uc.db.Gorm, clientID, nil, nil)
 	case "broadcasts":
 		return uc.broadcastRepo.CountByClientID(ctx, uc.db.Gorm, clientID, nil)
+	case "members":
+		return uc.tenantAnalyticsRepo.CountActiveMembers(ctx, uc.db.Gorm, clientID)
 	default:
 		return 0, fmt.Errorf("unknown resource type: %s", resourceType)
 	}
@@ -156,11 +159,11 @@ func (uc *FeatureGateUseCase) GetUsage(ctx context.Context, clientID uuid.UUID) 
 	}
 
 	return &model.PlatformPlanUsage{
-		Bots:           int(bots),
-		Groups:         int(groups),
-		Packages:       int(packages),
-		Members:        int(members),
-		CustomCommands: int(commands),
-		Broadcasts:     int(broadcasts),
+		Bots:           clampToInt(bots),
+		Groups:         clampToInt(groups),
+		Packages:       clampToInt(packages),
+		Members:        clampToInt(members),
+		CustomCommands: clampToInt(commands),
+		Broadcasts:     clampToInt(broadcasts),
 	}, nil
 }

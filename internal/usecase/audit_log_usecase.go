@@ -63,6 +63,7 @@ func (uc *auditLogUseCase) Record(ctx context.Context, tx *gorm.DB, clientID *uu
 
 func (uc *auditLogUseCase) GetLogsByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.AuditLogResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	logs, total, err := uc.auditRepo.FindAllByClient(ctx, uc.db, clientID, limit, offset)
 	if err != nil {
@@ -75,6 +76,7 @@ func (uc *auditLogUseCase) GetLogsByClient(ctx context.Context, clientID uuid.UU
 
 func (uc *auditLogUseCase) GetPlatformLogs(ctx context.Context, page, limit int) ([]model.AuditLogResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
+	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
 	logs, total, err := uc.auditRepo.FindAllPlatform(ctx, uc.db, limit, offset)
 	if err != nil {

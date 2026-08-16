@@ -272,6 +272,7 @@ func (c *AdminUserController) SyncRoles(ctx fiber.Ctx) error {
 	callerRoles := middleware.GetAdminRoles(ctx)
 	req.AdminID = adminID
 	req.CallerRoles = callerRoles
+	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
 
 	if err := c.adminRoleUC.AssignRolesToAdmin(ctx.Context(), &req); err != nil {
 		log.Error("admin user sync roles failed", zap.Error(err))

@@ -48,6 +48,11 @@ func NewAdminTenantUseCase(
 	log *zap.Logger,
 	bcryptCost int,
 ) IAdminTenantUseCase {
+	// Fail-fast: db/log dipakai di semua method — zero value = panic di
+	// runtime tanpa jejak wiring yang salah.
+	if db == nil || log == nil {
+		panic("admin tenant usecase: db and log are required")
+	}
 	return &adminTenantUseCase{
 		db:             db,
 		clientRepo:     clientRepo,
