@@ -167,6 +167,13 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 		h.logger.Error("expiry reminder handler: failed to send dm",
 			append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Error(err))...,
 		)
+		// Error permanen (chat not found / bot diblokir / bot tidak bisa
+		// memulai percakapan): drop event — DLQ-loop tidak akan pernah sukses.
+		if telegram.IsPermanentError(err) {
+			h.logger.Warn("expiry reminder handler: permanent telegram error, dropping event",
+				append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
+			return nil
+		}
 		return fmt.Errorf("expiry reminder handler: failed to send dm: %w", err)
 	}
 

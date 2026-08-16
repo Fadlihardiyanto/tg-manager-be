@@ -273,6 +273,15 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		}
 		if _, err := dmClient.Send(ctx, msg); err != nil {
 			h.logger.Error("telegram action handler: failed to send dm", append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Error(err))...)
+			// Error permanen (chat not found / bot diblokir / bot tidak bisa
+			// memulai percakapan): retry tidak akan pernah sukses — drop event
+			// (terminal) supaya tidak DLQ-loop selamanya. Subscription tetap
+			// aktif; user bisa dapat link via admin/ulang.
+			if telegram.IsPermanentError(err) {
+				h.logger.Warn("telegram action handler: permanent telegram error, dropping event",
+					append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
+				return nil
+			}
 			return fmt.Errorf("failed to send dm: %w", err)
 		}
 	} else {

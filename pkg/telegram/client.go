@@ -130,6 +130,20 @@ func (f *botFactoryImpl) cleanupStaleLimitersLocked(now time.Time) {
 	}
 }
 
+// IsPermanentError mengembalikan true untuk error Telegram yang tidak akan
+// pernah sukses walau di-retry: chat/user tidak ditemukan (400), token bot
+// tidak valid (401), atau bot diblokir / tidak bisa memulai percakapan /
+// bukan anggota (403). 429 (rate limit) TIDAK termasuk — itu transient.
+// Handler harus men-DROP event (terminal) alih-alih mengembalikan error,
+// supaya tidak masuk DLQ dan di-loop ulang selamanya.
+func IsPermanentError(err error) bool {
+	var apiErr *tgbotapi.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.Code == 400 || apiErr.Code == 401 || apiErr.Code == 403
+}
+
 // retryOnRateLimit handles HTTP 429 Too Many Requests errors by sleeping for the required duration.
 func (c *botClientImpl) retryOnRateLimit(ctx context.Context, operation func() error) error {
 	maxRetries := 3

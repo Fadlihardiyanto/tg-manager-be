@@ -57,6 +57,11 @@ func (h *MySubHandler) Execute(ctx context.Context, bot *entity.TelegramBot, msg
 		zap.String("bot_id", bot.ID.String()),
 	)
 
+	// Hanya di DM — dorong interaksi privat (lihat requirePrivateChat)
+	if ok, err := requirePrivateChat(ctx, h.telegramFactory, bot, msg, h.encryptionKey); err != nil || !ok {
+		return err
+	}
+
 	// 1. Init Telegram client
 	token, err := crypto.Decrypt(bot.Token, h.encryptionKey)
 	if err != nil {

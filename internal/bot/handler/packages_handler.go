@@ -50,6 +50,11 @@ func (h *PackagesHandler) AllowedRoles() []string {
 func (h *PackagesHandler) Execute(ctx context.Context, bot *entity.TelegramBot, msg *tgbotapi.Message) error {
 	h.log.Info("executing /packages command", zap.Int64("user_id", msg.From.ID), zap.String("bot_id", bot.ID.String()))
 
+	// Hanya di DM — dorong interaksi privat (lihat requirePrivateChat)
+	if ok, err := requirePrivateChat(ctx, h.telegramFactory, bot, msg, h.encryptionKey); err != nil || !ok {
+		return err
+	}
+
 	// Fetch active packages for this client
 	packages, err := h.packageRepo.FindByClientID(ctx, h.db.Gorm, bot.ClientID, 1, 10000000000000000)
 	if err != nil {
