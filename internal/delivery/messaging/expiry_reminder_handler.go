@@ -10,6 +10,7 @@ import (
 	json "github.com/bytedance/sonic"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/reporting"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
@@ -172,11 +173,14 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 		if telegram.IsPermanentError(err) {
 			h.logger.Warn("expiry reminder handler: permanent telegram error, dropping event",
 				append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
+			reporting.Record(ctx, h.db, clientID, "expiry.reminder", "failed", payload.TelegramUserID, err.Error(), h.logger)
 			return nil
 		}
+		reporting.Record(ctx, h.db, clientID, "expiry.reminder", "failed", payload.TelegramUserID, err.Error(), h.logger)
 		return fmt.Errorf("expiry reminder handler: failed to send dm: %w", err)
 	}
 
+	reporting.Record(ctx, h.db, clientID, "expiry.reminder", "success", payload.TelegramUserID, "", h.logger)
 	h.logger.Info("expiry reminder handler: reminder sent successfully",
 		append(logFields,
 			zap.String("subscription_id", payload.SubscriptionID),

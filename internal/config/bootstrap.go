@@ -54,6 +54,7 @@ type BootstrapConfig struct {
 	GroupSyncWorker          *deliveryMsg.GroupSyncWorker
 	ExpiryReminderWorker     *deliveryMsg.ExpiryReminderWorker
 	BroadcastSchedulerWorker *deliveryMsg.BroadcastSchedulerWorker
+	DailyReportWorker        *deliveryMsg.DailyReportWorker
 }
 
 // BootstrapOption allows selective initialization of components.
@@ -351,6 +352,8 @@ func BootstrapWeb(config *BootstrapConfig) {
 	uploadCtrl := controller.NewUploadController(uploadUC, config.Log, config.Validate)
 	broadcastCtrl := controller.NewBroadcastController(broadcastUC, config.Log, config.Validate)
 	migrationMemberCtrl := controller.NewMigrationMemberController(migrationMemberUC, config.Log, config.Validate)
+	reportSettingUC := usecase.NewReportSettingUseCase(config.DB.Gorm, repository.NewReportSettingRepository(), botRepo, config.Log)
+	reportSettingCtrl := controller.NewAdminReportSettingController(reportSettingUC, config.Log, config.Validate)
 
 	// Rate Limiters
 	globalLimiter := ratelimit.New(config.Redis, ratelimit.Config{
@@ -421,6 +424,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 		UploadController:            uploadCtrl,
 		BroadcastController:         broadcastCtrl,
 		MigrationMemberController:   migrationMemberCtrl,
+		ReportSettingController:     reportSettingCtrl,
 		TenantAuthMiddleware:        middleware.TenantAuth(config.Jwt),
 		FeatureGateUseCase:          featureGateUC,
 	}
@@ -497,6 +501,12 @@ func BootstrapWorker(config *BootstrapConfig) {
 	billingRepo := repository.NewClientBillingRepository()
 	broadcastUC := usecase.NewBroadcastUseCase(config.DB, broadcastRepoWorker, botRepo, groupRepo, subscriptionRepo, outboxRepo, billingRepo, config.Log)
 	config.BroadcastSchedulerWorker = deliveryMsg.NewBroadcastSchedulerWorker(config.DB.Gorm, broadcastUC, config.Log)
+
+	// Instantiate DailyReportWorker
+	config.DailyReportWorker = deliveryMsg.NewDailyReportWorker(
+		config.DB.Gorm, repository.NewReportSettingRepository(), botRepo,
+		config.TelegramFactory, config.Config.App.EncryptionKey, config.Log,
+	)
 }
 
 // Shutdown gracefully closes all infrastructure connections.

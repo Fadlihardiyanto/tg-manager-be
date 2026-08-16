@@ -77,6 +77,12 @@ INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'members.read', 'members', 'read', 'Melihat daftar dan detail member (Telegram user + subscription)')
 ON CONFLICT (name) DO NOTHING;
 
+-- Daily Report (laporan harian worker + daftar kegagalan)
+INSERT INTO permissions (id, name, module, action, description) VALUES
+  (gen_random_uuid(), 'reports.read',   'reports', 'read',   'Melihat pengaturan dan daftar kegagalan laporan harian'),
+  (gen_random_uuid(), 'reports.update', 'reports', 'update', 'Mengubah pengaturan laporan harian')
+ON CONFLICT (name) DO NOTHING;
+
 -- ==========================================
 -- 3. ROLE-PERMISSION ASSIGNMENTS
 -- ==========================================
@@ -96,7 +102,9 @@ WHERE r.name = 'admin'
     'team.read',
     'analytics.read',
     'discounts.create', 'discounts.read', 'discounts.update', 'discounts.delete',
-    'members.read'
+    'members.read',
+    'reports.read',
+    'reports.update',
   )
 ON CONFLICT DO NOTHING;
 
@@ -114,7 +122,8 @@ WHERE r.name = 'manager'
     'subscriptions.read',
     'analytics.read',
     'discounts.read',
-    'members.read'
+    'members.read',
+    'reports.read',
   )
 ON CONFLICT DO NOTHING;
 
@@ -133,7 +142,8 @@ WHERE r.name = 'viewer'
     'team.read',
     'analytics.read',
     'discounts.read',
-    'members.read'
+    'members.read',
+    'reports.read',
   )
 ON CONFLICT DO NOTHING;
 

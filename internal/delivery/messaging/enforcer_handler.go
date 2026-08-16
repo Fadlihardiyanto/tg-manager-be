@@ -7,6 +7,7 @@ import (
 
 	json "github.com/bytedance/sonic"
 
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/reporting"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
@@ -114,13 +115,16 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 		if telegram.IsPermanentError(err) {
 			h.logger.Warn("enforcer handler: permanent telegram error, dropping eviction",
 				append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Int64("chat_id", payload.TelegramChatID))...)
+			reporting.Record(ctx, h.db, bot.ClientID, "enforcer.kick", "failed", payload.TelegramUserID, err.Error(), h.logger)
 			return nil
 		}
 		h.logger.Error("enforcer handler: failed to kick chat member", append(logFields, zap.Error(err))...)
+		reporting.Record(ctx, h.db, bot.ClientID, "enforcer.kick", "failed", payload.TelegramUserID, err.Error(), h.logger)
 		return err
 	}
 
 	h.logger.Info("enforcer handler: successfully kicked user", append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
+	reporting.Record(ctx, h.db, bot.ClientID, "enforcer.kick", "success", payload.TelegramUserID, "", h.logger)
 
 	// 2. Unban User (Soft Kick)
 	// Memungkinkan user untuk gabung lagi di masa depan jika mereka beli paket baru

@@ -108,6 +108,15 @@ func main() {
 		})
 	}
 
+	// 10. Start Daily Report Worker (polls every minute; sends at report_time per tenant)
+	reportCtx, reportCancel := context.WithCancel(context.Background())
+	defer reportCancel()
+	if bootstrapConfig.DailyReportWorker != nil {
+		go runWorkerWithRestart("daily-report", bootstrapConfig.Log, reportCtx, func() {
+			bootstrapConfig.DailyReportWorker.Start(reportCtx, 1*time.Minute)
+		})
+	}
+
 	bootstrapConfig.Log.Info("worker: starting consumer...")
 
 	ctx, cancel := context.WithCancel(context.Background())

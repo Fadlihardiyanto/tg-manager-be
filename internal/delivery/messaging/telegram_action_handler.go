@@ -11,6 +11,7 @@ import (
 	json "github.com/bytedance/sonic"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
+	"github.com/Fadlihardiyanto/telegram-management-app/internal/reporting"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/pdf"
@@ -301,13 +302,18 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 			if telegram.IsPermanentError(err) {
 				h.logger.Warn("telegram action handler: permanent telegram error, dropping event",
 					append(logFields, zap.Int64("user_id", payload.TelegramUserID))...)
+				reporting.Record(ctx, h.db, payload.ClientID, "telegram.dm", "failed", payload.TelegramUserID, err.Error(), h.logger)
 				return nil
 			}
+			reporting.Record(ctx, h.db, payload.ClientID, "telegram.dm", "failed", payload.TelegramUserID, err.Error(), h.logger)
 			return fmt.Errorf("failed to send dm: %w", err)
 		}
 	} else {
 		h.logger.Error("telegram action handler: no bot available to send dm", logFields...)
+		reporting.Record(ctx, h.db, payload.ClientID, "telegram.dm", "failed", payload.TelegramUserID, "no bot available to send dm", h.logger)
 	}
+
+	reporting.Record(ctx, h.db, payload.ClientID, "telegram.dm", "success", payload.TelegramUserID, "", h.logger)
 
 	// 8. Send PDF document AFTER text DM (so user reads the welcome message first)
 	if receiptPDFBytes != nil && dmClient != nil {

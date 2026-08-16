@@ -57,6 +57,9 @@ type TenantRouteConfig struct {
 	// Migration
 	MigrationMemberController *controller.MigrationMemberController
 
+	// Daily Report
+	ReportSettingController *controller.AdminReportSettingController
+
 	// Middleware
 	TenantAuthMiddleware fiber.Handler // JWT validation for tenant
 	FeatureGateUseCase   usecase.IFeatureGateUseCase
@@ -210,6 +213,12 @@ func (c *TenantRouteConfig) setupProtectedRoutes(api fiber.Router) {
 
 	// ── Team ─────────────────────────────────────────────────────────
 	// TODO: Wire team management routes here
+
+	// ── Daily Report ─────────────────────────────────────────────────
+	report := protected.Group("/report-settings")
+	report.Get("/", middleware.TenantRequirePermission("reports.read"), c.ReportSettingController.Get)
+	report.Put("/", middleware.TenantRequirePermission("reports.update"), c.ReportSettingController.Upsert)
+	protected.Get("/report-failures", middleware.TenantRequirePermission("reports.read"), c.ReportSettingController.ListFailures)
 	// team := protected.Group("/team")
 	// team.Get("/", middleware.TenantRequirePermission("team.read"), c.TeamController.List)
 	// team.Post("/invite", middleware.TenantRequireRole("owner", "admin"), c.TeamController.Invite)
