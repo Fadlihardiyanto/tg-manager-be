@@ -109,6 +109,13 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 			)
 			return nil // ignore this error, successfully consumed
 		}
+		// Permanent (bot di-remove dari grup / grup dibongkar / bot bukan admin):
+		// retry tidak akan pernah sukses — drop event, jangan DLQ-loop.
+		if telegram.IsPermanentError(err) {
+			h.logger.Warn("enforcer handler: permanent telegram error, dropping eviction",
+				append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Int64("chat_id", payload.TelegramChatID))...)
+			return nil
+		}
 		h.logger.Error("enforcer handler: failed to kick chat member", append(logFields, zap.Error(err))...)
 		return err
 	}
