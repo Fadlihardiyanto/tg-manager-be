@@ -65,6 +65,14 @@ func (w *EnforcerWorker) Start(ctx context.Context, interval time.Duration) {
 }
 
 func (w *EnforcerWorker) Process(ctx context.Context) {
+	// Recover per-cycle (mirror BroadcastSchedulerWorker): satu panic tidak
+	// boleh mematikan ticker loop — runWorkerWithRestart tetap sebagai safety
+	// net terakhir di level process.
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Error("enforcer worker: panicked", zap.Any("panic", r))
+		}
+	}()
 	start := time.Now()
 	defer metrics.WorkerCycleDuration.WithLabelValues("enforcer").Observe(time.Since(start).Seconds())
 

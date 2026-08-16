@@ -34,6 +34,11 @@ func (h *NotificationHandler) Handle(ctx context.Context, body []byte) error {
 		zap.String("correlation_id", correlationID),
 	}
 
+	if h.mailer == nil {
+		h.logger.Error("notification: mailer not configured, dropping message", logFields...)
+		return nil
+	}
+
 	var payload model.EmailNotificationPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		h.logger.Error("notification: invalid payload, dropping message", append(logFields, zap.Error(err))...)

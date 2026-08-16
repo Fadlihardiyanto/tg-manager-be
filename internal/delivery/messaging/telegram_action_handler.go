@@ -3,6 +3,7 @@ package messaging
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -107,11 +108,13 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 
 	pkg, err := h.packageRepo.FindByID(ctx, h.db, pkgID)
 	if err != nil {
+		// Package tidak ditemukan = anomali data permanen, terminal (jangan retry ke DLQ).
+		// Error lain (DB down dll) tetap retryable.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			h.logger.Error("telegram action handler: package not found", append(logFields, zap.String("package_id", payload.PackageID))...)
+			return nil
+		}
 		return fmt.Errorf("package lookup failed: %w", err)
-	}
-	if pkg == nil {
-		h.logger.Error("telegram action handler: package not found", append(logFields, zap.String("package_id", payload.PackageID))...)
-		return nil
 	}
 
 	var targetGroups []entity.Group
@@ -147,7 +150,7 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 
 	for botID, groups := range groupsByBot {
 		bot, err := h.botRepo.FindByID(ctx, h.db, botID)
-		if err != nil {
+		if err != nil || bot == nil {
 			h.logger.Error("telegram action handler: failed to find bot",
 				append(logFields, zap.String("bot_id", botID.String()), zap.Error(err))...)
 			for _, group := range groups {
@@ -226,7 +229,12 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		}
 	}
 
-	loc, _ := time.LoadLocation("Asia/Jakarta")
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		// ponytail: container tanpa tzdata (alpine/distroless) → fallback UTC,
+		// bukan panic di Time.In(nil) yang membuat pesan masuk DLQ.
+		loc = time.UTC
+	}
 	expiredStr := sub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
 
 	// 7. Build DM message text (no links — links are inline buttons)
@@ -356,7 +364,11 @@ func (h *TelegramActionHandler) generateReceipt(
 		customerName = customerName + " " + tgUser.LastName
 	}
 
-	loc, _ := time.LoadLocation("Asia/Jakarta")
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		// ponytail: container tanpa tzdata → fallback UTC, jangan panic (lihat Handle).
+		loc = time.UTC
+	}
 	paidAt := time.Now()
 	if order.PaidAt != nil {
 		paidAt = *order.PaidAt
@@ -365,7 +377,7 @@ func (h *TelegramActionHandler) generateReceipt(
 	durationText := fmt.Sprintf("%d Hari", pkg.DurationDays)
 
 	oldExpiry := subExpiredAt.AddDate(0, 0, -pkg.DurationDays)
-	remainingDays := int(time.Until(oldExpiry).Hours() / 24)
+	remainingDays := int(time.Until(oldExpiry) / (24 * time.Hour))
 	if remainingDays > 0 {
 		durationText += fmt.Sprintf("\nSisa Langganan sebelumnya: %d Hari", remainingDays)
 	}
@@ -405,6 +417,10 @@ func (h *TelegramActionHandler) generateReceipt(
 	}
 
 	// 6. Generate PDF
+	if h.pdfClient == nil {
+		h.logger.Warn("receipt: pdf client not configured, skipping", logFields...)
+		return nil, "", fmt.Errorf("pdf client not configured")
+	}
 	pdfBytes, err := h.pdfClient.GenerateReceipt(receiptData)
 	if err != nil {
 		h.logger.Warn("receipt: pdf generation failed", append(logFields, zap.Error(err))...)

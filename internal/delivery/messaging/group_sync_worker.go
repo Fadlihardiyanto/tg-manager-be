@@ -61,6 +61,14 @@ func (w *GroupSyncWorker) Start(ctx context.Context, interval time.Duration) {
 }
 
 func (w *GroupSyncWorker) Process(ctx context.Context) {
+	// Recover per-cycle (mirror BroadcastSchedulerWorker): satu panic tidak
+	// boleh mematikan ticker loop — runWorkerWithRestart tetap sebagai safety
+	// net terakhir di level process.
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Error("group sync worker: panicked", zap.Any("panic", r))
+		}
+	}()
 	start := time.Now()
 	defer metrics.WorkerCycleDuration.WithLabelValues("group_sync").Observe(time.Since(start).Seconds())
 

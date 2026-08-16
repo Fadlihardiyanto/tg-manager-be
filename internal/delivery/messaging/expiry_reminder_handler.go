@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -80,9 +81,14 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 	}
 
 	pkg, err := h.packageRepo.FindByID(ctx, h.db, pkgID)
-	if err != nil || pkg == nil {
-		h.logger.Error("expiry reminder handler: package not found", append(logFields, zap.String("package_id", payload.PackageID))...)
-		return nil
+	if err != nil {
+		// Package tidak ditemukan = anomali data permanen, terminal (jangan retry ke DLQ).
+		// Error lain (DB down dll) tetap retryable.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			h.logger.Error("expiry reminder handler: package not found", append(logFields, zap.String("package_id", payload.PackageID))...)
+			return nil
+		}
+		return fmt.Errorf("expiry reminder handler: package lookup failed: %w", err)
 	}
 
 	// 3. Resolve group names for the message body
@@ -146,7 +152,11 @@ func (h *ExpiryReminderHandler) Handle(ctx context.Context, body []byte) error {
 		return fmt.Errorf("expiry reminder handler: failed to fetch subscription: %w", err)
 	}
 
-	loc, _ := time.LoadLocation("Asia/Jakarta")
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		// ponytail: container tanpa tzdata → fallback UTC, jangan panic (lihat telegram_action_handler).
+		loc = time.UTC
+	}
 	expiredStr := sub.ExpiredAt.In(loc).Format("02 Jan 2006 15:04 WIB")
 
 	// 6. Build message
