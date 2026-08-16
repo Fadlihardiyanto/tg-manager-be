@@ -284,7 +284,7 @@ func buildCheckoutSuccessMessage(resp *model.MemberCheckoutResponse) string {
 	}
 
 	sb.WriteString("─────────────────────\n\n")
-	sb.WriteString(fmt.Sprintf("🔗 <b>Link Pembayaran:</b>\n%s\n\n", resp.PaymentURL))
+	sb.WriteString(fmt.Sprintf("🔗 <b>Link Pembayaran:</b> <a href=\"%s\">klik di sini untuk membayar</a>\n\n", resp.PaymentURL))
 	sb.WriteString("<i>⏳ Link pembayaran akan kedaluwarsa dalam 24 jam.</i>")
 
 	return sb.String()
