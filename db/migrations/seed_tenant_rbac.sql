@@ -14,7 +14,7 @@ INSERT INTO roles (id, name, display_name, description) VALUES
   (gen_random_uuid(), 'admin',   'Admin',   'Administrator tenant. Bisa mengelola bot, grup, paket, dan melihat analytics.'),
   (gen_random_uuid(), 'manager', 'Manager', 'Manajer. Bisa mengelola grup dan paket, tapi tidak bisa mengelola bot dan tim.'),
   (gen_random_uuid(), 'viewer',  'Viewer',  'Hanya bisa melihat data. Tidak bisa melakukan perubahan apapun.')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ==========================================
 -- 2. PERMISSIONS
@@ -26,7 +26,7 @@ INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'bots.read',   'bots', 'read',   'Melihat daftar dan detail bot'),
   (gen_random_uuid(), 'bots.update', 'bots', 'update', 'Mengubah konfigurasi bot'),
   (gen_random_uuid(), 'bots.delete', 'bots', 'delete', 'Menghapus bot')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Group Management
 INSERT INTO permissions (id, name, module, action, description) VALUES
@@ -34,7 +34,7 @@ INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'groups.read',   'groups', 'read',   'Melihat daftar dan detail grup'),
   (gen_random_uuid(), 'groups.update', 'groups', 'update', 'Mengubah konfigurasi grup'),
   (gen_random_uuid(), 'groups.delete', 'groups', 'delete', 'Menghapus grup')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Package Management
 INSERT INTO permissions (id, name, module, action, description) VALUES
@@ -42,14 +42,14 @@ INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'packages.read',   'packages', 'read',   'Melihat daftar dan detail paket'),
   (gen_random_uuid(), 'packages.update', 'packages', 'update', 'Mengubah paket langganan'),
   (gen_random_uuid(), 'packages.delete', 'packages', 'delete', 'Menghapus paket langganan')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Order & Subscription
 INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'orders.read',          'orders', 'read',   'Melihat daftar dan detail order'),
   (gen_random_uuid(), 'subscriptions.read',   'subscriptions', 'read',   'Melihat daftar dan detail subscription'),
   (gen_random_uuid(), 'subscriptions.cancel', 'subscriptions', 'cancel', 'Membatalkan subscription aktif')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Team Management
 INSERT INTO permissions (id, name, module, action, description) VALUES
@@ -57,12 +57,12 @@ INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'team.read',    'team', 'read',    'Melihat daftar anggota tim'),
   (gen_random_uuid(), 'team.update',  'team', 'update',  'Mengubah role anggota tim'),
   (gen_random_uuid(), 'team.remove',  'team', 'remove',  'Menghapus anggota tim')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Analytics & Dashboard
 INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'analytics.read', 'analytics', 'read', 'Melihat dashboard analytics')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Discounts
 INSERT INTO permissions (id, name, module, action, description) VALUES
@@ -70,18 +70,18 @@ INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'discounts.read',   'discounts', 'read',   'Melihat daftar dan detail diskon'),
   (gen_random_uuid(), 'discounts.update', 'discounts', 'update', 'Mengubah diskon'),
   (gen_random_uuid(), 'discounts.delete', 'discounts', 'delete', 'Menghapus diskon')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Member Management (telegram_users + subscriptions view)
 INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'members.read', 'members', 'read', 'Melihat daftar dan detail member (Telegram user + subscription)')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Daily Report (laporan harian worker + daftar kegagalan)
 INSERT INTO permissions (id, name, module, action, description) VALUES
   (gen_random_uuid(), 'reports.read',   'reports', 'read',   'Melihat pengaturan dan daftar kegagalan laporan harian'),
   (gen_random_uuid(), 'reports.update', 'reports', 'update', 'Mengubah pengaturan laporan harian')
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ==========================================
 -- 3. ROLE-PERMISSION ASSIGNMENTS
