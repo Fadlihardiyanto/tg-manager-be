@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
@@ -36,8 +37,8 @@ func requirePrivateChat(ctx context.Context, factory telegram.BotFactory, bot *e
 		return false, err
 	}
 
-	reply := "Perintah ini hanya bisa dijalankan di chat pribadi dengan bot.\n\n" +
-		"Buka chat ini di Telegram dan ketik /start untuk melihat menu."
+	reply := fmt.Sprintf("⚠️ Perintah /%s hanya dapat digunakan di DM (chat pribadi) dengan bot.\n\n"+
+		"Silakan buka chat bot ini di Telegram dan kirim perintah tersebut di sana.", msg.Command())
 	_ = client.SendMessage(ctx, msg.Chat.ID, reply)
 	return false, nil
 }
