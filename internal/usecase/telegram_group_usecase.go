@@ -250,8 +250,7 @@ func (uc *TelegramGroupUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return helper.NewNotFound("Grup tidak ditemukan")
 		}
-		log.Error("group usecase delete find failed", zap.Error(err))
-		return err
+		return fmt.Errorf("group usecase delete find failed: %w", err)
 	}
 
 	if group.ClientID != clientID {
@@ -259,8 +258,7 @@ func (uc *TelegramGroupUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 	}
 
 	if err := uc.groupRepo.Delete(ctx, uc.db.Gorm, group); err != nil {
-		log.Error("group usecase delete failed", zap.Error(err))
-		return err
+		return fmt.Errorf("group usecase delete failed: %w", err)
 	}
 
 	log.Info("group usecase delete success", zap.String("group_id", groupID.String()))
@@ -282,8 +280,7 @@ func (uc *TelegramGroupUseCase) Disconnect(ctx context.Context, clientID uuid.UU
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return helper.NewNotFound("Grup tidak ditemukan")
 		}
-		log.Error("group usecase disconnect find failed", zap.Error(err))
-		return err
+		return fmt.Errorf("group usecase disconnect find failed: %w", err)
 	}
 
 	if group.ClientID != clientID {
@@ -323,8 +320,7 @@ func (uc *TelegramGroupUseCase) Disconnect(ctx context.Context, clientID uuid.UU
 	group.UpdatedAt = time.Now()
 
 	if err := uc.groupRepo.Update(ctx, uc.db.Gorm, group); err != nil {
-		log.Error("group usecase disconnect update failed", zap.Error(err))
-		return err
+		return fmt.Errorf("group usecase disconnect update failed: %w", err)
 	}
 
 	log.Info("group usecase disconnect success", zap.String("group_id", groupID.String()))
@@ -376,7 +372,15 @@ func (uc *TelegramGroupUseCase) GenerateConnectToken(ctx context.Context, client
 func (uc *TelegramGroupUseCase) generateRandomCode(length int) string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // avoid confusing characters
 	b := make([]byte, length)
-	_, _ = rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		uc.log.Error("group usecase: crypto/rand failed, falling back to time-seeded code", zap.Error(err))
+		// ponytail: crypto/rand failure is virtually unreachable; fall back to
+		// non-crypto pseudo-random rather than failing the connect flow
+		for i := range b {
+			b[i] = byte(time.Now().UnixNano() >> (i * 3) % 256)
+		}
+	}
 	for i := range b {
 		b[i] = charset[int(b[i])%len(charset)]
 	}

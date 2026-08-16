@@ -1,6 +1,8 @@
 package helper
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"regexp"
 	"strings"
 )
@@ -31,4 +33,11 @@ func NormalizePhone(phone string) string {
 	}
 	// fallback: assume local and add +62
 	return "+62" + p
+}
+
+// HashIdentifier returns a truncated sha256 hex of a PII value (email, phone)
+// for correlation in logs without exposing the raw value.
+func HashIdentifier(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:16]
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -79,7 +80,7 @@ func (r *ClientUserRepository) FindByClientAndUserID(ctx context.Context, tx *go
 
 func (r *ClientUserRepository) FindAllByClientIDPaginated(ctx context.Context, tx *gorm.DB, req *model.AdminTenantUserListRequest) ([]entity.ClientUser, int64, error) {
 	log := logger.FromContext(ctx, r.log)
-	log.Info("client user repo find all paginated start", zap.String("client_id", req.ClientID.String()), zap.String("user_id", req.UserID), zap.String("email", req.Email), zap.String("role", req.Role), zap.String("verified", req.Verified), zap.Int("page", req.Page), zap.Int("size", req.Size))
+	log.Info("client user repo find all paginated start", zap.String("client_id", req.ClientID.String()), zap.String("user_id", req.UserID), zap.String("email", helper.HashIdentifier(req.Email)), zap.String("role", req.Role), zap.String("verified", req.Verified), zap.Int("page", req.Page), zap.Int("size", req.Size))
 
 	var clientUsers []entity.ClientUser
 	var total int64

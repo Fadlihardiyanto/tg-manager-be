@@ -174,6 +174,7 @@ func (uc *CustomCommandUseCase) FindByID(ctx context.Context, clientID uuid.UUID
 }
 
 func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, id uuid.UUID, req *model.UpdateCustomCommandRequest) (*model.CustomCommandResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	cmd, err := uc.commandRepo.FindByID(ctx, uc.db.Gorm, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -224,7 +225,7 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 			if oldKey != "" && uc.s3Client != nil {
 				// Abaikan error agar proses update tetap berjalan meskipun hapus file lama gagal
 				if delErr := uc.s3Client.Delete(ctx, oldKey); delErr != nil {
-					uc.log.Warn("custom command: failed to delete old file from S3", zap.String("key", oldKey), zap.Error(delErr))
+					log.Warn("custom command: failed to delete old file from S3", zap.String("key", oldKey), zap.Error(delErr))
 				}
 			}
 		}
@@ -264,6 +265,7 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 }
 
 func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, id uuid.UUID) error {
+	log := logger.FromContext(ctx, uc.log)
 	cmd, err := uc.commandRepo.FindByID(ctx, uc.db.Gorm, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -283,7 +285,7 @@ func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 		key := extractS3Key(*cmd.FileUrl)
 		if key != "" {
 			if errS3 := uc.s3Client.Delete(ctx, key); errS3 != nil {
-				uc.log.Warn("failed to delete S3 file during custom command deletion", zap.String("key", key), zap.Error(errS3))
+				log.Warn("failed to delete S3 file during custom command deletion", zap.String("key", key), zap.Error(errS3))
 			}
 		}
 	}
@@ -298,12 +300,13 @@ func (uc *CustomCommandUseCase) BulkDelete(ctx context.Context, clientID uuid.UU
 }
 
 func (uc *CustomCommandUseCase) invalidateCommand(ctx context.Context, clientID, botID uuid.UUID, trigger string) {
+	log := logger.FromContext(ctx, uc.log)
 	if uc.redisClient == nil {
 		return
 	}
 	key := customCmdCacheKey(clientID, botID, trigger)
 	if err := uc.redisClient.Del(ctx, key).Err(); err != nil {
-		uc.log.Warn("failed to invalidate custom command cache", zap.String("key", key), zap.Error(err))
+		log.Warn("failed to invalidate custom command cache", zap.String("key", key), zap.Error(err))
 	}
 }
 

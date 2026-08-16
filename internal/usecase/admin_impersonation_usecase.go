@@ -10,6 +10,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	pkg_jwt "github.com/Fadlihardiyanto/telegram-management-app/pkg/jwt"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/logger"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -50,6 +51,7 @@ func NewAdminImpersonationUseCase(
 }
 
 func (uc *adminImpersonationUseCase) Start(ctx context.Context, req *model.AdminImpersonateClientActionRequest) (*model.AdminImpersonateResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	if !rbac.HasPermission(req.Payload.CallerPermissions, "clients.impersonate") {
 		return nil, helper.NewForbiddenPermission("clients.impersonate")
 	}
@@ -74,7 +76,7 @@ func (uc *adminImpersonationUseCase) Start(ctx context.Context, req *model.Admin
 		IPAddress:    req.Payload.IPAddress,
 	}
 	if err := uc.impersonationLogRepo.Create(ctx, uc.db.Gorm, logEntry); err != nil {
-		uc.log.Error("impersonation: failed to create audit log", zap.Error(err))
+		log.Error("impersonation: failed to create audit log", zap.Error(err))
 		return nil, fmt.Errorf("gagal mencatat impersonation log")
 	}
 

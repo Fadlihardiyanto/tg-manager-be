@@ -57,7 +57,7 @@ func NewAdminTenantUserUseCase(
 
 func (uc *adminTenantUserUseCase) ListTenantUsers(ctx context.Context, req *model.AdminTenantUserListRequest) ([]model.TenantUserResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("admin tenant user list start", zap.String("client_id", req.ClientID.String()), zap.String("user_id", req.UserID), zap.String("email", req.Email), zap.String("role", req.Role), zap.String("verified", req.Verified), zap.Int("page", req.Page), zap.Int("size", req.Size))
+	log.Info("admin tenant user list start", zap.String("client_id", req.ClientID.String()), zap.String("user_id", req.UserID), zap.String("email", helper.HashIdentifier(req.Email)), zap.String("role", req.Role), zap.String("verified", req.Verified), zap.Int("page", req.Page), zap.Int("size", req.Size))
 
 	if err := requirePermission(req.CallerPermissions, "clients.read"); err != nil {
 		log.Warn("admin tenant user list forbidden", zap.Error(err))
@@ -108,7 +108,7 @@ func (uc *adminTenantUserUseCase) GetTenantUser(ctx context.Context, req *model.
 
 func (uc *adminTenantUserUseCase) CreateTenantUser(ctx context.Context, req *model.AdminTenantUserCreateRequest) (*model.TenantUserResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("admin tenant user create start", zap.String("client_id", req.ClientID.String()), zap.String("email", req.Email))
+	log.Info("admin tenant user create start", zap.String("client_id", req.ClientID.String()), zap.String("email", helper.HashIdentifier(req.Email)))
 
 	if err := requirePermission(req.CallerPermissions, "clients.update"); err != nil {
 		log.Warn("admin tenant user create forbidden", zap.Error(err))

@@ -435,7 +435,7 @@ func (uc *memberUseCase) writeExtendAuditLog(ctx context.Context, tx *gorm.DB, c
 		"new_expiry":      sub.ExpiredAt.Format(time.RFC3339),
 	})
 	if marshalErr != nil {
-		uc.log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))
+		log.Warn("member usecase: failed to marshal extend audit log meta", zap.Error(marshalErr))
 	}
 	auditLog := entity.AuditLog{
 		ClientID:   &clientID,
@@ -485,7 +485,7 @@ func (uc *memberUseCase) SyncMember(ctx context.Context, clientID uuid.UUID, use
 					}
 					payloadBytes, marshalErr := sonic.Marshal(payload)
 					if marshalErr != nil {
-						uc.log.Warn("member usecase: failed to marshal sync_request outbox payload", zap.Error(marshalErr))
+						log.Warn("member usecase: failed to marshal sync_request outbox payload", zap.Error(marshalErr))
 					}
 
 					outbox := entity.Outbox{
@@ -558,7 +558,7 @@ func (uc *memberUseCase) ResendLink(ctx context.Context, clientID uuid.UUID, use
 			}
 			payloadBytes, marshalErr := sonic.Marshal(payload)
 			if marshalErr != nil {
-				uc.log.Warn("member usecase: failed to marshal resend_link outbox payload", zap.Error(marshalErr))
+				log.Warn("member usecase: failed to marshal resend_link outbox payload", zap.Error(marshalErr))
 			}
 
 			outbox := entity.Outbox{

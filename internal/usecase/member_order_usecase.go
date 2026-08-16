@@ -702,11 +702,12 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 }
 
 func (uc *memberOrderUseCase) buildFinishURL(ctx context.Context, slug, externalID string, pkg *entity.Package) string {
+	log := logger.FromContext(ctx, uc.log)
 	base := fmt.Sprintf("%s/checkout/success?slug=%s&order_id=%s", uc.appFrontendURL, slug, externalID)
 	if len(pkg.Groups) > 0 {
 		bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, pkg.Groups[0].BotUUID)
 		if err != nil {
-			uc.log.Warn("member order: failed to load bot for finish URL", zap.String("bot_id", pkg.Groups[0].BotUUID.String()), zap.Error(err))
+			log.Warn("member order: failed to load bot for finish URL", zap.String("bot_id", pkg.Groups[0].BotUUID.String()), zap.Error(err))
 		} else if bot != nil && bot.Username != "" {
 			base += "&bot=" + bot.Username
 		}
@@ -715,6 +716,7 @@ func (uc *memberOrderUseCase) buildFinishURL(ctx context.Context, slug, external
 }
 
 func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID string) (*model.MemberCheckoutDetailResponse, error) {
+	log := logger.FromContext(ctx, uc.log)
 	order, err := uc.orderRepo.FindByExternalIDWithPackage(ctx, uc.db.Gorm, externalID)
 	if err != nil {
 		return nil, fmt.Errorf("gagal mencari order: %w", err)
@@ -730,7 +732,7 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 
 	midtransClient, err := uc.getMidtransClient(ctx, client)
 	if err != nil {
-		uc.log.Warn("GetCheckoutDetail: midtrans client init failed", zap.String("client_id", client.ID.String()), zap.Error(err))
+		log.Warn("GetCheckoutDetail: midtrans client init failed", zap.String("client_id", client.ID.String()), zap.Error(err))
 		return nil, helper.NewBadRequest(err.Error())
 	}
 
@@ -738,7 +740,7 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 	if len(order.Package.Groups) > 0 {
 		bot, err := uc.botRepo.FindByID(ctx, uc.db.Gorm, order.Package.Groups[0].BotUUID)
 		if err != nil {
-			uc.log.Warn("GetCheckoutDetail: failed to load bot", zap.String("bot_id", order.Package.Groups[0].BotUUID.String()), zap.Error(err))
+			log.Warn("GetCheckoutDetail: failed to load bot", zap.String("bot_id", order.Package.Groups[0].BotUUID.String()), zap.Error(err))
 		} else if bot != nil && bot.Username != "" {
 			botUsername = bot.Username
 		}
@@ -746,7 +748,7 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 	if botUsername == "" {
 		fallback, err := uc.botRepo.FindFirstByClientID(ctx, uc.db.Gorm, order.ClientID)
 		if err != nil {
-			uc.log.Warn("GetCheckoutDetail: failed to load fallback bot", zap.String("client_id", order.ClientID.String()), zap.Error(err))
+			log.Warn("GetCheckoutDetail: failed to load fallback bot", zap.String("client_id", order.ClientID.String()), zap.Error(err))
 		} else if fallback != nil && fallback.Username != "" {
 			botUsername = fallback.Username
 		}
@@ -766,6 +768,7 @@ func (uc *memberOrderUseCase) GetCheckoutDetail(ctx context.Context, externalID 
 }
 
 func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID string) error {
+	log := logger.FromContext(ctx, uc.log)
 	order, err := uc.orderRepo.FindByExternalID(ctx, uc.db.Gorm, externalID)
 	if err != nil {
 		return fmt.Errorf("gagal mencari order: %w", err)
@@ -784,12 +787,12 @@ func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID
 
 	midtransClient, err := uc.getMidtransClient(ctx, client)
 	if err != nil {
-		uc.log.Warn("CancelPendingOrder: midtrans client init failed", zap.Error(err))
+		log.Warn("CancelPendingOrder: midtrans client init failed", zap.Error(err))
 		return helper.NewBadRequest(err.Error())
 	}
 
 	if err := midtransClient.CancelTransaction(ctx, order.ExternalID); err != nil {
-		uc.log.Warn("CancelPendingOrder: midtrans cancel failed", zap.Error(err), zap.String("external_id", order.ExternalID))
+		log.Warn("CancelPendingOrder: midtrans cancel failed", zap.Error(err), zap.String("external_id", order.ExternalID))
 	}
 
 	now := time.Now()
@@ -802,7 +805,7 @@ func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID
 
 	if order.DiscountID != nil {
 		if err := uc.discountUC.RollbackUsage(ctx, uc.db.Gorm, order.ID, *order.DiscountID); err != nil {
-			uc.log.Error("CancelPendingOrder: failed to rollback discount", zap.Error(err), zap.String("discount_id", order.DiscountID.String()))
+			log.Error("CancelPendingOrder: failed to rollback discount", zap.Error(err), zap.String("discount_id", order.DiscountID.String()))
 		}
 	}
 
@@ -815,12 +818,13 @@ func (uc *memberOrderUseCase) CancelPendingOrder(ctx context.Context, externalID
 // max_purchases_per_member (lifetime, dihitung dari order berstatus paid).
 // 0 atau negatif = unlimited.
 func (uc *memberOrderUseCase) checkPurchaseLimit(ctx context.Context, tx *gorm.DB, userID uuid.UUID, pkg *entity.Package) error {
+	log := logger.FromContext(ctx, uc.log)
 	if pkg == nil || pkg.MaxPurchasesPerMember <= 0 {
 		return nil
 	}
 	count, err := uc.orderRepo.CountPaidByUserAndPackage(ctx, tx, userID, pkg.ID)
 	if err != nil {
-		uc.log.Warn("member order: failed to count paid purchases for limit check", zap.String("package_id", pkg.ID.String()), zap.Error(err))
+		log.Warn("member order: failed to count paid purchases for limit check", zap.String("package_id", pkg.ID.String()), zap.Error(err))
 		return fmt.Errorf("gagal memverifikasi batas pembelian paket")
 	}
 	if count >= int64(pkg.MaxPurchasesPerMember) {
@@ -865,17 +869,18 @@ func (uc *memberOrderUseCase) getMidtransClient(ctx context.Context, client *ent
 }
 
 func (uc *memberOrderUseCase) acquireMemberLock(ctx context.Context, telegramUserID int64) (func(), error) {
+	log := logger.FromContext(ctx, uc.log)
 	lockKey := fmt.Sprintf("member:lock:%d", telegramUserID)
 	noop := func() {}
 
 	if uc.redis == nil {
-		uc.log.Warn("member order usecase: redis nil, skipping distributed lock", zap.Int64("telegram_user_id", telegramUserID))
+		log.Warn("member order usecase: redis nil, skipping distributed lock", zap.Int64("telegram_user_id", telegramUserID))
 		return noop, nil
 	}
 
 	ok, err := uc.redis.SetNX(ctx, lockKey, "1", 30*time.Second).Result()
 	if err != nil {
-		uc.log.Warn("member order usecase: failed to acquire redis lock, skipping", zap.Int64("telegram_user_id", telegramUserID), zap.Error(err))
+		log.Warn("member order usecase: failed to acquire redis lock, skipping", zap.Int64("telegram_user_id", telegramUserID), zap.Error(err))
 		return noop, nil
 	}
 

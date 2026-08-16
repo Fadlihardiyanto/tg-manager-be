@@ -31,11 +31,11 @@ type IAdminUserManagementUseCase interface {
 }
 
 type adminUserManagementUseCase struct {
-	db          *entity.Database
-	adminRepo   repository.IAdminUserRepository
-	roleRepo    repository.IAdminRoleRepository
-	log         *zap.Logger
-	bcryptCost  int
+	db         *entity.Database
+	adminRepo  repository.IAdminUserRepository
+	roleRepo   repository.IAdminRoleRepository
+	log        *zap.Logger
+	bcryptCost int
 }
 
 func NewAdminUserManagementUseCase(
@@ -111,7 +111,7 @@ func (uc *adminUserManagementUseCase) GetAdmin(ctx context.Context, req *model.A
 
 func (uc *adminUserManagementUseCase) CreateAdmin(ctx context.Context, req *model.AdminUserCreateRequest) (*model.AdminUserResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("admin user management create start", zap.String("email", req.Email))
+	log.Info("admin user management create start", zap.String("email", helper.HashIdentifier(req.Email)))
 
 	if err := requirePermission(req.CallerPermissions, "admins.create"); err != nil {
 		log.Warn("admin user management create forbidden", zap.Error(err))
@@ -124,7 +124,7 @@ func (uc *adminUserManagementUseCase) CreateAdmin(ctx context.Context, req *mode
 		return nil, fmt.Errorf("failed to check email existence: %w", err)
 	}
 	if exists {
-		log.Warn("admin user management create duplicate email", zap.String("email", req.Email))
+		log.Warn("admin user management create duplicate email", zap.String("email", helper.HashIdentifier(req.Email)))
 		return nil, helper.NewConflict("email already exists")
 	}
 

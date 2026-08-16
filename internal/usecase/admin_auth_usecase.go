@@ -108,13 +108,13 @@ func NewAdminAuthUseCase(
 
 func (uc *AdminAuthUseCase) Login(ctx context.Context, req *model.AdminLoginRequest) (*model.AdminLoginResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("admin auth login usecase start", zap.String("email", req.Email))
+	log.Info("admin auth login usecase start", zap.String("email", helper.HashIdentifier(req.Email)))
 
 	// 1. Find user by email
 	admin, err := uc.adminRepo.FindByEmail(ctx, uc.db.Gorm, req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn("admin auth login invalid credentials", zap.String("email", req.Email))
+			log.Warn("admin auth login invalid credentials", zap.String("email", helper.HashIdentifier(req.Email)))
 			return nil, helper.NewUnauthorized("invalid email or password")
 		}
 		log.Error("admin auth login repo lookup failed", zap.Error(err))
@@ -129,7 +129,7 @@ func (uc *AdminAuthUseCase) Login(ctx context.Context, req *model.AdminLoginRequ
 
 	// 3. Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
-		log.Warn("admin auth login password mismatch", zap.String("email", req.Email))
+		log.Warn("admin auth login password mismatch", zap.String("email", helper.HashIdentifier(req.Email)))
 		if incErr := uc.adminRepo.IncrementFailedLogin(ctx, uc.db.Gorm, admin.ID); incErr != nil {
 			log.Error("admin auth login failed to increment failed login counter", zap.String("admin_id", admin.ID.String()), zap.Error(incErr))
 		}
@@ -413,7 +413,7 @@ func (uc *AdminAuthUseCase) finalizeLogin(ctx context.Context, adminID uuid.UUID
 // Register creates a new admin account with validation
 func (uc *AdminAuthUseCase) Register(ctx context.Context, req *model.AdminUserCreateRequest) (*model.AdminUserResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("admin auth register start", zap.String("email", req.Email))
+	log.Info("admin auth register start", zap.String("email", helper.HashIdentifier(req.Email)))
 
 	// 2. Check if email already exists
 	exists, err := uc.adminRepo.EmailExists(ctx, uc.db.Gorm, req.Email)
@@ -422,7 +422,7 @@ func (uc *AdminAuthUseCase) Register(ctx context.Context, req *model.AdminUserCr
 		return nil, fmt.Errorf("failed to check email existence: %w", err)
 	}
 	if exists {
-		log.Warn("admin auth register duplicate email", zap.String("email", req.Email))
+		log.Warn("admin auth register duplicate email", zap.String("email", helper.HashIdentifier(req.Email)))
 		return nil, helper.NewConflict("email already exists")
 	}
 

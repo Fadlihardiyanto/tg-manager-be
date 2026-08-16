@@ -77,7 +77,7 @@ func NewTenantAuthUseCase(
 
 func (uc *TenantAuthUseCase) Register(ctx context.Context, req *model.TenantRegisterRequest) (*model.TenantRegisterResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("tenant auth register start", zap.String("email", req.Email))
+	log.Info("tenant auth register start", zap.String("email", helper.HashIdentifier(req.Email)))
 
 	// 1. Check if email exists
 	emailExists, err := uc.userRepo.EmailExists(ctx, uc.db.Gorm, req.Email)
@@ -86,7 +86,7 @@ func (uc *TenantAuthUseCase) Register(ctx context.Context, req *model.TenantRegi
 		return nil, fmt.Errorf("failed to check email existence: %w", err)
 	}
 	if emailExists {
-		log.Warn("tenant auth register duplicate email", zap.String("email", req.Email))
+		log.Warn("tenant auth register duplicate email", zap.String("email", helper.HashIdentifier(req.Email)))
 		return nil, helper.NewConflict("Email sudah terdaftar")
 	}
 
@@ -174,7 +174,7 @@ func (uc *TenantAuthUseCase) Register(ctx context.Context, req *model.TenantRegi
 
 func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRequest) (*model.TenantLoginResponse, error) {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("tenant auth login start", zap.String("email", req.Email))
+	log.Info("tenant auth login start", zap.String("email", helper.HashIdentifier(req.Email)))
 
 	// Rate limiting: max 5 attempts per email per minute
 	rateLimitKey := fmt.Sprintf("auth:rate_limit:tenant_login:%s", req.Email)
@@ -183,7 +183,7 @@ func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRe
 		uc.redis.Expire(ctx, rateLimitKey, 1*time.Minute)
 	}
 	if count > 5 {
-		log.Warn("tenant auth login rate limited", zap.String("email", req.Email))
+		log.Warn("tenant auth login rate limited", zap.String("email", helper.HashIdentifier(req.Email)))
 		return nil, helper.NewTooManyRequestsError("Terlalu banyak percobaan login. Silakan coba lagi nanti.")
 	}
 
@@ -191,7 +191,7 @@ func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRe
 	user, err := uc.userRepo.FindByEmailWithClient(ctx, uc.db.Gorm, req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn("tenant auth login invalid credentials", zap.String("email", req.Email))
+			log.Warn("tenant auth login invalid credentials", zap.String("email", helper.HashIdentifier(req.Email)))
 			return nil, helper.NewUnauthorized("Email atau password salah")
 		}
 		log.Error("tenant auth login repo lookup failed", zap.Error(err))
@@ -200,13 +200,13 @@ func (uc *TenantAuthUseCase) Login(ctx context.Context, req *model.TenantLoginRe
 
 	// 2. Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		log.Warn("tenant auth login password mismatch", zap.String("email", req.Email))
+		log.Warn("tenant auth login password mismatch", zap.String("email", helper.HashIdentifier(req.Email)))
 		return nil, helper.NewUnauthorized("Email atau password salah")
 	}
 
 	// 3. Check if email is verified
 	if !user.IsEmailVerified {
-		log.Warn("tenant auth login unverified email", zap.String("email", req.Email))
+		log.Warn("tenant auth login unverified email", zap.String("email", helper.HashIdentifier(req.Email)))
 		return nil, helper.NewForbidden("Email belum diverifikasi. Silakan cek email Anda atau minta kirim ulang verifikasi.")
 	}
 
@@ -500,13 +500,13 @@ func (uc *TenantAuthUseCase) VerifyEmail(ctx context.Context, req *model.TenantV
 
 func (uc *TenantAuthUseCase) ResendVerification(ctx context.Context, req *model.TenantResendVerificationRequest) error {
 	log := logger.FromContext(ctx, uc.log)
-	log.Info("tenant auth resend verification start", zap.String("email", req.Email))
+	log.Info("tenant auth resend verification start", zap.String("email", helper.HashIdentifier(req.Email)))
 
 	// 1. Find user by email
 	user, err := uc.userRepo.FindByEmail(ctx, uc.db.Gorm, req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn("tenant auth resend verification user not found", zap.String("email", req.Email))
+			log.Warn("tenant auth resend verification user not found", zap.String("email", helper.HashIdentifier(req.Email)))
 			// Return nil to prevent email enumeration
 			return nil
 		}
@@ -516,7 +516,7 @@ func (uc *TenantAuthUseCase) ResendVerification(ctx context.Context, req *model.
 
 	// 2. Check if already verified
 	if user.IsEmailVerified {
-		log.Warn("tenant auth resend verification email already verified", zap.String("email", req.Email))
+		log.Warn("tenant auth resend verification email already verified", zap.String("email", helper.HashIdentifier(req.Email)))
 		return helper.NewBadRequest("Email sudah diverifikasi")
 	}
 
