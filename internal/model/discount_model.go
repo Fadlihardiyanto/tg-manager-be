@@ -24,6 +24,7 @@ type CreatePlatformDiscountRequest struct {
 
 	// Dari JWT claims
 	CallerPermissions []string  `json:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 	AdminID           uuid.UUID `json:"-"`
 }
 
@@ -40,6 +41,7 @@ type UpdatePlatformDiscountRequest struct {
 	// Dari path param & JWT
 	DiscountID        uuid.UUID `json:"-"`
 	CallerPermissions []string  `json:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 // Request saat client checkout dengan diskon platform

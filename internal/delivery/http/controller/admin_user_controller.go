@@ -48,7 +48,9 @@ func (c *AdminUserController) List(ctx fiber.Ctx) error {
 	req := &model.AdminUserListRequest{
 		Offset:            offset,
 		Limit:             limit,
+		Search:            ctx.Query("search"),
 		CallerPermissions: middleware.GetAdminPermissions(ctx),
+		CallerRoles:       middleware.GetAdminRoles(ctx),
 	}
 
 	admins, total, err := c.adminUserUC.ListAdmins(ctx.Context(), req)
@@ -305,8 +307,10 @@ func (c *AdminUserController) AssignRole(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	req.AdminID = adminID
 	req.CallerPermissions = callerPermissions
+	req.CallerRoles = callerRoles
 
 	if err := c.adminRoleUC.AssignRoleToAdmin(ctx.Context(), &req); err != nil {
 		log.Error("admin user assign role failed", zap.Error(err))
@@ -336,10 +340,12 @@ func (c *AdminUserController) RevokeRole(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	req := &model.AdminRevokeRoleRequest{
 		AdminID:           adminID,
 		RoleID:            roleID,
 		CallerPermissions: callerPermissions,
+		CallerRoles:       callerRoles,
 	}
 
 	if err := c.adminRoleUC.RevokeRoleFromAdmin(ctx.Context(), req); err != nil {

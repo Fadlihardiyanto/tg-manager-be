@@ -181,10 +181,10 @@ func (r *OrderRepository) applyTransactionScope(query *gorm.DB, clientID uuid.UU
 		q = q.Where("orders.payment_method = ?", filter.PaymentMethod)
 	}
 
-	// Free-text search across member username, first_name, last_name, external_id
+	// Free-text search across member username, first_name, last_name, external_id, package name
 	if filter.Search != "" {
 		search := "%" + escapeLike(filter.Search) + "%"
-		q = q.Where("telegram_users.username ILIKE ? OR telegram_users.first_name ILIKE ? OR telegram_users.last_name ILIKE ? OR orders.external_id ILIKE ?", search, search, search, search)
+		q = q.Where("telegram_users.username ILIKE ? OR telegram_users.first_name ILIKE ? OR telegram_users.last_name ILIKE ? OR orders.external_id ILIKE ? OR packages.name ILIKE ?", search, search, search, search, search)
 	}
 
 	// Date range filters (based on order created_at)

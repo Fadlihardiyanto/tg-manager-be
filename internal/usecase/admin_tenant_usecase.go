@@ -67,7 +67,7 @@ func (uc *adminTenantUseCase) ListAllClients(ctx context.Context, req *model.Adm
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant list clients start", zap.String("client_id", req.ClientID), zap.String("name", req.Name), zap.String("slug", req.Slug), zap.String("active", req.Active), zap.String("subscription_tier", req.SubscriptionTier), zap.Int("page", req.Page), zap.Int("size", req.Size))
 
-	if err := requirePermission(req.CallerPermissions, "clients.read"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.read", req.CallerRoles); err != nil {
 		log.Warn("admin tenant list clients forbidden", zap.Error(err))
 		return nil, 0, err
 	}
@@ -86,7 +86,7 @@ func (uc *adminTenantUseCase) GetClientDetail(ctx context.Context, req *model.Ad
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant get client start", zap.String("client_id", req.ClientID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "clients.read"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.read", req.CallerRoles); err != nil {
 		log.Warn("admin tenant get client forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (uc *adminTenantUseCase) CreateClient(ctx context.Context, req *model.Admin
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant create client start", zap.String("name", req.Name), zap.String("slug", req.Slug))
 
-	if err := requirePermission(req.CallerPermissions, "clients.create"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.create", req.CallerRoles); err != nil {
 		log.Warn("admin tenant create client forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (uc *adminTenantUseCase) UpdateClient(ctx context.Context, req *model.Admin
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant update client start", zap.String("client_id", req.ClientID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "clients.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.update", req.CallerRoles); err != nil {
 		log.Warn("admin tenant update client forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func (uc *adminTenantUseCase) DeleteClient(ctx context.Context, req *model.Admin
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant delete client start", zap.String("client_id", req.ClientID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "clients.delete"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.delete", req.CallerRoles); err != nil {
 		log.Warn("admin tenant delete client forbidden", zap.Error(err))
 		return err
 	}
@@ -312,7 +312,7 @@ func (uc *adminTenantUseCase) ActivateClient(ctx context.Context, req *model.Adm
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant activate client start", zap.String("client_id", req.ClientID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "clients.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.update", req.CallerRoles); err != nil {
 		log.Warn("admin tenant activate client forbidden", zap.Error(err))
 		return err
 	}
@@ -345,7 +345,7 @@ func (uc *adminTenantUseCase) DeactivateClient(ctx context.Context, req *model.A
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin tenant deactivate client start", zap.String("client_id", req.ClientID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "clients.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "clients.update", req.CallerRoles); err != nil {
 		log.Warn("admin tenant deactivate client forbidden", zap.Error(err))
 		return err
 	}

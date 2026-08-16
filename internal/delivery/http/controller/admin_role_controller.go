@@ -33,9 +33,11 @@ func (c *AdminRoleController) List(ctx fiber.Ctx) error {
 	log.Info("admin role list request")
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 
 	ucReq := &model.AdminRoleListRequest{
 		CallerPermissions: callerPermissions,
+		CallerRoles:       callerRoles,
 	}
 
 	result, err := c.adminRoleUC.ListRoles(ctx.Context(), ucReq)
@@ -61,9 +63,11 @@ func (c *AdminRoleController) GetByID(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	ucReq := &model.AdminRoleGetRequest{
 		RoleID:            id,
 		CallerPermissions: callerPermissions,
+		CallerRoles:       callerRoles,
 	}
 
 	result, err := c.adminRoleUC.GetRole(ctx.Context(), ucReq)
@@ -94,7 +98,9 @@ func (c *AdminRoleController) Create(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	req.CallerPermissions = callerPermissions
+	req.CallerRoles = callerRoles
 
 	result, err := c.adminRoleUC.CreateRole(ctx.Context(), &req)
 	if err != nil {
@@ -130,8 +136,10 @@ func (c *AdminRoleController) Update(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	req.RoleID = id
 	req.CallerPermissions = callerPermissions
+	req.CallerRoles = callerRoles
 
 	result, err := c.adminRoleUC.UpdateRole(ctx.Context(), &req)
 	if err != nil {
@@ -156,9 +164,11 @@ func (c *AdminRoleController) Delete(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	ucReq := &model.AdminRoleDeleteRequest{
 		RoleID:            id,
 		CallerPermissions: callerPermissions,
+		CallerRoles:       callerRoles,
 	}
 
 	if err := c.adminRoleUC.DeleteRole(ctx.Context(), ucReq); err != nil {
@@ -214,8 +224,10 @@ func (c *AdminRoleController) SyncPermissions(ctx fiber.Ctx) error {
 	}
 
 	callerPermissions := middleware.GetAdminPermissions(ctx)
+	callerRoles := middleware.GetAdminRoles(ctx)
 	req.RoleID = id
 	req.CallerPermissions = callerPermissions
+	req.CallerRoles = callerRoles
 
 	if err := c.adminRoleUC.SyncRolePermissions(ctx.Context(), &req); err != nil {
 		log.Error("admin role sync permissions failed", zap.Error(err))

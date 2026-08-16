@@ -39,7 +39,7 @@ func (uc *adminPermissionUseCase) ListPermissions(ctx context.Context, req *mode
 	// superadmin TIDAK punya permission rows (seed design) — JWT Permissions
 	// kosong, jadi requirePermission saja akan 403 superadmin.
 	if !rbac.IsSuperAdmin(req.CallerRoles) {
-		if err := requirePermission(req.CallerPermissions, "roles.read"); err != nil {
+		if err := requirePermission(req.CallerPermissions, "roles.read", req.CallerRoles); err != nil {
 			return nil, err
 		}
 	}
@@ -61,7 +61,7 @@ func (uc *adminPermissionUseCase) GetPermission(ctx context.Context, req *model.
 
 	// Authz — superadmin bypass (lihat ListPermissions).
 	if !rbac.IsSuperAdmin(req.CallerRoles) {
-		if err := requirePermission(req.CallerPermissions, "roles.read"); err != nil {
+		if err := requirePermission(req.CallerPermissions, "roles.read", req.CallerRoles); err != nil {
 			return nil, err
 		}
 	}

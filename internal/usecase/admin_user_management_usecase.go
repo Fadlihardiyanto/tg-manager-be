@@ -63,12 +63,12 @@ func (uc *adminUserManagementUseCase) ListAdmins(ctx context.Context, req *model
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management list start", zap.Int("offset", req.Offset), zap.Int("limit", req.Limit))
 
-	if err := requirePermission(req.CallerPermissions, "admins.read"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.read", req.CallerRoles); err != nil {
 		log.Warn("admin user management list forbidden", zap.Error(err))
 		return nil, 0, err
 	}
 
-	admins, total, err := uc.adminRepo.FindAllPaginatedWithRoles(ctx, uc.db.Gorm, req.Offset, req.Limit)
+	admins, total, err := uc.adminRepo.FindAllPaginatedWithRoles(ctx, uc.db.Gorm, req.Offset, req.Limit, req.Search)
 	if err != nil {
 		log.Error("admin user management list failed", zap.Error(err))
 		return nil, 0, err
@@ -87,7 +87,7 @@ func (uc *adminUserManagementUseCase) GetAdmin(ctx context.Context, req *model.A
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management get start", zap.String("admin_id", req.AdminID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "admins.read"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.read", req.CallerRoles); err != nil {
 		log.Warn("admin user management get forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (uc *adminUserManagementUseCase) CreateAdmin(ctx context.Context, req *mode
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management create start", zap.String("email", helper.HashIdentifier(req.Email)))
 
-	if err := requirePermission(req.CallerPermissions, "admins.create"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.create", req.CallerRoles); err != nil {
 		log.Warn("admin user management create forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (uc *adminUserManagementUseCase) UpdateAdmin(ctx context.Context, req *mode
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management update start", zap.String("admin_id", req.AdminID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "admins.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.update", req.CallerRoles); err != nil {
 		log.Warn("admin user management update forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (uc *adminUserManagementUseCase) DeleteAdmin(ctx context.Context, req *mode
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management delete start", zap.String("admin_id", req.AdminID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "admins.delete"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.delete", req.CallerRoles); err != nil {
 		log.Warn("admin user management delete forbidden", zap.Error(err))
 		return err
 	}
@@ -257,7 +257,7 @@ func (uc *adminUserManagementUseCase) ActivateAdmin(ctx context.Context, req *mo
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management activate start", zap.String("admin_id", req.AdminID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "admins.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.update", req.CallerRoles); err != nil {
 		log.Warn("admin user management activate forbidden", zap.Error(err))
 		return err
 	}
@@ -287,7 +287,7 @@ func (uc *adminUserManagementUseCase) DeactivateAdmin(ctx context.Context, req *
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin user management deactivate start", zap.String("admin_id", req.AdminID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "admins.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "admins.update", req.CallerRoles); err != nil {
 		log.Warn("admin user management deactivate forbidden", zap.Error(err))
 		return err
 	}

@@ -55,7 +55,7 @@ func (c *AuditLogController) ListPlatformLogs(ctx fiber.Ctx) error {
 		limit = 20
 	}
 
-	logs, total, err := c.auditUC.GetPlatformLogs(ctx.Context(), page, limit)
+	logs, total, err := c.auditUC.GetPlatformLogs(ctx.Context(), page, limit, ctx.Query("action"), ctx.Query("resource"))
 	if err != nil {
 		c.log.Error("failed to get platform audit logs", zap.Error(err))
 		return helper.InternalError(ctx, "Gagal mengambil log aktivitas platform")

@@ -82,6 +82,7 @@ type AdminUserCreateRequest struct {
 	Name              string   `json:"name" validate:"required"`
 	Password          string   `json:"password" validate:"required,min=8"`
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 // AdminUserUpdateRequest is the payload for updating an admin user.
@@ -90,32 +91,39 @@ type AdminUserUpdateRequest struct {
 	Email             string    `json:"email" validate:"omitempty,email"`
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminUserListRequest struct {
 	Offset            int
 	Limit             int
+	Search            string   `json:"search" validate:"omitempty,max=100"`
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string `json:"-" validate:"-"`
 }
 
 type AdminUserGetRequest struct {
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminUserDeleteRequest struct {
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminUserActivateRequest struct {
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminUserDeactivateRequest struct {
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 // AdminUserResponse is the public representation of an admin user.
@@ -144,6 +152,7 @@ type AdminRoleCreateRequest struct {
 	Description       string      `json:"description"`
 	PermissionIDs     []uuid.UUID `json:"permission_ids"`
 	CallerPermissions []string    `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminRoleUpdateRequest struct {
@@ -153,20 +162,22 @@ type AdminRoleUpdateRequest struct {
 	PermissionIDs     []uuid.UUID `json:"permission_ids"` // nil = tidak diubah, [] = hapus semua
 	RoleID            uuid.UUID   `json:"-" validate:"-"`
 	CallerPermissions []string    `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminSyncPermissionsRequest struct {
 	PermissionIDs     []uuid.UUID `json:"permission_ids" validate:"required"`
 	RoleID            uuid.UUID   `json:"-" validate:"-"`
 	CallerPermissions []string    `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminAssignRolesRequest struct {
 	RoleIDs     []uuid.UUID `json:"role_ids" validate:"required"`
 	AdminID     uuid.UUID   `json:"-" validate:"-"`
-	CallerRoles []string    `json:"-" validate:"-"`
 
 	// Dari JWT + request context
+	CallerRoles       []string `json:"-" validate:"-"`
 	CallerPermissions []string `json:"-" validate:"-"`
 }
 
@@ -176,16 +187,19 @@ type AdminAssignRolesRequest struct {
 
 type AdminRoleListRequest struct {
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminRoleGetRequest struct {
 	RoleID            uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminRoleDeleteRequest struct {
 	RoleID            uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminAssignRoleRequest struct {
@@ -232,11 +246,13 @@ type AdminListAllClientsRequest struct {
 	Page              int      `json:"page" validate:"min=1"`
 	Size              int      `json:"size" validate:"min=1,max=100"`
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminGetClientDetailRequest struct {
 	ClientID          uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminCreateClientRequest struct {
@@ -248,6 +264,7 @@ type AdminCreateClientRequest struct {
 	OwnerUserID       *uuid.UUID                   `json:"owner_user_id" validate:"omitempty"`
 	OwnerUser         *AdminOwnerUserCreateRequest `json:"owner_user" validate:"omitempty"`
 	CallerPermissions []string                     `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminOwnerUserCreateRequest struct {
@@ -267,11 +284,13 @@ type AdminUpdateClientRequest struct {
 	IsActive          *bool      `json:"is_active" validate:"omitempty"`
 	OwnerUserID       *uuid.UUID `json:"owner_user_id" validate:"omitempty"`
 	CallerPermissions []string   `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminDeleteClientRequest struct {
 	ClientID          uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminTenantUserListRequest struct {
@@ -283,12 +302,14 @@ type AdminTenantUserListRequest struct {
 	Page              int       `json:"page" validate:"omitempty,min=1"`
 	Limit             int       `json:"limit" validate:"omitempty,min=1,max=100"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminTenantUserGetRequest struct {
 	ClientID          uuid.UUID `json:"-" validate:"-"`
 	UserID            uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminTenantUserCreateRequest struct {
@@ -299,6 +320,7 @@ type AdminTenantUserCreateRequest struct {
 	Phone             string    `json:"phone" validate:"omitempty,e164"`
 	Role              string    `json:"role" validate:"required,oneof=owner admin manager viewer"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminTenantUserUpdateRequest struct {
@@ -310,12 +332,14 @@ type AdminTenantUserUpdateRequest struct {
 	Role              string    `json:"role" validate:"omitempty,oneof=owner admin manager viewer"`
 	IsActive          *bool     `json:"is_active" validate:"omitempty"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminTenantUserDeleteRequest struct {
 	ClientID          uuid.UUID `json:"-" validate:"-"`
 	UserID            uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminSuspendClientRequest struct {
@@ -326,11 +350,13 @@ type AdminSuspendClientRequest struct {
 type AdminActivateClientRequest struct {
 	ClientID          uuid.UUID
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminDeactivateClientRequest struct {
 	ClientID          uuid.UUID
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 
 type AdminImpersonateClientActionRequest struct {
@@ -355,6 +381,7 @@ type AdminAssignPlanRequest struct {
 	// Diisi dari JWT claims
 	AdminID           uuid.UUID `json:"-"`
 	CallerPermissions []string  `json:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 }
 type AdminPlatformOverviewRequest struct{}
 
@@ -413,6 +440,7 @@ type AdminImpersonateRequest struct {
 
 	// Dari JWT + request context
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string              `json:"-" validate:"-"`
 	IPAddress         string   `json:"-" validate:"-"`
 }
 

@@ -32,8 +32,8 @@ type IAdminUserRepository interface {
 	UpdateLoginInfo(ctx context.Context, tx *gorm.DB, id uuid.UUID, ip string, loginAt time.Time) error
 
 	// Admin — listing with pagination
-	FindAllPaginated(ctx context.Context, tx *gorm.DB, offset, limit int) ([]entity.AdminUser, int64, error)
-	FindAllPaginatedWithRoles(ctx context.Context, tx *gorm.DB, offset, limit int) ([]entity.AdminUser, int64, error)
+	FindAllPaginated(ctx context.Context, tx *gorm.DB, offset, limit int, search string) ([]entity.AdminUser, int64, error)
+	FindAllPaginatedWithRoles(ctx context.Context, tx *gorm.DB, offset, limit int, search string) ([]entity.AdminUser, int64, error)
 
 	// 2FA
 	Update2FAStatus(ctx context.Context, tx *gorm.DB, id uuid.UUID, enabled bool) error
@@ -169,7 +169,7 @@ func (r *AdminUserRepository) UpdateLoginInfo(ctx context.Context, tx *gorm.DB, 
 
 // FindAllPaginated returns a page of admin users with total count.
 // Excludes soft-deleted records.
-func (r *AdminUserRepository) FindAllPaginated(ctx context.Context, tx *gorm.DB, offset, limit int) ([]entity.AdminUser, int64, error) {
+func (r *AdminUserRepository) FindAllPaginated(ctx context.Context, tx *gorm.DB, offset, limit int, search string) ([]entity.AdminUser, int64, error) {
 	log := logger.FromContext(ctx, r.log)
 	log.Info("admin user repo find all paginated start", zap.Int("offset", offset), zap.Int("limit", limit))
 
@@ -178,6 +178,10 @@ func (r *AdminUserRepository) FindAllPaginated(ctx context.Context, tx *gorm.DB,
 	offset, limit = clampOffsetLimit(offset, limit)
 
 	db := tx.WithContext(ctx).Model(&entity.AdminUser{}).Where("deleted_at IS NULL")
+	if search != "" {
+		pattern := "%" + escapeLike(search) + "%"
+		db = db.Where("name ILIKE ? OR email ILIKE ?", pattern, pattern)
+	}
 
 	if err := db.Count(&total).Error; err != nil {
 		log.Error("admin user repo find all paginated count failed", zap.Error(err))
@@ -200,7 +204,7 @@ func (r *AdminUserRepository) FindAllPaginated(ctx context.Context, tx *gorm.DB,
 
 // FindAllPaginatedWithRoles returns a page of admin users with roles preloaded.
 // Excludes soft-deleted records.
-func (r *AdminUserRepository) FindAllPaginatedWithRoles(ctx context.Context, tx *gorm.DB, offset, limit int) ([]entity.AdminUser, int64, error) {
+func (r *AdminUserRepository) FindAllPaginatedWithRoles(ctx context.Context, tx *gorm.DB, offset, limit int, search string) ([]entity.AdminUser, int64, error) {
 	log := logger.FromContext(ctx, r.log)
 	log.Info("admin user repo find all paginated with roles start", zap.Int("offset", offset), zap.Int("limit", limit))
 
@@ -209,6 +213,10 @@ func (r *AdminUserRepository) FindAllPaginatedWithRoles(ctx context.Context, tx 
 	offset, limit = clampOffsetLimit(offset, limit)
 
 	db := tx.WithContext(ctx).Model(&entity.AdminUser{}).Where("deleted_at IS NULL")
+	if search != "" {
+		pattern := "%" + escapeLike(search) + "%"
+		db = db.Where("name ILIKE ? OR email ILIKE ?", pattern, pattern)
+	}
 
 	if err := db.Count(&total).Error; err != nil {
 		log.Error("admin user repo find all paginated with roles count failed", zap.Error(err))

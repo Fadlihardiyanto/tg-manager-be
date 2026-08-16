@@ -19,7 +19,7 @@ import (
 type IAuditLogUseCase interface {
 	Record(ctx context.Context, tx *gorm.DB, clientID *uuid.UUID, entityType string, entityID uuid.UUID, action string, actorType string, actorID string, metadata map[string]interface{}) error
 	GetLogsByClient(ctx context.Context, clientID uuid.UUID, page, limit int) ([]model.AuditLogResponse, int64, error)
-	GetPlatformLogs(ctx context.Context, page, limit int) ([]model.AuditLogResponse, int64, error)
+	GetPlatformLogs(ctx context.Context, page, limit int, action, resource string) ([]model.AuditLogResponse, int64, error)
 }
 
 type auditLogUseCase struct {
@@ -74,11 +74,11 @@ func (uc *auditLogUseCase) GetLogsByClient(ctx context.Context, clientID uuid.UU
 	return uc.toResponseList(logs), total, nil
 }
 
-func (uc *auditLogUseCase) GetPlatformLogs(ctx context.Context, page, limit int) ([]model.AuditLogResponse, int64, error) {
+func (uc *auditLogUseCase) GetPlatformLogs(ctx context.Context, page, limit int, action, resource string) ([]model.AuditLogResponse, int64, error) {
 	log := logger.FromContext(ctx, uc.log)
 	page, limit = clampPagination(page, limit)
 	offset := (page - 1) * limit
-	logs, total, err := uc.auditRepo.FindAllPlatform(ctx, uc.db, limit, offset)
+	logs, total, err := uc.auditRepo.FindAllPlatform(ctx, uc.db, limit, offset, action, resource)
 	if err != nil {
 		log.Error("failed to get platform audit logs", zap.Error(err))
 		return nil, 0, err

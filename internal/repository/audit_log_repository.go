@@ -12,7 +12,7 @@ type IAuditLogRepository interface {
 	IRepository[entity.AuditLog]
 	FindByEntity(ctx context.Context, tx *gorm.DB, entityType string, entityID uuid.UUID) ([]entity.AuditLog, error)
 	FindAllByClient(ctx context.Context, db *gorm.DB, clientID uuid.UUID, limit, offset int) ([]entity.AuditLog, int64, error)
-	FindAllPlatform(ctx context.Context, db *gorm.DB, limit, offset int) ([]entity.AuditLog, int64, error)
+	FindAllPlatform(ctx context.Context, db *gorm.DB, limit, offset int, action, resource string) ([]entity.AuditLog, int64, error)
 }
 
 type AuditLogRepository struct {
@@ -44,12 +44,18 @@ func (r *AuditLogRepository) FindAllByClient(ctx context.Context, db *gorm.DB, c
 	return logs, total, err
 }
 
-func (r *AuditLogRepository) FindAllPlatform(ctx context.Context, db *gorm.DB, limit, offset int) ([]entity.AuditLog, int64, error) {
+func (r *AuditLogRepository) FindAllPlatform(ctx context.Context, db *gorm.DB, limit, offset int, action, resource string) ([]entity.AuditLog, int64, error) {
 	var logs []entity.AuditLog
 	var total int64
 	offset, limit = clampOffsetLimit(offset, limit)
 
 	query := db.WithContext(ctx).Model(&entity.AuditLog{})
+	if action != "" {
+		query = query.Where("action = ?", action)
+	}
+	if resource != "" {
+		query = query.Where("entity_type = ?", resource)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

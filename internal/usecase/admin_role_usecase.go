@@ -61,7 +61,7 @@ func (uc *adminRoleUseCase) ListRoles(ctx context.Context, req *model.AdminRoleL
 	log.Info("admin role list start")
 
 	// Layer 2: cek permission di usecase
-	if err := requirePermission(req.CallerPermissions, "roles.read"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "roles.read", req.CallerRoles); err != nil {
 		log.Warn("admin role list forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (uc *adminRoleUseCase) GetRole(ctx context.Context, req *model.AdminRoleGet
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role get start", zap.String("role_id", req.RoleID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "roles.read"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "roles.read", req.CallerRoles); err != nil {
 		log.Warn("admin role get forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (uc *adminRoleUseCase) CreateRole(ctx context.Context, req *model.AdminRole
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role create start", zap.String("name", req.Name))
 
-	if err := requirePermission(req.CallerPermissions, "roles.create"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "roles.create", req.CallerRoles); err != nil {
 		log.Warn("admin role create forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (uc *adminRoleUseCase) UpdateRole(ctx context.Context, req *model.AdminRole
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role update start", zap.String("role_id", req.RoleID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "roles.update", req.CallerRoles); err != nil {
 		log.Warn("admin role update forbidden", zap.Error(err))
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func (uc *adminRoleUseCase) DeleteRole(ctx context.Context, req *model.AdminRole
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role delete start", zap.String("role_id", req.RoleID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "roles.delete"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "roles.delete", req.CallerRoles); err != nil {
 		log.Warn("admin role delete forbidden", zap.Error(err))
 		return err
 	}
@@ -257,7 +257,7 @@ func (uc *adminRoleUseCase) SyncRolePermissions(ctx context.Context, req *model.
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role sync permissions start", zap.String("role_id", req.RoleID.String()))
 
-	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
+	if err := requirePermission(req.CallerPermissions, "roles.update", req.CallerRoles); err != nil {
 		log.Warn("admin role sync permissions forbidden", zap.Error(err))
 		return err
 	}
@@ -358,9 +358,15 @@ func (uc *adminRoleUseCase) RevokeRoleFromAdmin(ctx context.Context, req *model.
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 // requirePermission adalah layer 2 enforcement di dalam usecase.
-// Superadmin otomatis bypass karena permissions-nya sudah include semua
-// saat token di-generate di finalizeLogin.
-func requirePermission(callerPermissions []string, required string) error {
+// Superadmin otomatis bypass — role superadmin TIDAK punya permission rows di
+// seed (by design, seed_admin_rbac.sql:106), jadi JWT permissions-nya kosong;
+// middleware.Authorize bypass via rbac.IsSuperAdmin, usecase harus sama.
+// callerRoles bersifat variadic agar pemanggil lama tetap compile; caller yang
+// punya roles (semua admin controller mengisi req.CallerRoles) meneruskan.
+func requirePermission(callerPermissions []string, required string, callerRoles ...[]string) error {
+	if len(callerRoles) > 0 && rbac.IsSuperAdmin(callerRoles[0]) {
+		return nil
+	}
 	if !rbac.HasPermission(callerPermissions, required) {
 		return helper.NewForbiddenPermission(required)
 	}
