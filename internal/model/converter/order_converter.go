@@ -65,6 +65,19 @@ func TransactionToResponse(order *entity.Order) *model.TransactionResponse {
 		memberName = fmt.Sprintf("User-%d", order.User.TelegramUserID)
 	}
 
+	// ponytail: clone pointer fields so the response does not alias the GORM entity —
+	// caller mutation of resp.PaidAt/ExpiredAt/DiscountCode would corrupt the entity.
+	paidAt := order.PaidAt
+	if paidAt != nil {
+		v := *paidAt
+		paidAt = &v
+	}
+	expiredAt := order.ExpiredAt
+	if expiredAt != nil {
+		v := *expiredAt
+		expiredAt = &v
+	}
+
 	resp := &model.TransactionResponse{
 		ID:             order.ID,
 		ExternalID:     order.ExternalID,
@@ -79,14 +92,15 @@ func TransactionToResponse(order *entity.Order) *model.TransactionResponse {
 		PaymentMethod:  order.PaymentMethod,
 		Status:         order.Status,
 		ReceiptURL:     order.ReceiptURL,
-		PaidAt:         order.PaidAt,
-		ExpiredAt:      order.ExpiredAt,
+		PaidAt:         paidAt,
+		ExpiredAt:      expiredAt,
 		CreatedAt:      order.CreatedAt,
 	}
 
 	// Populate discount code if available
 	if order.Discount != nil && order.Discount.Code != nil {
-		resp.DiscountCode = order.Discount.Code
+		code := *order.Discount.Code
+		resp.DiscountCode = &code
 	}
 
 	return resp

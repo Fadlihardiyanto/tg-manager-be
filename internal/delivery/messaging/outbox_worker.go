@@ -145,10 +145,12 @@ func (w *OutboxWorker) markAsFailed(ctx context.Context, event *entity.Outbox, e
 	now := time.Now()
 	retryCount := event.RetryCount + 1
 
-	// Exponential backoff for retry (1m, 2m, 4m, 8m ...)
-	backoffDuration := time.Duration(1<<retryCount) * time.Minute
-	if backoffDuration > 30*time.Minute {
-		backoffDuration = 30 * time.Minute
+	// Exponential backoff for retry (1m, 2m, 4m, 8m ...), capped at 30m.
+	// ponytail: cap before shifting — 1<<retryCount overflows negative for retryCount >= 63,
+	// and the >30m cap below would not catch it (negative backoff = retry storm).
+	backoffDuration := 30 * time.Minute
+	if retryCount < 5 {
+		backoffDuration = time.Duration(1<<retryCount) * time.Minute
 	}
 	processAfter := now.Add(backoffDuration)
 

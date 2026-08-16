@@ -266,9 +266,11 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		if err != nil {
 			return nil, err
 		}
-		appliedDiscountID = &preview.DiscountID
-		discountAmount = preview.DiscountAmount
-		finalAmount = preview.FinalAmount
+		if preview != nil {
+			appliedDiscountID = &preview.DiscountID
+			discountAmount = preview.DiscountAmount
+			finalAmount = preview.FinalAmount
+		}
 	} else {
 		preview, err := uc.discountUC.ApplyAuto(ctx, &model.ApplyMemberDiscountRequest{
 			ClientID:       pkg.ClientID,

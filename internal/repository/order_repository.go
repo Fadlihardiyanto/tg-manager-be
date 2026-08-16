@@ -213,6 +213,14 @@ func (r *OrderRepository) FindTransactionsByClientID(ctx context.Context, tx *go
 	if limit < 1 {
 		limit = 20
 	}
+	// ponytail: page has no upper bound upstream (min=1 only); (page-1)*limit
+	// overflows int for absurd pages (>= ~9.2e16 with limit=100) and GORM emits
+	// a negative OFFSET -> Postgres error -> 500. Clamp instead: sane pages are
+	// unaffected, garbage pages get an empty result instead of a crash.
+	const maxPage = 1_000_000
+	if page > maxPage {
+		page = maxPage
+	}
 	offset := (page - 1) * limit
 
 	query := r.applyTransactionScope(tx.WithContext(ctx), clientID, filter)
