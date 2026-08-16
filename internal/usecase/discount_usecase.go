@@ -432,7 +432,14 @@ func (uc *memberDiscountUseCase) CommitUsage(ctx context.Context, tx *gorm.DB, d
 	if err := uc.discountRepo.CreateUsage(ctx, tx, usage); err != nil {
 		return fmt.Errorf("gagal menyimpan usage diskon")
 	}
-	return uc.discountRepo.IncrementUsage(ctx, tx, discountID)
+	ok, err := uc.discountRepo.IncrementUsage(ctx, tx, discountID)
+	if err != nil {
+		return fmt.Errorf("gagal mencatat usage diskon: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("kuota diskon sudah habis")
+	}
+	return nil
 }
 
 func (uc *memberDiscountUseCase) RollbackUsage(ctx context.Context, tx *gorm.DB, orderID, discountID uuid.UUID) error {

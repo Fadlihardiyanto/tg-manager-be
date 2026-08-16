@@ -30,6 +30,7 @@ func NewAdminPermissionController(
 func (c *AdminPermissionController) List(ctx fiber.Ctx) error {
 	var req model.AdminPermissionListRequest
 	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
+	req.CallerRoles = middleware.GetAdminRoles(ctx)
 	permissions, err := c.permissionUC.ListPermissions(ctx.Context(), &req)
 	if err != nil {
 		return err
@@ -48,6 +49,7 @@ func (c *AdminPermissionController) GetByID(ctx fiber.Ctx) error {
 
 	req := &model.AdminPermissionGetRequest{PermissionID: id}
 	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
+	req.CallerRoles = middleware.GetAdminRoles(ctx)
 	permission, err := c.permissionUC.GetPermission(ctx.Context(), req)
 	if err != nil {
 		return err

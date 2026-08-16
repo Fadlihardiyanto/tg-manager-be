@@ -307,13 +307,19 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		}
 
 		// Increment usage diskon — dilakukan di sini (saat billing pending dibuat)
-		// bukan saat paid, supaya kuota tidak oversold
-		// Jika payment gagal, admin bisa manual reset atau pakai expired cleanup job
+		// bukan saat paid, supaya kuota tidak oversold.
+		// 0 rows = kuota sudah habis (race antar checkout) → checkout DITOLAK,
+		// billing di-rollback. Oversell bukan lagi "di-handle cleanup job".
 		if appliedDiscountID != nil {
-			if err := uc.platformDiscountRepo.IncrementUsage(ctx, tx, *appliedDiscountID); err != nil {
+			ok, err := uc.platformDiscountRepo.IncrementUsage(ctx, tx, *appliedDiscountID)
+			if err != nil {
 				log.Error("checkout: gagal increment diskon usage", zap.Error(err))
-				// Non-fatal: oversold di-handle oleh cleanup job, tapi level Error
-				// supaya muncul di monitoring
+				return err
+			}
+			if !ok {
+				log.Warn("checkout: kuota diskon habis, checkout dibatalkan",
+					zap.String("discount_id", appliedDiscountID.String()))
+				return helper.NewBadRequest("kuota diskon sudah habis")
 			}
 		}
 

@@ -190,8 +190,8 @@ func toFintechReceipt(data *ReceiptData, cfg *Config) FintechReceipt {
 	}
 
 	return FintechReceipt{
-		Brand:         strings.ToUpper(firstNonEmpty(data.MerchantName, "RECEIPT")) + " - RECEIPT",
-		Status:        firstNonEmpty(StatusLabel(data.Status), "LUNAS"),
+		Brand:         sanitize(strings.ToUpper(firstNonEmpty(data.MerchantName, "RECEIPT")) + " - RECEIPT"),
+		Status:        sanitize(firstNonEmpty(StatusLabel(data.Status), "LUNAS")),
 		OrderID:       sanitize(data.OrderID),
 		TransactionID: sanitize(data.TransactionID),
 		Date: sanitize(firstNonEmpty(

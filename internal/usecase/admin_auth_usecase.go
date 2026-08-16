@@ -199,8 +199,10 @@ func (uc *AdminAuthUseCase) Verify2FA(ctx context.Context, req *model.AdminVerif
 		return nil, err
 	}
 
-	// 2. Verify OTP code — batasi percobaan brute-force (max 5 per temp token)
-	attemptKey := fmt.Sprintf("auth:2fa_attempts:%s", req.TempToken)
+	// 2. Verify OTP code — batasi percobaan brute-force (max 5 per temp token).
+	// Key include adminID: token bisa di-reset oleh pemegang password —
+	// counter per-admin mencegah reset window tak terbatas.
+	attemptKey := fmt.Sprintf("auth:2fa_attempts:%s:%s", adminID.String(), req.TempToken)
 	attempts, incrErr := uc.redis.Incr(ctx, attemptKey).Result()
 	if incrErr != nil {
 		log.Error("admin auth verify 2fa attempt counter failed", zap.Error(incrErr))

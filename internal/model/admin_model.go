@@ -192,12 +192,14 @@ type AdminAssignRoleRequest struct {
 	RoleID            uuid.UUID `json:"role_id" validate:"required"`
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string  `json:"-" validate:"-"`
 }
 
 type AdminRevokeRoleRequest struct {
 	RoleID            uuid.UUID `json:"role_id" validate:"required"`
 	AdminID           uuid.UUID `json:"-" validate:"-"`
 	CallerPermissions []string  `json:"-" validate:"-"`
+	CallerRoles       []string  `json:"-" validate:"-"`
 }
 
 // =============================================================================
@@ -389,6 +391,7 @@ type AdminPermissionModuleGroupResponse struct {
 type AdminPermissionListRequest struct {
 	// Dari JWT + request context
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string `json:"-" validate:"-"`
 }
 
 type AdminPermissionGetRequest struct {
@@ -396,6 +399,7 @@ type AdminPermissionGetRequest struct {
 
 	// Dari JWT + request context
 	CallerPermissions []string `json:"-" validate:"-"`
+	CallerRoles       []string `json:"-" validate:"-"`
 }
 
 // =============================================================================

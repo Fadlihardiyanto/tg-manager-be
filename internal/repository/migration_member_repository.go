@@ -77,6 +77,13 @@ func (r *MigrationMemberRepository) FindByClientID(ctx context.Context, tx *gorm
 	if limit < 1 {
 		limit = 20
 	}
+	if limit > 100 {
+		limit = 100
+	}
+	const maxPage = 1_000_000
+	if page > maxPage {
+		page = maxPage
+	}
 	offset := (page - 1) * limit
 
 	query := tx.WithContext(ctx).Where("client_id = ?", clientID)

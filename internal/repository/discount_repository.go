@@ -18,7 +18,7 @@ type IPlatformDiscountRepository interface {
 	FindAutoApplicable(ctx context.Context, db *gorm.DB, clientID, planID uuid.UUID, amount decimal.Decimal) (*entity.PlatformDiscount, error)
 	Create(ctx context.Context, db *gorm.DB, d *entity.PlatformDiscount) error
 	Update(ctx context.Context, db *gorm.DB, d *entity.PlatformDiscount) error
-	IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error
+	IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) (bool, error)
 	DecrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error
 	SoftDelete(ctx context.Context, db *gorm.DB, id uuid.UUID) error
 }
@@ -103,16 +103,18 @@ func (r *platformDiscountRepository) Update(ctx context.Context, db *gorm.DB, d 
 	return db.WithContext(ctx).Save(d).Error
 }
 
-func (r *platformDiscountRepository) IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error {
+func (r *platformDiscountRepository) IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) (bool, error) {
 	// Ceiling atomik: check kuota di snapshot (ApplyByCode/ApplyAuto) bukan
 	// atomic — dua checkout konkuren bisa oversold. Guard di WHERE supaya
 	// increment tidak pernah melewati max_usage (max_usage = -1 = unlimited).
-	return db.WithContext(ctx).Model(&entity.PlatformDiscount{}).
+	// Return (rows>0) agar caller bisa menolak checkout saat kuota habis.
+	result := db.WithContext(ctx).Model(&entity.PlatformDiscount{}).
 		Where("id = ? AND (max_usage = -1 OR used_count < max_usage)", id).
 		Updates(map[string]any{
 			"used_count": gorm.Expr("used_count + 1"),
 			"updated_at": time.Now(),
-		}).Error
+		})
+	return result.RowsAffected > 0, result.Error
 }
 
 func (r *platformDiscountRepository) DecrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error {
@@ -141,7 +143,7 @@ type IMemberDiscountRepository interface {
 	FindAutoApplicable(ctx context.Context, db *gorm.DB, clientID, packageID uuid.UUID, amount decimal.Decimal) (*entity.MemberDiscount, error)
 	Create(ctx context.Context, db *gorm.DB, d *entity.MemberDiscount) error
 	Update(ctx context.Context, db *gorm.DB, d *entity.MemberDiscount) error
-	IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error
+	IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) (bool, error)
 	DecrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error
 	SoftDelete(ctx context.Context, db *gorm.DB, id uuid.UUID) error
 
@@ -248,13 +250,16 @@ func (r *memberDiscountRepository) Update(ctx context.Context, db *gorm.DB, d *e
 	return db.WithContext(ctx).Save(d).Error
 }
 
-func (r *memberDiscountRepository) IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error {
-	return db.WithContext(ctx).Model(&entity.MemberDiscount{}).
-		Where("id = ?", id).
+func (r *memberDiscountRepository) IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) (bool, error) {
+	// Guard ceiling atomik (sama dengan platform) — member discount quota
+	// tidak boleh oversold oleh checkout konkuren.
+	result := db.WithContext(ctx).Model(&entity.MemberDiscount{}).
+		Where("id = ? AND (max_usage = -1 OR used_count < max_usage)", id).
 		Updates(map[string]any{
 			"used_count": gorm.Expr("used_count + 1"),
 			"updated_at": time.Now(),
-		}).Error
+		})
+	return result.RowsAffected > 0, result.Error
 }
 
 func (r *memberDiscountRepository) SoftDelete(ctx context.Context, db *gorm.DB, id uuid.UUID) error {

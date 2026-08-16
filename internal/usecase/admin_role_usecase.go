@@ -276,10 +276,12 @@ func (uc *adminRoleUseCase) AssignRolesToAdmin(ctx context.Context, req *model.A
 	log.Info("admin role assign roles start", zap.String("admin_id", req.AdminID.String()))
 
 	// Assign role hanya bisa dilakukan oleh superadmin.
-	// Fix: CallerRoles tidak pernah diisi controller (request hanya membawa
-	// CallerPermissions) — IsSuperAdmin selalu false → 403 permanen.
-	// Gunakan permission roles.update (konsisten dengan SyncPermissions).
-	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
+	// REVERT dari "fix" sesi 4: IsSuperAdmin(CallerRoles) BERFUNGSI — controller
+	// mengisi CallerRoles (admin_user_controller.go). Menggantinya dengan
+	// permission roles.update memberi role ops (punya roles.update + admins.update
+	// di seed) kemampuan menaikkan dirinya sendiri jadi superadmin = privilege
+	// escalation. Superadmin gate WAJIB untuk operasi ini.
+	if !rbac.IsSuperAdmin(req.CallerRoles) {
 		log.Warn("admin role assign roles forbidden")
 		return helper.NewForbidden("forbidden: only superadmin can assign roles")
 	}
@@ -296,10 +298,9 @@ func (uc *adminRoleUseCase) AssignRoleToAdmin(ctx context.Context, req *model.Ad
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role assign single role start", zap.String("admin_id", req.AdminID.String()), zap.String("role_id", req.RoleID.String()))
 
-	// Only superadmin can assign roles.
-	// Fix: IsSuperAdmin(CallerPermissions) selalu false (butuh roles, bukan
-	// permissions) → 403 permanen. Pakai permission roles.update.
-	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
+	// Only superadmin can assign roles — menaikkan role admin lain ke
+	// superadmin tidak boleh di-gate oleh permission yang dimiliki ops.
+	if !rbac.IsSuperAdmin(req.CallerRoles) {
 		log.Warn("admin role assign single role forbidden")
 		return helper.NewForbidden("forbidden: only superadmin can assign roles")
 	}
@@ -328,10 +329,9 @@ func (uc *adminRoleUseCase) RevokeRoleFromAdmin(ctx context.Context, req *model.
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("admin role revoke single role start", zap.String("admin_id", req.AdminID.String()), zap.String("role_id", req.RoleID.String()))
 
-	// Only superadmin can revoke roles.
-	// Fix: IsSuperAdmin(CallerPermissions) selalu false → 403 permanen.
-	// Pakai permission roles.update.
-	if err := requirePermission(req.CallerPermissions, "roles.update"); err != nil {
+	// Only superadmin can revoke roles — mencabut role superadmin admin lain
+	// tidak boleh di-gate oleh permission yang dimiliki ops.
+	if !rbac.IsSuperAdmin(req.CallerRoles) {
 		log.Warn("admin role revoke single role forbidden")
 		return helper.NewForbidden("forbidden: only superadmin can revoke roles")
 	}

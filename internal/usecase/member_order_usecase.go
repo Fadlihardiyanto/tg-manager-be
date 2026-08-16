@@ -571,8 +571,15 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 			if err := uc.discountRepo.CreateUsage(ctx, tx, usage); err != nil {
 				return fmt.Errorf("gagal menyimpan usage diskon: %w", err)
 			}
-			if err := uc.discountRepo.IncrementUsage(ctx, tx, *order.DiscountID); err != nil {
+			// Increment usage counter — quota sudah habis (race) TIDAK boleh
+			// membatalkan aktivasi: payment sudah diterima. Usage row sudah
+			// tercatat via CreateUsage; counter tidak naik = batas akhirnya.
+			ok, err := uc.discountRepo.IncrementUsage(ctx, tx, *order.DiscountID)
+			if err != nil {
 				return err
+			}
+			if !ok {
+				log.Warn("member order webhook: diskon usage quota habis, lanjut aktivasi tanpa increment", zap.String("discount_id", order.DiscountID.String()))
 			}
 		}
 

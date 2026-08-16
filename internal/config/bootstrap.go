@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/bot/handler"
@@ -328,6 +329,13 @@ func BootstrapWeb(config *BootstrapConfig) {
 	botCtrl := controller.NewTelegramBotController(botUC, config.Log, config.Validate)
 	groupCtrl := controller.NewTelegramGroupController(groupUC, config.Log, config.Validate)
 	packageCtrl := controller.NewPackageController(packageUC, config.Log, config.Validate)
+	// Fail-fast: webhook secret wajib terkonfigurasi. Controller menolak
+	// SEMUA update saat secret kosong — misconfig baru ketahuan di produksi
+	// (semua bot mati) kalau tidak dicek di startup. Placeholder default dari
+	// .env juga ditolak (bisa dipalsukan oleh siapa pun yang baca repo).
+	if config.Config.Telegram.WebhookSecret == "" || strings.HasPrefix(config.Config.Telegram.WebhookSecret, "your_") || strings.HasPrefix(config.Config.Telegram.WebhookSecret, "change_me") {
+		config.Log.Fatal("telegram webhook secret wajib dikonfigurasi (TELEGRAM_WEBHOOK_SECRET) dan tidak boleh placeholder")
+	}
 	webhookCtrl := controller.NewTelegramWebhookController(webhookUC, config.Log, config.Config.Telegram.WebhookSecret)
 	memberDiscountCtrl := controller.NewMemberDiscountController(memberDiscountUC, config.Log, config.Validate)
 	tenantAnalyticsCtrl := controller.NewTenantAnalyticsController(tenantAnalyticsUC, config.Log)

@@ -224,7 +224,8 @@ func (c *Client) CreateSnapToken(ctx context.Context, req *SnapRequest) (*SnapRe
 		if snapResp.Token == "" {
 			c.log().Error("midtrans: snap create returned empty token",
 				zap.String("order_id", req.TransactionDetails.OrderID),
-				zap.String("response", string(bodyBytes)))
+				zap.Int("status", resp.StatusCode),
+				zap.Int("response_bytes", len(bodyBytes)))
 			return nil, fmt.Errorf("midtrans: empty snap token in response")
 		}
 

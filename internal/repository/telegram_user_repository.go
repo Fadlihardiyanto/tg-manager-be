@@ -106,6 +106,15 @@ func (r *TelegramUserRepository) FindMembersByClientID(ctx context.Context, tx *
 	if limit < 1 {
 		limit = 20
 	}
+	if limit > 100 {
+		limit = 100
+	}
+	// ponytail: page tidak punya batas atas upstream — (page-1)*limit overflow
+	// untuk nilai absurd → OFFSET negatif → 500. Clamp (konvensi seluruh repo).
+	const maxPage = 1_000_000
+	if page > maxPage {
+		page = maxPage
+	}
 	offset := (page - 1) * limit
 
 	query := r.applyMemberScope(tx.WithContext(ctx), clientID, filter)
