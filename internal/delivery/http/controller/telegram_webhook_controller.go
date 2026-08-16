@@ -38,12 +38,16 @@ func (c *TelegramWebhookController) HandleIncomingUpdate(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "ID bot tidak valid")
 	}
 
-	if c.webhookSecret != "" {
-		receivedSecret := ctx.Get("X-Telegram-Bot-Api-Secret-Token")
-		if subtle.ConstantTimeCompare([]byte(receivedSecret), []byte(c.webhookSecret)) != 1 {
-			log.Warn("telegram webhook invalid secret token", zap.String("bot_id", botID.String()))
-			return helper.Forbidden(ctx, "Webhook secret tidak valid")
-		}
+	// Webhook secret wajib dikonfigurasi — tanpa secret, endpoint tidak
+	// terautentikasi dan siapa pun bisa POST update palsu. Tolak keras.
+	if c.webhookSecret == "" {
+		log.Error("telegram webhook secret not configured, rejecting updates")
+		return helper.InternalError(ctx, "Webhook secret tidak dikonfigurasi")
+	}
+	receivedSecret := ctx.Get("X-Telegram-Bot-Api-Secret-Token")
+	if subtle.ConstantTimeCompare([]byte(receivedSecret), []byte(c.webhookSecret)) != 1 {
+		log.Warn("telegram webhook invalid secret token", zap.String("bot_id", botID.String()))
+		return helper.Forbidden(ctx, "Webhook secret tidak valid")
 	}
 
 	var update tgbotapi.Update
@@ -54,9 +58,9 @@ func (c *TelegramWebhookController) HandleIncomingUpdate(ctx fiber.Ctx) error {
 
 	if err := c.webhookUC.ProcessUpdate(ctx.Context(), botID, &update); err != nil {
 		log.Error("telegram webhook process update failed", zap.Error(err))
-		// Still return 200 so Telegram doesn't retry infinitely for unrecoverable errors.
-		// If it's a temporary error, we could return 500 to trigger Telegram retry.
-		// We'll return 200 to ack the message.
+		// Transient error (DB/Redis/Telegram API) → 503 supaya Telegram retry.
+		// Update yang tidak di-ack bisa hilang permanen — jangan swallow.
+		return ctx.SendStatus(fiber.StatusServiceUnavailable)
 	}
 
 	return ctx.SendStatus(fiber.StatusOK)

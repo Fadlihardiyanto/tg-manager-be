@@ -78,6 +78,10 @@ func (c *TenantAuthController) Login(ctx fiber.Ctx) error {
 		log.Error("tenant auth login failed", zap.Error(err))
 		return err
 	}
+	if result == nil {
+		log.Error("tenant auth login returned nil result")
+		return helper.InternalError(ctx, "Terjadi kesalahan pada server")
+	}
 	log.Info("tenant auth login succeeded")
 
 	ctx.Cookie(&fiber.Cookie{
@@ -108,6 +112,10 @@ func (c *TenantAuthController) Refresh(ctx fiber.Ctx) error {
 	if err != nil {
 		log.Error("tenant auth refresh failed", zap.Error(err))
 		return err
+	}
+	if result == nil {
+		log.Error("tenant auth refresh returned nil result")
+		return helper.InternalError(ctx, "Terjadi kesalahan pada server")
 	}
 
 	ctx.Cookie(&fiber.Cookie{

@@ -74,9 +74,7 @@ func (c *MemberDiscountController) List(ctx fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
@@ -95,7 +93,7 @@ func (c *MemberDiscountController) Create(ctx fiber.Ctx) error {
 
 	var req model.CreateMemberDiscountRequest
 	if err := ctx.Bind().JSON(&req); err != nil {
-		return helper.BadRequest(ctx, "Format request tidak valid: "+err.Error())
+		return helper.BadRequest(ctx, "Format request tidak valid")
 	}
 
 	clientID := middleware.GetTenantClientID(ctx)
@@ -124,7 +122,7 @@ func (c *MemberDiscountController) Update(ctx fiber.Ctx) error {
 
 	var req model.UpdateMemberDiscountRequest
 	if err := ctx.Bind().JSON(&req); err != nil {
-		return helper.BadRequest(ctx, "Format request tidak valid: "+err.Error())
+		return helper.BadRequest(ctx, "Format request tidak valid")
 	}
 
 	req.DiscountID = id

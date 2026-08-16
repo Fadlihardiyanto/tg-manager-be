@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -41,9 +42,7 @@ func (c *MemberController) List(ctx fiber.Ctx) error {
 	// Parse query params
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
@@ -69,15 +68,24 @@ func (c *MemberController) List(ctx fiber.Ctx) error {
 		PackageID: packageID,
 	}
 
-	joinedStart, joinedEnd := parseTimeRangeMs(ctx.Query("joined", ""))
+	joinedStart, joinedEnd, err := parseTimeRangeMs(ctx.Query("joined", ""))
+	if err != nil {
+		return helper.BadRequest(ctx, "joined tidak valid: format 'start,end' dalam ms")
+	}
 	filter.JoinedStart = joinedStart
 	filter.JoinedEnd = joinedEnd
 
-	expiredStart, expiredEnd := parseTimeRangeMs(ctx.Query("expired", ""))
+	expiredStart, expiredEnd, err := parseTimeRangeMs(ctx.Query("expired", ""))
+	if err != nil {
+		return helper.BadRequest(ctx, "expired tidak valid: format 'start,end' dalam ms")
+	}
 	filter.ExpiredStart = expiredStart
 	filter.ExpiredEnd = expiredEnd
 
-	nearestExpiryStart, nearestExpiryEnd := parseTimeRangeMs(ctx.Query("nearest_expiry", ""))
+	nearestExpiryStart, nearestExpiryEnd, err := parseTimeRangeMs(ctx.Query("nearest_expiry", ""))
+	if err != nil {
+		return helper.BadRequest(ctx, "nearest_expiry tidak valid: format 'start,end' dalam ms")
+	}
 	filter.NearestExpiryStart = nearestExpiryStart
 	filter.NearestExpiryEnd = nearestExpiryEnd
 
@@ -91,27 +99,27 @@ func (c *MemberController) List(ctx fiber.Ctx) error {
 	return helper.SuccessWithMeta(ctx, "Berhasil mengambil daftar member", result, meta)
 }
 
-func parseTimeRangeMs(val string) (*time.Time, *time.Time) {
+func parseTimeRangeMs(val string) (*time.Time, *time.Time, error) {
 	if val == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	parts := strings.Split(val, ",")
 	if len(parts) != 2 {
-		return nil, nil
+		return nil, nil, fmt.Errorf("format time range harus 'start,end' dalam ms")
 	}
 
 	startMs, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("format time range harus 'start,end' dalam ms")
 	}
 	endMs, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("format time range harus 'start,end' dalam ms")
 	}
 
 	start := time.UnixMilli(startMs)
 	end := time.UnixMilli(endMs)
-	return &start, &end
+	return &start, &end, nil
 }
 
 // Get godoc

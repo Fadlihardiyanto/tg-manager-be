@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"fmt"
-
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
@@ -38,8 +36,8 @@ func (c *TenantProfileController) UpdatePaymentSettings(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "Isi request tidak valid")
 	}
 
-	if err := c.validate.Struct(&req); err != nil {
-		return helper.BadRequest(ctx, "Validasi gagal: "+err.Error())
+	if errs := helper.ValidateStruct(c.validate, &req); errs != nil {
+		return helper.UnprocessableEntity(ctx, errs)
 	}
 
 	res, err := c.uc.UpdatePaymentSettings(ctx.Context(), clientID, &req)
@@ -79,8 +77,8 @@ func (c *TenantProfileController) PostKeyExchange(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "Isi request tidak valid")
 	}
 
-	if err := c.validate.Struct(&req); err != nil {
-		return helper.BadRequest(ctx, "Validasi gagal: "+err.Error())
+	if errs := helper.ValidateStruct(c.validate, &req); errs != nil {
+		return helper.UnprocessableEntity(ctx, errs)
 	}
 
 	res, err := c.uc.InitiateKeyExchange(ctx.Context(), clientID, req.ClientPublicKey)
@@ -104,8 +102,8 @@ func (c *TenantProfileController) PutPaymentEncrypted(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "Isi request tidak valid")
 	}
 
-	if err := c.validate.Struct(&req); err != nil {
-		return helper.BadRequest(ctx, "Validasi gagal: "+err.Error())
+	if errs := helper.ValidateStruct(c.validate, &req); errs != nil {
+		return helper.UnprocessableEntity(ctx, errs)
 	}
 
 	res, err := c.uc.UpdatePaymentSettingsEncrypted(ctx.Context(), clientID, &req)
@@ -127,11 +125,9 @@ func (c *TenantProfileController) UpdateProfile(ctx fiber.Ctx) error {
 		return helper.BadRequest(ctx, "Isi request tidak valid")
 	}
 
-	if err := c.validate.Struct(&req); err != nil {
-		return helper.BadRequest(ctx, "Validasi gagal: "+err.Error())
+	if errs := helper.ValidateStruct(c.validate, &req); errs != nil {
+		return helper.UnprocessableEntity(ctx, errs)
 	}
-
-	fmt.Println("UpdateProfile request: ", req)
 
 	res, err := c.uc.UpdateProfile(ctx.Context(), clientID, &req)
 	if err != nil {

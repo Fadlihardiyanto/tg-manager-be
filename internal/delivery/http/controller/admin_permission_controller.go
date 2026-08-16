@@ -32,8 +32,7 @@ func (c *AdminPermissionController) List(ctx fiber.Ctx) error {
 	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
 	permissions, err := c.permissionUC.ListPermissions(ctx.Context(), &req)
 	if err != nil {
-		c.log.Error("admin permission controller: list", zap.Error(err))
-		return helper.InternalError(ctx, "Gagal mengambil daftar permission")
+		return err
 	}
 
 	return helper.Success(ctx, "Daftar permission berhasil diambil", permissions)
@@ -51,8 +50,7 @@ func (c *AdminPermissionController) GetByID(ctx fiber.Ctx) error {
 	req.CallerPermissions = middleware.GetAdminPermissions(ctx)
 	permission, err := c.permissionUC.GetPermission(ctx.Context(), req)
 	if err != nil {
-		c.log.Error("admin permission controller: get by id", zap.Error(err))
-		return helper.NotFound(ctx, "Permission tidak ditemukan")
+		return err
 	}
 
 	return helper.Success(ctx, "Detail permission berhasil diambil", permission)

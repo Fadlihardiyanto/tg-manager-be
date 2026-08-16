@@ -52,6 +52,10 @@ func (c *TelegramBotController) Create(ctx fiber.Ctx) error {
 		log.Error("bot controller create failed", zap.Error(err))
 		return err
 	}
+	if result == nil {
+		log.Error("bot controller create returned nil result")
+		return helper.InternalError(ctx, "Terjadi kesalahan pada server")
+	}
 
 	log.Info("bot controller create succeeded", zap.String("bot_id", result.ID.String()))
 	return helper.Created(ctx, "Bot berhasil ditambahkan", result)
@@ -67,9 +71,7 @@ func (c *TelegramBotController) List(ctx fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}

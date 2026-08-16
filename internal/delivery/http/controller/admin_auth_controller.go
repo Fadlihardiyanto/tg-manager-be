@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strings"
+
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/delivery/http/middleware"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
@@ -48,6 +50,10 @@ func (c *AdminAuthController) Login(ctx fiber.Ctx) error {
 	if err != nil {
 		log.Error("admin auth login failed", zap.Error(err))
 		return err
+	}
+	if result == nil {
+		log.Error("admin auth login returned nil result")
+		return helper.InternalError(ctx, "Terjadi kesalahan pada server")
 	}
 	log.Info("admin auth login succeeded")
 
@@ -158,8 +164,8 @@ func (c *AdminAuthController) Logout(ctx fiber.Ctx) error {
 	adminID := middleware.GetAdminID(ctx)
 	authHeader := ctx.Get("Authorization")
 	tokenStr := ""
-	if len(authHeader) > 7 {
-		tokenStr = authHeader[7:] // trim "Bearer "
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 	req := &model.AdminLogoutRequest{
 		AdminID:     adminID,

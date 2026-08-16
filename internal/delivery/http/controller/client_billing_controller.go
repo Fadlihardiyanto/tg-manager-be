@@ -31,9 +31,7 @@ func NewClientBillingController(uc usecase.IClientBillingUseCase, log *zap.Logge
 func (c *ClientBillingController) AdminList(ctx fiber.Ctx) error {
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
@@ -217,6 +215,7 @@ func (c *ClientBillingController) ClientGetBillingHistory(ctx fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "10"))
+	page = clampPage(page)
 
 	result, total, err := c.billingUC.GetBillingHistory(ctx.Context(), clientID, page, limit)
 	if err != nil {

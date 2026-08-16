@@ -52,6 +52,10 @@ func (c *CustomCommandController) Create(ctx fiber.Ctx) error {
 		log.Error("custom command controller create failed", zap.Error(err))
 		return err
 	}
+	if result == nil {
+		log.Error("custom command controller create returned nil result")
+		return helper.InternalError(ctx, "Terjadi kesalahan pada server")
+	}
 
 	log.Info("custom command controller create succeeded", zap.String("command_id", result.ID.String()))
 	return helper.Created(ctx, "Custom command berhasil dibuat", result)
@@ -67,9 +71,7 @@ func (c *CustomCommandController) List(ctx fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
@@ -79,9 +81,11 @@ func (c *CustomCommandController) List(ctx fiber.Ctx) error {
 	req.Limit = limit
 
 	if botIDStr := ctx.Query("bot_id"); botIDStr != "" {
-		if id, err := uuid.Parse(botIDStr); err == nil {
-			req.BotID = &id
+		id, err := uuid.Parse(botIDStr)
+		if err != nil {
+			return helper.BadRequest(ctx, "ID bot tidak valid")
 		}
+		req.BotID = &id
 	}
 	if isActiveStr := ctx.Query("is_active"); isActiveStr != "" {
 		isActive := isActiveStr == "true"

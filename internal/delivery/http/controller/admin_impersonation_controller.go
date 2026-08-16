@@ -7,6 +7,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/usecase"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/rbac"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -108,6 +109,10 @@ func (c *AdminImpersonationController) ListByAdmin(ctx fiber.Ctx) error {
 	adminID, err := uuid.Parse(ctx.Query("admin_id"))
 	if err != nil {
 		adminID = middleware.GetAdminID(ctx) // default: logged-in admin
+	} else if !rbac.IsSuperAdmin(middleware.GetAdminRoles(ctx)) {
+		// Horizontal disclosure: admin biasa tidak boleh membaca log
+		// impersonation admin lain — paksa pakai ID sendiri.
+		adminID = middleware.GetAdminID(ctx)
 	}
 
 	page, limit := parsePagination(ctx)
@@ -125,9 +130,7 @@ func (c *AdminImpersonationController) ListByAdmin(ctx fiber.Ctx) error {
 func parsePagination(ctx fiber.Ctx) (int, int) {
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}

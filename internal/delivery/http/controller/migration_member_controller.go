@@ -85,11 +85,14 @@ func (c *MigrationMemberController) List(ctx fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
+	}
+
+	packageID := parseUUID(ctx.Query("package_id", ""))
+	if packageID == uuid.Nil && ctx.Query("package_id", "") != "" {
+		return helper.BadRequest(ctx, "ID paket tidak valid")
 	}
 
 	filter := model.MigrationMemberFilterRequest{
@@ -97,7 +100,7 @@ func (c *MigrationMemberController) List(ctx fiber.Ctx) error {
 		Limit:     limit,
 		Status:    ctx.Query("status", ""),
 		Search:    ctx.Query("search", ""),
-		PackageID: parseUUID(ctx.Query("package_id", "")),
+		PackageID: packageID,
 	}
 
 	result, total, err := c.migrationUC.List(ctx.Context(), clientID, filter)

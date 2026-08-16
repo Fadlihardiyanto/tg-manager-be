@@ -28,8 +28,9 @@ func (c *TenantAnalyticsController) GetOverview(ctx fiber.Ctx) error {
 
 	overview, err := c.analyticsUC.GetOverview(ctx.Context(), clientID)
 	if err != nil {
-		c.log.Error("failed to get analytics overview", zap.Error(err))
-		return helper.InternalError(ctx, "Gagal mengambil data analitik")
+		// Central handler di config/fiber.go memetakan helper.Err* ke status
+		// yang benar — jangan flatten semua jadi 500.
+		return err
 	}
 
 	return helper.Success(ctx, "Berhasil mengambil analitik", overview)

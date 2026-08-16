@@ -204,7 +204,7 @@ func (uc *AdminAuthUseCase) Verify2FA(ctx context.Context, req *model.AdminVerif
 	attempts, incrErr := uc.redis.Incr(ctx, attemptKey).Result()
 	if incrErr != nil {
 		log.Error("admin auth verify 2fa attempt counter failed", zap.Error(incrErr))
-		return nil, err
+		return nil, incrErr
 	}
 	uc.redis.Expire(ctx, attemptKey, 10*time.Minute)
 	if attempts > 5 {

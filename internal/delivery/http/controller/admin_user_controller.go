@@ -37,10 +37,8 @@ func (c *AdminUserController) List(ctx fiber.Ctx) error {
 	log := logger.FromContext(ctx.Context(), c.log)
 	log.Info("admin user list request")
 
-	page, err := strconv.Atoi(ctx.Query("page", "1"))
-	if err != nil || page < 1 {
-		page = 1
-	}
+	page, _ := strconv.Atoi(ctx.Query("page", "1"))
+	page = clampPage(page)
 	limit, err := strconv.Atoi(ctx.Query("limit", "20"))
 	if err != nil || limit < 1 {
 		limit = 20

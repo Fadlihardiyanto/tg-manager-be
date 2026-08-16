@@ -53,6 +53,10 @@ func (c *PackageController) Create(ctx fiber.Ctx) error {
 		log.Error("package controller create failed", zap.Error(err))
 		return err
 	}
+	if result == nil {
+		log.Error("package controller create returned nil result")
+		return helper.InternalError(ctx, "Terjadi kesalahan pada server")
+	}
 
 	log.Info("package controller create succeeded", zap.String("package_id", result.ID.String()))
 	return helper.Created(ctx, "Paket berhasil dibuat", result)
@@ -68,9 +72,7 @@ func (c *PackageController) List(ctx fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}

@@ -37,9 +37,7 @@ func (c *TenantTransactionController) List(ctx fiber.Ctx) error {
 	// Parse query params
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
+	page = clampPage(page)
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
