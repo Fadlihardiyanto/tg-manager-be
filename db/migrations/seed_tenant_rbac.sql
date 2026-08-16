@@ -104,7 +104,7 @@ WHERE r.name = 'admin'
     'discounts.create', 'discounts.read', 'discounts.update', 'discounts.delete',
     'members.read',
     'reports.read',
-    'reports.update',
+    'reports.update'
   )
 ON CONFLICT DO NOTHING;
 
@@ -123,7 +123,7 @@ WHERE r.name = 'manager'
     'analytics.read',
     'discounts.read',
     'members.read',
-    'reports.read',
+    'reports.read'
   )
 ON CONFLICT DO NOTHING;
 
@@ -143,7 +143,7 @@ WHERE r.name = 'viewer'
     'analytics.read',
     'discounts.read',
     'members.read',
-    'reports.read',
+    'reports.read'
   )
 ON CONFLICT DO NOTHING;
 
