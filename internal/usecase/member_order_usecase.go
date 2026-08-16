@@ -382,6 +382,7 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 		DiscountAmount: discountAmount,
 		Status:         "pending",
 		ClientID:       pkg.ClientID,
+		BotUUID:        req.BotID, // bot asal checkout — DM aktivasi dari bot ini
 		PaymentURL:     uc.buildPaymentURL(snapResp.RedirectURL, externalID),
 		SnapToken:      snapResp.Token,
 		ExpiredAt:      &expiredAt,
@@ -668,6 +669,7 @@ func (uc *memberOrderUseCase) HandleWebhook(ctx context.Context, req *model.Midt
 				"package_id":       order.PackageID.String(),
 				"client_id":        order.ClientID.String(),
 				"order_id":         order.ID.String(),
+				"bot_id":           order.BotUUID.String(), // bot asal checkout — DM dikirim dari bot ini
 				"amount":           order.Amount,
 				"activated_at":     activatedAt.Format(time.RFC3339),
 				"expired_at":       expiredAt.Format(time.RFC3339),

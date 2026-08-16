@@ -74,6 +74,7 @@ type SubscriptionActivatedPayload struct {
 	PackageID      string `json:"package_id"`
 	ClientID       string `json:"client_id"`
 	OrderID        string `json:"order_id"`
+	BotID          string `json:"bot_id"` // bot asal checkout — DM dikirim dari bot ini
 	IsResend       bool   `json:"is_resend"`
 }
 
@@ -204,6 +205,26 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 			)...,
 		)
 		// Continue to send DM — user gets a message explaining the issue (no DLQ)
+	}
+
+	// 4b. DM dikirim dari bot ASAL CHECKOUT (payload.BotID) — user pasti pernah
+	// chat bot itu, sedangkan bot pemilik grup belum tentu (Telegram menolak DM
+	// dari bot yang belum pernah di-chat user). Fallback berlapis: bot checkout
+	// hilang/soft-deleted/token invalid → tetap pakai bot grup (perilaku lama).
+	if payload.BotID != "" {
+		checkoutBotID, parseErr := uuid.Parse(payload.BotID)
+		if parseErr == nil && checkoutBotID != uuid.Nil {
+			checkoutBot, err := h.botRepo.FindByID(ctx, h.db, checkoutBotID)
+			if err == nil && checkoutBot != nil {
+				token, err := crypto.Decrypt(checkoutBot.Token, h.encryptionKey)
+				if err == nil {
+					if client, err := h.telegramFactory.NewClient(token); err == nil {
+						dmClient = client
+						h.logger.Info("telegram action handler: dm will be sent from checkout bot", append(logFields, zap.String("bot_id", checkoutBotID.String()))...)
+					}
+				}
+			}
+		}
 	}
 
 	// 5. Fetch Subscription for Expiration Date

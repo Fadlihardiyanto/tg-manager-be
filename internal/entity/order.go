@@ -21,6 +21,7 @@ type Order struct {
 	PaymentMethod  string          `gorm:"type:varchar(50)"`
 	PaidAt         *time.Time
 	ClientID       uuid.UUID  `gorm:"type:uuid;index;not null"`
+	BotUUID        uuid.UUID  `gorm:"type:uuid;column:bot_uuid"` // bot asal checkout — DM dikirim dari bot ini (user pasti pernah chat bot-nya)
 	SubscriptionID *uuid.UUID `gorm:"type:uuid"`
 	PaymentURL     string     `gorm:"type:varchar(500)"`
 	SnapToken      string     `gorm:"type:varchar(255)"`

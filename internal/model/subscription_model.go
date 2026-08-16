@@ -45,6 +45,7 @@ type MemberCheckoutRequest struct {
 	LastName       string    `json:"last_name" validate:"omitempty"`
 	Phone          string    `json:"phone" validate:"omitempty"`
 	DiscountCode   *string   `json:"discount_code,omitempty"`
+	BotID          uuid.UUID `json:"-" validate:"-"` // bot asal checkout (dari handler)
 }
 
 type MemberCheckoutResponse struct {

@@ -211,6 +211,7 @@ func (h *PackageSelectHandler) Execute(ctx context.Context, bot *entity.Telegram
 		Username:       query.From.UserName,
 		FirstName:      query.From.FirstName,
 		LastName:       query.From.LastName,
+		BotID:          bot.ID, // bot asal checkout — DM aktivasi dikirim dari bot ini
 	}
 
 	h.log.Info("initiating checkout", zap.String("package_id", packageID.String()), zap.Bool("is_forced", isForced))
