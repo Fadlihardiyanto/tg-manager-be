@@ -455,7 +455,7 @@ func (uc *memberDiscountUseCase) applyMemberDiscount(ctx context.Context, d *ent
 		if err != nil {
 			return nil, fmt.Errorf("gagal cek penggunaan diskon: %w", err)
 		}
-		if int(usageCount) >= d.MaxUsagePerUser {
+		if usageCount >= int64(d.MaxUsagePerUser) {
 			return nil, helper.NewBadRequest(fmt.Sprintf("Anda sudah menggunakan diskon ini sebanyak %d kali", d.MaxUsagePerUser))
 		}
 	}

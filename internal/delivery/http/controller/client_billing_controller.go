@@ -136,6 +136,11 @@ func (c *ClientBillingController) Webhook(ctx fiber.Ctx) error {
 			c.log.Warn("billing webhook: terminal error, acking 200", zap.Error(err), zap.String("order_id", req.OrderID))
 			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 		}
+		if errors.Is(err, usecase.ErrWebhookAmountMismatch) {
+			metrics.MidtransWebhook.WithLabelValues("billing", "amount_mismatch").Inc()
+			c.log.Warn("billing webhook: terminal error, acking 200", zap.Error(err), zap.String("order_id", req.OrderID))
+			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+		}
 		// Transient (DB/Redis/etc.) → 503 so Midtrans retries (retry 4x, vs 1x for 500)
 		metrics.MidtransWebhook.WithLabelValues("billing", "transient_error").Inc()
 		c.log.Error("billing webhook: transient error, returning 503 for retry", zap.Error(err), zap.String("order_id", req.OrderID))

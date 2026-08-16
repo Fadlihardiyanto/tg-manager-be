@@ -251,13 +251,27 @@ func TestValidate(t *testing.T) {
 			wantErrContain: "minimum",
 		},
 		{
+			name:           "non-positive value",
+			discount:       &Discount{IsActive: true, ValidFrom: past, MaxUsage: -1, Value: decimal.Zero},
+			amount:         decimal.NewFromInt(100000),
+			wantErr:        true,
+			wantErrContain: "nilai diskon",
+		},
+		{
+			name:           "percentage above 100",
+			discount:       &Discount{IsActive: true, ValidFrom: past, MaxUsage: -1, Type: TypePercentage, Value: decimal.NewFromInt(150)},
+			amount:         decimal.NewFromInt(100000),
+			wantErr:        true,
+			wantErrContain: "persentase",
+		},
+		{
 			name:     "valid discount",
-			discount: &Discount{IsActive: true, ValidFrom: past, MaxUsage: -1},
+			discount: &Discount{IsActive: true, ValidFrom: past, MaxUsage: -1, Value: decimal.NewFromInt(10)},
 			amount:   decimal.NewFromInt(100000),
 		},
 		{
 			name:     "unlimited usage not exhausted",
-			discount: &Discount{IsActive: true, ValidFrom: past, MaxUsage: -1, UsedCount: 999},
+			discount: &Discount{IsActive: true, ValidFrom: past, MaxUsage: -1, UsedCount: 999, Value: decimal.NewFromInt(10)},
 			amount:   decimal.NewFromInt(100000),
 		},
 	}

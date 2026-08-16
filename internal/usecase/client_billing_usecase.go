@@ -182,6 +182,17 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		return nil, helper.NewBadRequest("nilai pembayaran tidak valid")
 	}
 
+	// Bulatkan ke rupiah utuh sebelum kirim ke Midtrans (hanya menerima integer).
+	// Harga plan / diskon fraksional (decimal(12,2), mis. 149.999,50) sebelumnya
+	// membuat checkout gagal permanen. Diskon efektif dihitung ulang sebagai
+	// selisih (original - final) supaya sum(item_details) == gross_amount selalu.
+	finalAmount = finalAmount.Round(0)
+	originalAmount = originalAmount.Round(0)
+	discountAmount = originalAmount.Sub(finalAmount)
+	if finalAmount.LessThanOrEqual(decimal.Zero) {
+		return nil, helper.NewBadRequest("nilai pembayaran tidak valid")
+	}
+
 	// 5. Buat external_id unik untuk idempotency
 	externalID := fmt.Sprintf("BILLING-%s-%s-%d",
 		req.ClientID.String()[:8],
@@ -200,6 +211,13 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		return nil, helper.NewBadRequest("nilai pembayaran tidak valid")
 	}
 
+	// Owner bisa nil (Preload tanpa FK constraint — owner user terhapus).
+	// Mirror guard di generateBillingReceipt: email opsional, jangan panic.
+	ownerEmail := ""
+	if client.Owner != nil {
+		ownerEmail = client.Owner.Email
+	}
+
 	snapReq := &midtrans.SnapRequest{
 		TransactionDetails: midtrans.TransactionDetails{
 			OrderID:     externalID,
@@ -207,7 +225,7 @@ func (uc *clientBillingUseCase) Checkout(ctx context.Context, req *model.ClientC
 		},
 		CustomerDetails: midtrans.CustomerDetails{
 			FirstName: client.Name,
-			Email:     client.Owner.Email,
+			Email:     ownerEmail,
 		},
 		ItemDetails: []midtrans.ItemDetail{
 			{
@@ -393,7 +411,20 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		return ErrWebhookNotFound
 	}
 
-	// 4. Early idempotency check (optimistic — bisa race, dikuatkan oleh atomic UPDATE di bawah)
+	// 4. Reconcile jumlah pembayaran: gross_amount webhook harus sama dengan
+	// amount billing. Signature sudah diverifikasi, jadi ini deteksi anomali
+	// (settlement parsial / data keliru) — jangan pernah aktivasi plan dengan
+	// jumlah yang tidak sesuai. Terminal: ack 200 di controller, stop retry.
+	grossAmount, parseErr := decimal.NewFromString(req.GrossAmount)
+	if parseErr != nil || !grossAmount.Equal(billing.Amount) {
+		log.Warn("client billing webhook: gross amount mismatch",
+			zap.String("order_id", req.OrderID),
+			zap.String("gross_amount", req.GrossAmount),
+			zap.String("billing_amount", billing.Amount.String()))
+		return ErrWebhookAmountMismatch
+	}
+
+	// 5. Early idempotency check (optimistic — bisa race, dikuatkan oleh atomic UPDATE di bawah)
 	if billing.Status != "pending" {
 		log.Info("client billing webhook: already processed, skipping",
 			zap.String("order_id", req.OrderID),
@@ -401,7 +432,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		return nil
 	}
 
-	// 5. Tentukan status baru berdasarkan notifikasi Midtrans
+	// 6. Tentukan status baru berdasarkan notifikasi Midtrans
 	newStatus, handled := mapClientBillingWebhookStatus(notification)
 	if !handled {
 		// Status tidak dikenal (e.g. 'pending', 'authorize') — skip, tunggu webhook berikutnya
@@ -411,7 +442,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		return nil
 	}
 
-	// 6. DB Transaction dengan ATOMIC conditional UPDATE
+	// 7. DB Transaction dengan ATOMIC conditional UPDATE
 	// Kunci utama idempotency: UPDATE ... WHERE id=? AND status='pending'
 	// Jika concurrent webhook sudah memproses → RowsAffected=0 → skip.
 	// Ini mengunci di DB level tanpa SELECT FOR UPDATE yang lebih expensive.
@@ -464,7 +495,7 @@ func (uc *clientBillingUseCase) HandleWebhook(ctx context.Context, req *model.Mi
 		return err
 	}
 
-	// 7. Generate receipt on successful payment (non-fatal if fails)
+	// 8. Generate receipt on successful payment (non-fatal if fails)
 	if newStatus == "active" && uc.s3Client != nil && uc.pdfClient != nil {
 		if err := uc.generateBillingReceipt(ctx, billing); err != nil {
 			log.Warn("client billing webhook: receipt generation failed",
@@ -587,6 +618,16 @@ func (uc *clientBillingUseCase) ListBillings(ctx context.Context, req *model.Adm
 	}
 	if req.Limit < 1 {
 		req.Limit = 20
+	}
+	// ponytail: page/limit dari query param tanpa validasi (strconv.Atoi, error dibuang);
+	// (page-1)*limit overflow untuk nilai absurd -> OFFSET negatif -> Postgres 500.
+	// Clamp: limit ikut konvensi repo (lte=100), page di-cap jauh di atas pemakaian nyata.
+	if req.Limit > 100 {
+		req.Limit = 100
+	}
+	const maxPage = 1_000_000
+	if req.Page > maxPage {
+		req.Page = maxPage
 	}
 	offset := (req.Page - 1) * req.Limit
 
@@ -712,6 +753,12 @@ func (uc *clientBillingUseCase) GetBillingHistory(ctx context.Context, clientID 
 	if limit < 1 || limit > 50 {
 		limit = 10
 	}
+	// ponytail: page dari query param tanpa batas atas — clamp anti-overflow
+	// (lihat ListBillings): (page-1)*limit overflow -> OFFSET negatif -> 500.
+	const maxPage = 1_000_000
+	if page > maxPage {
+		page = maxPage
+	}
 	offset := (page - 1) * limit
 
 	billings, total, err := uc.billingRepo.FindAllPaginated(ctx, uc.db.Gorm, &clientID, "", offset, limit)
@@ -814,7 +861,9 @@ func (uc *clientBillingUseCase) generateBillingReceipt(ctx context.Context, bill
 		ownerEmail = client.Owner.Email
 	}
 
-	duration := "30 Hari"
+	// Durasi aktual mengikuti kalender (AddDate(0,1,0) / AddDate(1,0,0)),
+	// bukan fixed 30 hari — label diselaraskan dengan perilaku sebenarnya.
+	duration := "1 Bulan"
 	if billing.BillingCycle == "yearly" {
 		duration = "1 Tahun"
 	}

@@ -8,4 +8,5 @@ import "errors"
 var (
 	ErrWebhookInvalidSignature = errors.New("webhook: invalid signature")
 	ErrWebhookNotFound         = errors.New("webhook: target not found")
+	ErrWebhookAmountMismatch   = errors.New("webhook: gross amount mismatch")
 )

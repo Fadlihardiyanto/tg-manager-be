@@ -104,8 +104,11 @@ func (r *platformDiscountRepository) Update(ctx context.Context, db *gorm.DB, d 
 }
 
 func (r *platformDiscountRepository) IncrementUsage(ctx context.Context, db *gorm.DB, id uuid.UUID) error {
+	// Ceiling atomik: check kuota di snapshot (ApplyByCode/ApplyAuto) bukan
+	// atomic — dua checkout konkuren bisa oversold. Guard di WHERE supaya
+	// increment tidak pernah melewati max_usage (max_usage = -1 = unlimited).
 	return db.WithContext(ctx).Model(&entity.PlatformDiscount{}).
-		Where("id = ?", id).
+		Where("id = ? AND (max_usage = -1 OR used_count < max_usage)", id).
 		Updates(map[string]any{
 			"used_count": gorm.Expr("used_count + 1"),
 			"updated_at": time.Now(),

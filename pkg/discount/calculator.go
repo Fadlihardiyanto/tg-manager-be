@@ -91,5 +91,16 @@ func validate(d *Discount, amount decimal.Decimal) error {
 		return fmt.Errorf("minimum pembelian Rp%s untuk menggunakan diskon ini", d.MinPurchase.String())
 	}
 
+	// Validasi nilai diskon (ditempatkan terakhir: error validasi yang lebih
+	// spesifik dilaporkan lebih dulu). Nilai <= 0 atau persentase > 100% akan
+	// membuat finalAmount > amount / clamped ke 0 — checkout gagal secara
+	// membingungkan; tolak sejak awal dengan pesan jelas.
+	if d.Value.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("nilai diskon tidak valid")
+	}
+	if d.Type == TypePercentage && d.Value.GreaterThan(decimal.NewFromInt(100)) {
+		return fmt.Errorf("persentase diskon tidak valid")
+	}
+
 	return nil
 }
