@@ -178,6 +178,23 @@ func (uc *PackageUseCase) Update(ctx context.Context, clientID uuid.UUID, packag
 	}
 	pkg.UpdatedAt = time.Now()
 
+	// Paket tidak boleh diaktifkan tanpa grup akses — member yang beli tidak
+	// akan mendapat link. Edit field lain (nama/harga) tetap bebas.
+	if req.IsActive != nil && *req.IsActive {
+		if pkg.IsAllAccess {
+			activeGroups, err := uc.groupRepo.FindByClientID(ctx, uc.db.Gorm, clientID, 1, 1)
+			if err != nil {
+				log.Error("package usecase update count client groups failed", zap.String("client_id", clientID.String()), zap.Error(err))
+				return nil, fmt.Errorf("gagal memeriksa grup akses paket")
+			}
+			if len(activeGroups) == 0 {
+				return nil, helper.NewBadRequest("Paket tidak bisa diaktifkan karena belum memiliki grup akses.")
+			}
+		} else if len(pkg.Groups) == 0 {
+			return nil, helper.NewBadRequest("Paket tidak bisa diaktifkan karena belum memiliki grup akses.")
+		}
+	}
+
 	if err := uc.packageRepo.Update(ctx, uc.db.Gorm, pkg); err != nil {
 		log.Error("package usecase update save failed", zap.Error(err))
 		return nil, err
@@ -222,6 +239,11 @@ func (uc *PackageUseCase) BulkDelete(ctx context.Context, clientID uuid.UUID, id
 func (uc *PackageUseCase) AssociateGroups(ctx context.Context, clientID uuid.UUID, packageID uuid.UUID, req *model.PackageGroupAssociateRequest) error {
 	log := logger.FromContext(ctx, uc.log)
 	log.Info("package usecase associate start", zap.String("package_id", packageID.String()))
+
+	// Detach total dilarang — paket wajib selalu memiliki minimal 1 grup akses.
+	if len(req.GroupIDs) == 0 {
+		return helper.NewBadRequest("Paket wajib memiliki minimal 1 grup akses.")
+	}
 
 	pkg, err := uc.packageRepo.FindByID(ctx, uc.db.Gorm, packageID)
 	if err != nil {

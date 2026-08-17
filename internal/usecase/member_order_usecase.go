@@ -44,6 +44,7 @@ type memberOrderUseCase struct {
 	discountUC       IMemberDiscountUseCase
 	outboxRepo       repository.IOutboxRepository
 	botRepo          repository.ITelegramBotRepository
+	groupRepo        repository.ITelegramGroupRepository
 	redis            *redis.Client
 	log              *zap.Logger
 	encryptionKey    string
@@ -66,6 +67,7 @@ func NewMemberOrderUseCase(
 	discountUC IMemberDiscountUseCase,
 	outboxRepo repository.IOutboxRepository,
 	botRepo repository.ITelegramBotRepository,
+	groupRepo repository.ITelegramGroupRepository,
 	redisClient *redis.Client,
 	log *zap.Logger,
 	encryptionKey string,
@@ -87,6 +89,7 @@ func NewMemberOrderUseCase(
 		discountUC:       discountUC,
 		outboxRepo:       outboxRepo,
 		botRepo:          botRepo,
+		groupRepo:        groupRepo,
 		redis:            redisClient,
 		log:              log,
 		encryptionKey:    encryptionKey,
@@ -157,6 +160,22 @@ func (uc *memberOrderUseCase) Checkout(ctx context.Context, req *model.MemberChe
 	}
 	if !pkg.IsActive {
 		return nil, helper.NewBadRequest("Paket ini sedang tidak aktif")
+	}
+
+	// Validasi grup akses — paket tanpa grup tidak boleh dibeli (member tidak
+	// akan mendapat link akses). pkg.Groups sudah di-preload (soft-deleted
+	// otomatis dikecualikan gorm).
+	if pkg.IsAllAccess {
+		activeGroups, err := uc.groupRepo.FindByClientID(ctx, uc.db.Gorm, pkg.ClientID, 1, 1)
+		if err != nil {
+			log.Error("member order checkout count client groups failed", zap.String("client_id", pkg.ClientID.String()), zap.Error(err))
+			return nil, fmt.Errorf("gagal memeriksa grup akses paket")
+		}
+		if len(activeGroups) == 0 {
+			return nil, helper.NewBadRequest("Paket ini belum memiliki grup akses. Silakan hubungi admin.")
+		}
+	} else if len(pkg.Groups) == 0 {
+		return nil, helper.NewBadRequest("Paket ini belum memiliki grup akses. Silakan hubungi admin.")
 	}
 
 	// 2.5. Check Client Quota (Max Members)
