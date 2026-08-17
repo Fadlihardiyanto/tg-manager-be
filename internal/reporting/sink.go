@@ -2,6 +2,7 @@ package reporting
 
 import (
 	"context"
+	"fmt"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -22,9 +23,10 @@ func Record(ctx context.Context, db *gorm.DB, clientID any, eventType, status st
 
 // CleanupOlderThan menghapus job_events lebih lama dari n hari (retensi).
 func CleanupOlderThan(ctx context.Context, db *gorm.DB, days int, log *zap.Logger) {
+	// ponytail: pass days as text — pgx can't encode Go int for `? || ' days'`.
 	result := db.WithContext(ctx).Exec(
-		`DELETE FROM job_events WHERE created_at < CURRENT_TIMESTAMP - (? || ' days')::interval`,
-		days,
+		`DELETE FROM job_events WHERE created_at < CURRENT_TIMESTAMP - (?::text || ' days')::interval`,
+		fmt.Sprintf("%d", days),
 	)
 	if result.Error != nil {
 		log.Warn("reporting sink: failed to cleanup job events", zap.Error(result.Error))
