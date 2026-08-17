@@ -130,10 +130,9 @@ func (h *TelegramActionHandler) Handle(ctx context.Context, body []byte) error {
 		targetGroups = pkg.Groups
 	}
 
-	if len(targetGroups) == 0 {
-		h.logger.Info("telegram action handler: no groups to invite, skipping", append(logFields, zap.String("package_id", payload.PackageID))...)
-		return nil
-	}
+	// Paket tanpa grup terhubung: jangan early-return — member tetap harus
+	// dapat konfirmasi pembayaran via DM (branch inviteLinks kosong di bawah
+	// yang menangani pesannya). Kalau return di sini, member dibiarkan diam.
 
 	// 3. Group target groups by bot_id — each group uses its own bot.
 	groupsByBot := make(map[uuid.UUID][]entity.Group)
