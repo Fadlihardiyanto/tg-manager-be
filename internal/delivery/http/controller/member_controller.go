@@ -119,6 +119,20 @@ func parseTimeRangeMs(val string) (*time.Time, *time.Time, error) {
 
 	start := time.UnixMilli(startMs)
 	end := time.UnixMilli(endMs)
+
+	// Frontend kadang kirim start == end saat memilih SATU tanggal (bukan range).
+	// BETWEEN t AND t = kosong — interpretasikan sebagai satu hari penuh (WIB,
+	// konsisten dengan TimeZone database).
+	if start.Equal(end) {
+		loc, err := time.LoadLocation("Asia/Jakarta")
+		if err != nil {
+			loc = time.UTC
+		}
+		dayStart := start.In(loc)
+		start = time.Date(dayStart.Year(), dayStart.Month(), dayStart.Day(), 0, 0, 0, 0, loc)
+		end = start.AddDate(0, 0, 1).Add(-time.Nanosecond)
+	}
+
 	return &start, &end, nil
 }
 
