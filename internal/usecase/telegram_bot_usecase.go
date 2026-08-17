@@ -266,6 +266,20 @@ func (uc *TelegramBotUseCase) Delete(ctx context.Context, clientID uuid.UUID, bo
 		return helper.NewNotFound("Bot tidak ditemukan")
 	}
 
+	// Bot yang masih dipakai grup tidak bisa dihapus — FK groups_bot_id_fkey
+	// akan menolak, dan grup butuh bot untuk invite/kick. Cek sebelum delete
+	// supaya error-nya jelas, bukan SQLSTATE 23503.
+	var groupCount int64
+	if err := uc.db.Gorm.WithContext(ctx).Table("groups").
+		Where("bot_id = ? AND deleted_at IS NULL", botID).
+		Count(&groupCount).Error; err != nil {
+		log.Error("bot usecase delete count groups failed", zap.String("bot_id", botID.String()), zap.Error(err))
+		return err
+	}
+	if groupCount > 0 {
+		return helper.NewBadRequest(fmt.Sprintf("Bot tidak bisa dihapus karena masih digunakan oleh %d grup. Hapus atau pindahkan grup tersebut terlebih dahulu.", groupCount))
+	}
+
 	// 1. Decrypt token to talk to Telegram
 	token, err := crypto.Decrypt(bot.Token, uc.encryptionKey)
 	if err == nil {
