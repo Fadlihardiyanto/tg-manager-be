@@ -36,6 +36,7 @@ type CustomCommandUseCase struct {
 	commandRepo repository.ICustomCommandRepository
 	botRepo     repository.ITelegramBotRepository
 	billingRepo repository.IClientBillingRepository
+	groupRepo   repository.ITelegramGroupRepository
 	redisClient *redis.Client
 	s3Client    *pkg_s3.Client
 	log         *zap.Logger
@@ -46,6 +47,7 @@ func NewCustomCommandUseCase(
 	commandRepo repository.ICustomCommandRepository,
 	botRepo repository.ITelegramBotRepository,
 	billingRepo repository.IClientBillingRepository,
+	groupRepo repository.ITelegramGroupRepository,
 	redisClient *redis.Client,
 	s3Client *pkg_s3.Client,
 	log *zap.Logger,
@@ -55,10 +57,43 @@ func NewCustomCommandUseCase(
 		commandRepo: commandRepo,
 		botRepo:     botRepo,
 		billingRepo: billingRepo,
+		groupRepo:   groupRepo,
 		redisClient: redisClient,
 		s3Client:    s3Client,
 		log:         log,
 	}
+}
+
+// validateGroupIDs memastikan setiap grup yang dipilih benar-benar ada dan
+// dikelola oleh bot yang sama dengan command. Mencegah misconfiguration seperti
+// group milik bot lain disimpan ke command bot tertentu.
+func (uc *CustomCommandUseCase) validateGroupIDs(ctx context.Context, botID uuid.UUID, groupIDs []uuid.UUID) error {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	groups, err := uc.groupRepo.FindByIDs(ctx, uc.db.Gorm, groupIDs)
+	if err != nil {
+		return err
+	}
+	found := make(map[uuid.UUID]entity.Group, len(groups))
+	for _, g := range groups {
+		found[g.ID] = g
+	}
+	var invalid []string
+	for _, gid := range groupIDs {
+		g, ok := found[gid]
+		if !ok {
+			invalid = append(invalid, gid.String())
+			continue
+		}
+		if g.BotUUID != botID {
+			invalid = append(invalid, g.Name)
+		}
+	}
+	if len(invalid) > 0 {
+		return helper.NewBadRequest("Grup terpilih bukan milik bot ini: " + strings.Join(invalid, ", "))
+	}
+	return nil
 }
 
 func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, req *model.CreateCustomCommandRequest) (*model.CustomCommandResponse, error) {
@@ -72,6 +107,10 @@ func (uc *CustomCommandUseCase) Create(ctx context.Context, clientID uuid.UUID, 
 	}
 	if bot.ClientID != clientID {
 		return nil, helper.NewBadRequest("Bot tidak valid")
+	}
+
+	if err := uc.validateGroupIDs(ctx, bot.ID, req.GroupIDs); err != nil {
+		return nil, err
 	}
 
 	// 1. Check quota
@@ -251,6 +290,9 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 		cmd.PackageIDs = uuidsToStringArray(req.PackageIDs)
 	}
 	if req.GroupIDs != nil {
+		if err := uc.validateGroupIDs(ctx, cmd.BotUUID, req.GroupIDs); err != nil {
+			return nil, err
+		}
 		cmd.GroupIDs = uuidsToStringArray(req.GroupIDs)
 	}
 

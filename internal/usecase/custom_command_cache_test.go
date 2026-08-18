@@ -2,12 +2,14 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/model"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -40,6 +42,12 @@ func setupCustomCommandCacheTest(t *testing.T) (*CustomCommandUseCase, *redis.Cl
 		id TEXT PRIMARY KEY, client_id TEXT NOT NULL,
 		token TEXT NOT NULL, username TEXT, bot_id INTEGER,
 		bot_role TEXT NOT NULL DEFAULT 'all_in_one', is_active INTEGER DEFAULT 1,
+		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+	)`)
+	createTable(`CREATE TABLE groups (
+		id TEXT PRIMARY KEY, client_id TEXT NOT NULL, bot_id TEXT NOT NULL,
+		telegram_chat_id INTEGER NOT NULL, name TEXT, description TEXT,
+		is_active INTEGER DEFAULT 1, inactive_reason TEXT, member_count INTEGER DEFAULT 0,
 		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 	)`)
 	createTable(`CREATE TABLE custom_commands (
@@ -102,6 +110,7 @@ func setupCustomCommandCacheTest(t *testing.T) (*CustomCommandUseCase, *redis.Cl
 		repository.NewCustomCommandRepository(),
 		repository.NewTelegramBotRepository(),
 		repository.NewClientBillingRepository(),
+		repository.NewTelegramGroupRepository(),
 		redisClient,
 		nil,
 		logger,
@@ -290,5 +299,43 @@ func TestDeleteCustomCommand_InvalidatesCache(t *testing.T) {
 
 	if err := redisClient.Get(context.Background(), key).Err(); err != redis.Nil {
 		t.Errorf("cache key should be invalidated after Delete, got err = %v", err)
+	}
+}
+
+func TestCreateCustomCommand_RejectsGroupOfAnotherBot(t *testing.T) {
+	uc, _, clientID, botID, cleanup := setupCustomCommandCacheTest(t)
+	defer cleanup()
+
+	otherBotID := uuid.New()
+	if err := uc.db.Gorm.Create(&entity.TelegramBot{ID: otherBotID, ClientID: clientID, Token: "other-token"}).Error; err != nil {
+		t.Fatalf("seed other bot error = %v", err)
+	}
+
+	groupOfOtherBot := uuid.New()
+	if err := uc.db.Gorm.Exec(`INSERT INTO groups (id, client_id, bot_id, telegram_chat_id, name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		groupOfOtherBot.String(), clientID.String(), otherBotID.String(), 111, "Grup Bot Lain").Error; err != nil {
+		t.Fatalf("seed group of other bot error = %v", err)
+	}
+
+	req := &model.CreateCustomCommandRequest{
+		BotID:          botID,
+		CommandTrigger: "rules",
+		ResponseType:   "text",
+		ResponseText:   "Aturan.",
+		GroupIDs:       []uuid.UUID{groupOfOtherBot},
+	}
+	_, err := uc.Create(context.Background(), clientID, req)
+	var badReq *helper.ErrBadRequest
+	if !errors.As(err, &badReq) {
+		t.Fatalf("Create() error = %v, want ErrBadRequest karena grup milik bot lain", err)
+	}
+
+	var count int64
+	if err := uc.db.Gorm.Table("custom_commands").Count(&count).Error; err != nil {
+		t.Fatalf("count error = %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("custom command tersimpan walau group invalid (count = %d, want 0)", count)
 	}
 }

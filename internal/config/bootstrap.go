@@ -287,7 +287,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	groupUC := usecase.NewTelegramGroupUseCase(config.DB, groupRepo, botRepo, billingRepo, config.TelegramFactory, config.Redis, config.Log, config.Config.App.EncryptionKey, groupSyncWorker.Process)
 	packageUC := usecase.NewPackageUseCase(config.DB, packageRepo, groupRepo, billingRepo, config.Log)
 	tenantProfileUC := usecase.NewTenantProfileUseCase(config.DB, clientRepo, config.Redis, config.Config.App.EncryptionKey, config.Log)
-	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, config.Redis, config.S3, config.Log)
+	customCommandUC := usecase.NewCustomCommandUseCase(config.DB, customCommandRepo, botRepo, billingRepo, groupRepo, config.Redis, config.S3, config.Log)
 	memberUC := usecase.NewMemberUseCase(config.DB, telegramUserRepo, subscriptionRepo, outboxRepo, auditLogRepo, config.Log)
 	tenantTransactionUC := usecase.NewTenantTransactionUseCase(config.DB, orderRepo, config.S3, config.Log)
 	uploadUC := usecase.NewUploadUseCase(config.S3, config.Log)
