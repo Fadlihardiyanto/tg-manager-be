@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 )
 
@@ -318,7 +319,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 	switch cmd.ResponseType {
 	case "text":
-		reply := tgbotapi.NewMessage(msg.Chat.ID, cmd.ResponseText)
+		reply := tgbotapi.NewMessage(msg.Chat.ID, helper.SanitizeTelegramHTML(cmd.ResponseText))
 		reply.ParseMode = tgbotapi.ModeHTML
 		log.Debug("sending custom text command", zap.String("text", cmd.ResponseText))
 		_, err = botClient.Send(ctx, reply)
@@ -332,7 +333,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		if cmd.TelegramFileID != nil && *cmd.TelegramFileID != "" {
 			// Reuse existing file_id
 			reply := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileID(*cmd.TelegramFileID))
-			reply.Caption = cmd.ResponseText
+			reply.Caption = helper.SanitizeTelegramHTML(cmd.ResponseText)
 			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
@@ -345,7 +346,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		// Fallback ke URL jika file_id tidak ada atau gagal
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && cmd.FileUrl != nil && *cmd.FileUrl != "" {
 			reply := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(*cmd.FileUrl))
-			reply.Caption = cmd.ResponseText
+			reply.Caption = helper.SanitizeTelegramHTML(cmd.ResponseText)
 			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
@@ -366,7 +367,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 		// Fallback ke teks jika tidak ada gambar sama sekali
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && (cmd.FileUrl == nil || *cmd.FileUrl == "") {
-			reply := tgbotapi.NewMessage(msg.Chat.ID, cmd.ResponseText)
+			reply := tgbotapi.NewMessage(msg.Chat.ID, helper.SanitizeTelegramHTML(cmd.ResponseText))
 			reply.ParseMode = tgbotapi.ModeHTML
 			_, err = botClient.Send(ctx, reply)
 			if err != nil {
@@ -380,7 +381,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		if cmd.TelegramFileID != nil && *cmd.TelegramFileID != "" {
 			// Reuse existing file_id
 			reply := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FileID(*cmd.TelegramFileID))
-			reply.Caption = cmd.ResponseText
+			reply.Caption = helper.SanitizeTelegramHTML(cmd.ResponseText)
 			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
@@ -393,7 +394,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 		// Fallback ke URL jika file_id tidak ada atau gagal
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && cmd.FileUrl != nil && *cmd.FileUrl != "" {
 			reply := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FileURL(*cmd.FileUrl))
-			reply.Caption = cmd.ResponseText
+			reply.Caption = helper.SanitizeTelegramHTML(cmd.ResponseText)
 			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
 			if err != nil {
@@ -413,7 +414,7 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 		// Fallback ke teks jika tidak ada berkas sama sekali
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && (cmd.FileUrl == nil || *cmd.FileUrl == "") {
-			reply := tgbotapi.NewMessage(msg.Chat.ID, cmd.ResponseText)
+			reply := tgbotapi.NewMessage(msg.Chat.ID, helper.SanitizeTelegramHTML(cmd.ResponseText))
 			_, err = botClient.Send(ctx, reply)
 			if err != nil {
 				return err

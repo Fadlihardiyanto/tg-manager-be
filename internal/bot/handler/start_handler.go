@@ -8,6 +8,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -71,7 +72,7 @@ func (h *StartHandler) Execute(ctx context.Context, bot *entity.TelegramBot, mes
 		sb.WriteString(reply)
 		sb.WriteString("\n\n📋 Perintah khusus:")
 		for _, cmd := range customCmds {
-			sb.WriteString(fmt.Sprintf("\n%s — %s", cmd.CommandTrigger, truncateDescription(cmd.ResponseText, 50)))
+			sb.WriteString(fmt.Sprintf("\n%s — %s", cmd.CommandTrigger, truncateDescription(helper.SanitizeTelegramHTML(cmd.ResponseText), 50)))
 		}
 		reply = sb.String()
 	}

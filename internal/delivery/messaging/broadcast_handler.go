@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strings"
 
 	jsonlib "github.com/bytedance/sonic"
 
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/entity"
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
+	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/trace"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -54,15 +53,6 @@ type BroadcastPayload struct {
 	MessageType string `json:"message_type"`
 	MessageText string `json:"message_text"`
 	FileUrl     string `json:"file_url"`
-}
-
-func sanitizeHTML(text string) string {
-	text = strings.ReplaceAll(text, "<p>", "")
-	text = strings.ReplaceAll(text, "</p>", "\n")
-	text = strings.ReplaceAll(text, "<br>", "\n")
-	text = regexp.MustCompile(`<br\s*/?>`).ReplaceAllString(text, "\n")
-	text = regexp.MustCompile(`\s+(target|rel)="[^"]*"`).ReplaceAllString(text, "")
-	return text
 }
 
 func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
@@ -136,7 +126,7 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 	// 3. Send Message based on type
 	var sendErr error
 
-	messageText := sanitizeHTML(payload.MessageText)
+	messageText := helper.SanitizeTelegramHTML(payload.MessageText)
 
 	switch payload.MessageType {
 	case "text":

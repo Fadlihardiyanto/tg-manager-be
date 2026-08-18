@@ -266,18 +266,32 @@ func (uc *TelegramBotUseCase) Delete(ctx context.Context, clientID uuid.UUID, bo
 		return helper.NewNotFound("Bot tidak ditemukan")
 	}
 
-	// Bot yang masih dipakai grup tidak bisa dihapus — FK groups_bot_id_fkey
-	// akan menolak, dan grup butuh bot untuk invite/kick. Cek sebelum delete
-	// supaya error-nya jelas, bukan SQLSTATE 23503.
+	// Bot yang masih dipakai grup AKTIF tidak bisa dihapus — FK groups_bot_id_fkey
+	// akan menolak, dan grup butuh bot untuk invite/kick. Grup yang sudah
+	// disconnect (is_active=false) tidak memakai bot lagi, jadi tidak diblokir.
 	var groupCount int64
 	if err := uc.db.Gorm.WithContext(ctx).Table("groups").
-		Where("bot_id = ? AND deleted_at IS NULL", botID).
+		Where("bot_id = ? AND is_active = true AND deleted_at IS NULL", botID).
 		Count(&groupCount).Error; err != nil {
 		log.Error("bot usecase delete count groups failed", zap.String("bot_id", botID.String()), zap.Error(err))
 		return err
 	}
 	if groupCount > 0 {
 		return helper.NewBadRequest(fmt.Sprintf("Bot tidak bisa dihapus karena masih digunakan oleh %d grup. Hapus atau pindahkan grup tersebut terlebih dahulu.", groupCount))
+	}
+
+	// Bot yang masih dipakai report_settings tidak bisa dihapus — FK
+	// report_settings_bot_id_fkey akan menolak hard delete. Cek sebelum delete
+	// supaya error-nya jelas, bukan SQLSTATE 23503.
+	var reportCount int64
+	if err := uc.db.Gorm.WithContext(ctx).Table("report_settings").
+		Where("bot_id = ?", botID).
+		Count(&reportCount).Error; err != nil {
+		log.Error("bot usecase delete count report settings failed", zap.String("bot_id", botID.String()), zap.Error(err))
+		return err
+	}
+	if reportCount > 0 {
+		return helper.NewBadRequest("Bot tidak bisa dihapus karena masih terhubung ke laporan harian. Nonaktifkan atau pindahkan bot pada pengaturan laporan terlebih dahulu.")
 	}
 
 	// 1. Decrypt token to talk to Telegram

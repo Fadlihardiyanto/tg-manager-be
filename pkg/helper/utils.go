@@ -41,3 +41,23 @@ func HashIdentifier(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])[:16]
 }
+
+var (
+	pBrTag        = regexp.MustCompile(`<br\s*/?>`)
+	pOpenP        = regexp.MustCompile(`<p[^>]*>`)
+	pCloseP       = regexp.MustCompile(`</p>`)
+	pLinkAttrs    = regexp.MustCompile(`\s+(target|rel)="[^"]*"`)
+	pUnsupported  = regexp.MustCompile(`</?(div|span|ul|ol|li|h[1-6]|font|table|tr|td|th|tbody|thead|section|article|header|footer|figure|figcaption|blockquote|hr|img|video|audio|iframe|script|style)[^>]*>`)
+)
+
+// SanitizeTelegramHTML strips tags that Telegram's HTML parse mode does not
+// support (<p>, <div>, <ul>, ...) and converts line-break tags to newlines,
+// so rich-text input from admins cannot make the Bot API reject the message.
+func SanitizeTelegramHTML(text string) string {
+	text = pOpenP.ReplaceAllString(text, "")
+	text = pCloseP.ReplaceAllString(text, "\n")
+	text = pBrTag.ReplaceAllString(text, "\n")
+	text = pUnsupported.ReplaceAllString(text, "")
+	text = pLinkAttrs.ReplaceAllString(text, "")
+	return text
+}

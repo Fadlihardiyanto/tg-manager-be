@@ -55,7 +55,7 @@ func (r *TelegramGroupRepository) FindByClientID(ctx context.Context, tx *gorm.D
 	offset := (page - 1) * limit
 	err := tx.WithContext(ctx).
 		Preload("Bot").
-		Where("client_id = ? AND deleted_at IS NULL", clientID).
+		Where("client_id = ? AND is_active = true AND deleted_at IS NULL", clientID).
 		Offset(offset).
 		Limit(limit).
 		Find(&groups).Error
