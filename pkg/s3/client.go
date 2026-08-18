@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -301,4 +302,28 @@ func (c *Client) GetPublicURL(key string) string {
 // Bucket returns the configured bucket name.
 func (c *Client) Bucket() string {
 	return c.bucket
+}
+
+// ExtractS3Key pulls the object key out of a stored file URL. Works for both
+// custom CDN URLs (https://cdn.example.com/tenant_uploads/...) and raw
+// endpoint URLs (https://host.r2.cloudflarestorage.com/bucket/tenant_uploads/...).
+func ExtractS3Key(fileURL string) string {
+	if fileURL == "" {
+		return ""
+	}
+	idx := strings.Index(fileURL, "tenant_uploads/")
+	if idx == -1 {
+		return ""
+	}
+	return fileURL[idx:]
+}
+
+// PresignURL generates a time-limited presigned GET URL for a stored file URL,
+// so the bot can send private files without a public bucket.
+func (c *Client) PresignURL(ctx context.Context, storedURL string, ttl time.Duration) (string, error) {
+	key := ExtractS3Key(storedURL)
+	if key == "" {
+		return "", fmt.Errorf("s3: cannot extract object key from %q", storedURL)
+	}
+	return c.PresignGet(ctx, &PresignInput{Key: key, ExpiresIn: ttl})
 }

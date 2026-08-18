@@ -263,7 +263,7 @@ func (uc *CustomCommandUseCase) Update(ctx context.Context, clientID uuid.UUID, 
 	if req.FileUrl != nil {
 		// Jika ada gambar lama dan gambar baru berbeda, hapus gambar lama dari S3
 		if cmd.FileUrl != nil && *cmd.FileUrl != "" && *req.FileUrl != *cmd.FileUrl {
-			oldKey := extractS3Key(*cmd.FileUrl)
+			oldKey := pkg_s3.ExtractS3Key(*cmd.FileUrl)
 			if oldKey != "" && uc.s3Client != nil {
 				// Abaikan error agar proses update tetap berjalan meskipun hapus file lama gagal
 				if delErr := uc.s3Client.Delete(ctx, oldKey); delErr != nil {
@@ -329,7 +329,7 @@ func (uc *CustomCommandUseCase) Delete(ctx context.Context, clientID uuid.UUID, 
 
 	// Hapus file dari S3 jika ada
 	if cmd.FileUrl != nil && *cmd.FileUrl != "" && uc.s3Client != nil {
-		key := extractS3Key(*cmd.FileUrl)
+		key := pkg_s3.ExtractS3Key(*cmd.FileUrl)
 		if key != "" {
 			if errS3 := uc.s3Client.Delete(ctx, key); errS3 != nil {
 				log.Warn("failed to delete S3 file during custom command deletion", zap.String("key", key), zap.Error(errS3))
@@ -365,18 +365,6 @@ func isBlacklistedCommand(trigger string) bool {
 		}
 	}
 	return false
-}
-
-func extractS3Key(fileURL string) string {
-	if fileURL == "" {
-		return ""
-	}
-	// Find "tenant_uploads/"
-	idx := strings.Index(fileURL, "tenant_uploads/")
-	if idx == -1 {
-		return ""
-	}
-	return fileURL[idx:]
 }
 
 func validateResponseTextLength(responseType string, responseText string) error {

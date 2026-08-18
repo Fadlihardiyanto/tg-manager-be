@@ -312,7 +312,7 @@ func BootstrapWeb(config *BootstrapConfig) {
 	cmdRegistry.Register(migrationMemberCmdHandler)
 	cmdRegistry.RegisterCallback(packageSelectHandler)
 
-	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, customCommandRepo, subscriptionRepo, cmdRegistry, config.TelegramFactory, config.Redis, config.Config.App.EncryptionKey, config.Log)
+	webhookUC := usecase.NewTelegramWebhookUseCase(config.DB, config.Publisher, botRepo, groupRepo, customCommandRepo, subscriptionRepo, cmdRegistry, config.TelegramFactory, config.Redis, config.S3, config.Config.App.EncryptionKey, config.Log)
 
 	// Controllers
 	adminAuthCtrl := controller.NewAdminAuthController(adminAuthUC, config.Log, config.Validate)
@@ -494,7 +494,7 @@ func BootstrapWorker(config *BootstrapConfig) {
 
 	// Register BroadcastHandler as consumer
 	broadcastRepoWorker := repository.NewBroadcastRepository()
-	broadcastHandler := deliveryMsg.NewBroadcastHandler(config.DB.Gorm, broadcastRepoWorker, botRepo, config.TelegramFactory, config.Config.App.EncryptionKey, config.Log)
+	broadcastHandler := deliveryMsg.NewBroadcastHandler(config.DB.Gorm, broadcastRepoWorker, botRepo, config.TelegramFactory, config.S3, config.Config.App.EncryptionKey, config.Log)
 	config.Consumer.RegisterHandler(rabbitmq.QueueBroadcast, broadcastHandler.Handle)
 
 	// Instantiate BroadcastSchedulerWorker

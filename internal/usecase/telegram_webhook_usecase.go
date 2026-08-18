@@ -22,6 +22,7 @@ import (
 
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 )
 
@@ -39,6 +40,7 @@ type TelegramWebhookUseCase struct {
 	router          *handler.Registry
 	telegramFactory telegram.BotFactory
 	redisClient     *redis.Client
+	s3Client        *pkg_s3.Client
 	encryptionKey   string
 	log             *zap.Logger
 }
@@ -53,6 +55,7 @@ func NewTelegramWebhookUseCase(
 	router *handler.Registry,
 	telegramFactory telegram.BotFactory,
 	redisClient *redis.Client,
+	s3Client *pkg_s3.Client,
 	encryptionKey string,
 	log *zap.Logger,
 ) ITelegramWebhookUseCase {
@@ -66,6 +69,7 @@ func NewTelegramWebhookUseCase(
 		router:          router,
 		telegramFactory: telegramFactory,
 		redisClient:     redisClient,
+		s3Client:        s3Client,
 		encryptionKey:   encryptionKey,
 		log:             log,
 	}
@@ -345,7 +349,11 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 		// Fallback ke URL jika file_id tidak ada atau gagal
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && cmd.FileUrl != nil && *cmd.FileUrl != "" {
-			reply := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(*cmd.FileUrl))
+			fileURL, err := uc.presignFileURL(ctx, *cmd.FileUrl)
+			if err != nil {
+				return fmt.Errorf("failed to presign photo url: %w", err)
+			}
+			reply := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(fileURL))
 			reply.Caption = helper.SanitizeTelegramHTML(cmd.ResponseText)
 			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
@@ -393,7 +401,11 @@ func (uc *TelegramWebhookUseCase) handleCustomCommand(ctx context.Context, bot *
 
 		// Fallback ke URL jika file_id tidak ada atau gagal
 		if (cmd.TelegramFileID == nil || *cmd.TelegramFileID == "") && cmd.FileUrl != nil && *cmd.FileUrl != "" {
-			reply := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FileURL(*cmd.FileUrl))
+			fileURL, err := uc.presignFileURL(ctx, *cmd.FileUrl)
+			if err != nil {
+				return fmt.Errorf("failed to presign document url: %w", err)
+			}
+			reply := tgbotapi.NewDocument(msg.Chat.ID, tgbotapi.FileURL(fileURL))
 			reply.Caption = helper.SanitizeTelegramHTML(cmd.ResponseText)
 			reply.ParseMode = tgbotapi.ModeHTML
 			sentMsg, err = botClient.Send(ctx, reply)
@@ -495,7 +507,17 @@ const (
 	customCmdCacheTTL      = 15 * time.Minute
 	customCmdCacheMissTTL  = 2 * time.Minute
 	customCmdCacheSentinel = "nil"
+	fileSendPresignTTL     = 30 * time.Minute
 )
+
+// presignFileURL returns a short-lived presigned GET URL for a stored file URL,
+// so the bot can send private files without a public bucket.
+func (uc *TelegramWebhookUseCase) presignFileURL(ctx context.Context, storedURL string) (string, error) {
+	if uc.s3Client == nil {
+		return "", fmt.Errorf("s3 client not configured")
+	}
+	return uc.s3Client.PresignURL(ctx, storedURL, fileSendPresignTTL)
+}
 
 func customCmdCacheKey(clientID, botID uuid.UUID, trigger string) string {
 	return fmt.Sprintf("custom_cmd:%s:%s:%s", clientID.String(), botID.String(), trigger)

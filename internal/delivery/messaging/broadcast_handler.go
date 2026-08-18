@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	jsonlib "github.com/bytedance/sonic"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/Fadlihardiyanto/telegram-management-app/internal/repository"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/crypto"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	pkg_s3 "github.com/Fadlihardiyanto/telegram-management-app/pkg/s3"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/telegram"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/trace"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -20,19 +22,23 @@ import (
 )
 
 type BroadcastHandler struct {
-	db              *gorm.DB
-	broadcastRepo   repository.IBroadcastRepository
-	botRepo         repository.ITelegramBotRepository
-	telegramFactory telegram.BotFactory
-	encryptionKey   string
-	logger          *zap.Logger
+	db                *gorm.DB
+	broadcastRepo     repository.IBroadcastRepository
+	botRepo           repository.ITelegramBotRepository
+	telegramFactory   telegram.BotFactory
+	s3Client          *pkg_s3.Client
+	encryptionKey     string
+	logger            *zap.Logger
 }
+
+const broadcastPresignTTL = 30 * time.Minute
 
 func NewBroadcastHandler(
 	db *gorm.DB,
 	broadcastRepo repository.IBroadcastRepository,
 	botRepo repository.ITelegramBotRepository,
 	telegramFactory telegram.BotFactory,
+	s3Client *pkg_s3.Client,
 	encryptionKey string,
 	logger *zap.Logger,
 ) *BroadcastHandler {
@@ -41,6 +47,7 @@ func NewBroadcastHandler(
 		broadcastRepo:   broadcastRepo,
 		botRepo:         botRepo,
 		telegramFactory: telegramFactory,
+		s3Client:        s3Client,
 		encryptionKey:   encryptionKey,
 		logger:          logger,
 	}
@@ -145,7 +152,12 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 				sendErr = fmt.Errorf("missing file_url for photo broadcast")
 				break
 			}
-			photoConfig := tgbotapi.NewPhoto(payload.ChatID, tgbotapi.FileURL(payload.FileUrl))
+			fileURL, err := h.presignFileURL(ctx, payload.FileUrl)
+			if err != nil {
+				sendErr = err
+				break
+			}
+			photoConfig := tgbotapi.NewPhoto(payload.ChatID, tgbotapi.FileURL(fileURL))
 			photoConfig.Caption = messageText
 			photoConfig.ParseMode = tgbotapi.ModeHTML
 			msg, err := botClient.Send(ctx, photoConfig)
@@ -168,7 +180,12 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 				sendErr = fmt.Errorf("missing file_url for document broadcast")
 				break
 			}
-			docConfig := tgbotapi.NewDocument(payload.ChatID, tgbotapi.FileURL(payload.FileUrl))
+			fileURL, err := h.presignFileURL(ctx, payload.FileUrl)
+			if err != nil {
+				sendErr = err
+				break
+			}
+			docConfig := tgbotapi.NewDocument(payload.ChatID, tgbotapi.FileURL(fileURL))
 			docConfig.Caption = messageText
 			docConfig.ParseMode = tgbotapi.ModeHTML
 			msg, err := botClient.SendDocument(ctx, docConfig)
@@ -207,6 +224,15 @@ func (h *BroadcastHandler) Handle(ctx context.Context, body []byte) error {
 type broadcastFailure struct {
 	ChatID int64  `json:"chat_id"`
 	Error  string `json:"error"`
+}
+
+// presignFileURL returns a short-lived presigned GET URL for a stored file URL,
+// so broadcast media can be sent from a private bucket.
+func (h *BroadcastHandler) presignFileURL(ctx context.Context, storedURL string) (string, error) {
+	if h.s3Client == nil {
+		return "", fmt.Errorf("s3 client not configured")
+	}
+	return h.s3Client.PresignURL(ctx, storedURL, broadcastPresignTTL)
 }
 
 func (h *BroadcastHandler) recordFailure(ctx context.Context, broadcastID uuid.UUID, chatID int64, errMsg string) {
