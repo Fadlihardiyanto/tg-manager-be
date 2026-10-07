@@ -70,7 +70,9 @@ func (w *GroupSyncWorker) Process(ctx context.Context) {
 		}
 	}()
 	start := time.Now()
-	defer metrics.WorkerCycleDuration.WithLabelValues("group_sync").Observe(time.Since(start).Seconds())
+	defer func() {
+		metrics.WorkerCycleDuration.WithLabelValues("group_sync").Observe(time.Since(start).Seconds())
+	}()
 
 	// 1. Fetch all active groups
 	groups, err := w.groupRepo.FindAllActive(ctx, w.db)

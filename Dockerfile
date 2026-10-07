@@ -9,7 +9,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Base Image
 # -----------------------------------------------------------------------------
-FROM golang:1.23-alpine AS base
+FROM golang:1.26-alpine AS base
 
 # Install system dependencies
 RUN apk add --no-cache \

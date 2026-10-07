@@ -51,7 +51,9 @@ func (w *OrderCleanupWorker) Start(ctx context.Context, interval time.Duration) 
 
 func (w *OrderCleanupWorker) Process(ctx context.Context) {
 	start := time.Now()
-	defer metrics.WorkerCycleDuration.WithLabelValues("order_cleanup").Observe(time.Since(start).Seconds())
+	defer func() {
+		metrics.WorkerCycleDuration.WithLabelValues("order_cleanup").Observe(time.Since(start).Seconds())
+	}()
 
 	orders, err := w.orderRepo.FindExpiredPendingOrders(ctx, w.db, 50)
 	if err != nil {

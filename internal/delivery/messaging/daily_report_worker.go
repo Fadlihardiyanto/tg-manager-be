@@ -64,7 +64,9 @@ func (w *DailyReportWorker) Start(ctx context.Context, interval time.Duration) {
 
 func (w *DailyReportWorker) Process(ctx context.Context) {
 	start := time.Now()
-	defer metrics.WorkerCycleDuration.WithLabelValues("daily_report").Observe(time.Since(start).Seconds())
+	defer func() {
+		metrics.WorkerCycleDuration.WithLabelValues("daily_report").Observe(time.Since(start).Seconds())
+	}()
 
 	settings, err := w.settingRepo.FindEnabled(ctx, w.db)
 	if err != nil {
@@ -101,10 +103,10 @@ func (w *DailyReportWorker) Process(ctx context.Context) {
 }
 
 type dailyReportCounts struct {
-	KickSuccess, KickFailed     int64
+	KickSuccess, KickFailed         int64
 	ReminderSuccess, ReminderFailed int64
-	DMSuccess, DMFailed         int64
-	DLQ                         int64
+	DMSuccess, DMFailed             int64
+	DLQ                             int64
 }
 
 func (w *DailyReportWorker) sendReport(ctx context.Context, setting entity.ReportSetting, reportDate time.Time) error {

@@ -74,7 +74,9 @@ func (w *EnforcerWorker) Process(ctx context.Context) {
 		}
 	}()
 	start := time.Now()
-	defer metrics.WorkerCycleDuration.WithLabelValues("enforcer").Observe(time.Since(start).Seconds())
+	defer func() {
+		metrics.WorkerCycleDuration.WithLabelValues("enforcer").Observe(time.Since(start).Seconds())
+	}()
 
 	subs, err := w.subRepo.FindExpiredSubscriptions(ctx, w.db, expiredSubscriptionBatchSize)
 	if err != nil {

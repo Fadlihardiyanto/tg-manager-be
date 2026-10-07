@@ -152,7 +152,7 @@ go run cmd/web/main.go       # or: make run-web
 go run cmd/worker/main.go    # or: make run-worker
 ```
 
-Smoke checks: `GET /admin/v1/health`, `GET /metrics`.
+Smoke checks: `GET /health` (also used by the Docker `HEALTHCHECK`), `GET /admin/v1/health`, `GET /metrics`.
 
 Helper tools: `go run cmd/tools/sync_webhooks/main.go` (re-register Telegram webhooks),
 `go run cmd/tools/test_receipt/main.go` (render a sample PDF receipt).
@@ -237,6 +237,7 @@ pkg/               brypct · constant · crypto · discount · helper · jwt · 
 db/migrations/     schema + RBAC seeds (plain SQL)
 api/api.yml        OpenAPI 3.0.3 specification
 configs/rabbitmq/  broker config + definitions
+.air.toml / .air.worker.toml  Air hot-reload config for the compose dev containers
 ```
 
 ---
@@ -255,18 +256,15 @@ Redis and SQLite doubles — no integration test harness against real Postgres/R
 
 ## Known limitations
 
-- **Dev containers need Air config.** The compose `app`/`worker` services target the Dockerfile
-  `development` stage, which runs `air -c .air.toml` / `.air.worker.toml`; those files are not in the
-  repository. Run `go run cmd/web/main.go` + `cmd/worker/main.go` locally, or build the Dockerfile
-  `production` target.
-- **The compose `migrate` service is vestigial.** It runs `migrate/migrate` against `./migrations`
-  (absent) and expects golang-migrate filename conventions; `db/migrations/*.sql` is applied manually
-  as shown above.
-- **Some env vars are declared but unused**: `CRON_AUTO_KICK_SCHEDULE`, `CRON_TIMEZONE`
-  (periodic work uses tickers in `cmd/worker`), `METRICS_ENABLED` / `METRICS_PORT` / `METRICS_PATH`
-  (`/metrics` is served on the API port), and `HEALTH_CHECK_PATH` (health lives at `/admin/v1/health`).
-- The Dockerfile pins `golang:1.23-alpine` while `go.mod` requires the 1.26 toolchain, so the image
-  relies on Go's toolchain download.
+- **`db/migrations/*.sql` is applied manually.** The files are plain SQL without version prefixes, so
+  the schema is loaded with `psql` in the order shown above (the compose `migrate` service that
+  expected golang-migrate naming was removed).
+- **Dev containers use Air.** `.air.toml` and `.air.worker.toml` ship with the repo and build
+  `cmd/web` / `cmd/worker`; they were not runtime-verified in a Docker daemon here, so `go run` remains
+  the primary local workflow.
+- **Reserved env vars** are commented out in `.env.example`: `CRON_*`, `SUBSCRIPTION_GRACE_PERIOD_HOURS`,
+  `METRICS_*`, `HEALTH_CHECK_PATH`, `SESSION_*`, `HTTPS_*`, `FIBER_DEBUG`, `DB_LOG_QUERIES`,
+  `AIR_ENABLED`, `SENTRY_*`, and the `HOST_*` port overrides (compose hardcodes the published ports).
 
 ---
 

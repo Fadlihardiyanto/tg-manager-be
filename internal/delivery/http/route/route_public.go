@@ -27,6 +27,13 @@ type PublicRouteConfig struct {
 }
 
 func (c *PublicRouteConfig) Setup() {
+	// Liveness probe — the Dockerfile HEALTHCHECK and load balancers hit this.
+	c.App.Get("/health", func(ctx fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{
+			"status": "ok",
+		})
+	})
+
 	c.App.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	webhooks := c.App.Group("/webhooks")

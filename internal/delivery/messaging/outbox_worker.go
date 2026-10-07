@@ -54,7 +54,7 @@ func (w *OutboxWorker) Start(ctx context.Context, interval time.Duration) {
 
 func (w *OutboxWorker) Process(ctx context.Context) {
 	start := time.Now()
-	defer metrics.WorkerCycleDuration.WithLabelValues("outbox").Observe(time.Since(start).Seconds())
+	defer func() { metrics.WorkerCycleDuration.WithLabelValues("outbox").Observe(time.Since(start).Seconds()) }()
 
 	events, err := w.outboxRepo.FindPending(ctx, w.db.Gorm, 50)
 	if err != nil {

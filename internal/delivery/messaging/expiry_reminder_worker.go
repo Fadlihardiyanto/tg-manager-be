@@ -81,7 +81,9 @@ func (w *ExpiryReminderWorker) Process(ctx context.Context) {
 		}
 	}()
 	start := time.Now()
-	defer metrics.WorkerCycleDuration.WithLabelValues("expiry_reminder").Observe(time.Since(start).Seconds())
+	defer func() {
+		metrics.WorkerCycleDuration.WithLabelValues("expiry_reminder").Observe(time.Since(start).Seconds())
+	}()
 
 	for _, hours := range reminderWindows {
 		w.processWindow(ctx, hours)

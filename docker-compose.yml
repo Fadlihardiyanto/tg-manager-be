@@ -104,26 +104,6 @@ services:
     networks:
       - tgmanager_network
 
-  migrate:
-    image: migrate/migrate:v4.17.0
-    container_name: tgmanager_migrate
-    volumes:
-      - ./migrations:/migrations
-    command:
-      [
-        "-path",
-        "/migrations",
-        "-database",
-        "postgres://${DB_USER:-tgmanager}:${DB_PASSWORD:-tgmanager_secure_password}@postgres:5432/${DB_NAME:-tgmanager_db}?sslmode=disable",
-        "up",
-      ]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - tgmanager_network
-    restart: on-failure
-
   postgres:
     image: postgres:16-alpine
     container_name: tgmanager_postgres

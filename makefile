@@ -1,12 +1,17 @@
-.PHONY: help up down logs build restart migrate migrate-down \
-        run-web run-worker test test-coverage \
-        minio-ui redis-cli psql clean setup
+.PHONY: help up up-infra down down-v build restart logs logs-app logs-worker ps \
+        run-web run-worker
 
 .DEFAULT_GOAL := help
 
 GREEN  := \033[0;32m
 YELLOW := \033[0;33m
 RESET  := \033[0m
+
+## ─── HELP ────────────────────────────────────────────────────
+
+help: ## Tampilkan daftar perintah
+	@echo "TG-Manager — available commands:"
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-14s$(RESET) %s\n", $$1, $$2}'
 
 
 
