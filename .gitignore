@@ -363,5 +363,22 @@ NOTES.md
 # -----------------------------------------------------------------------------
 graphify-out/
 
-# all file .md
+# -----------------------------------------------------------------------------
+# Local notes & dev artifacts (not part of the public repo)
+# -----------------------------------------------------------------------------
+# Internal notes / audit / planning docs stay local; only README is published.
 *.md
+!README.md
+!LICENSE
+
+# Agent tooling config (machine-local)
+/.opencode/
+
+# One-off dev scripts & scratch artifacts
+/scratch/
+/workflows/
+/md_file/
+/migration.sql
+/fix_soft_delete_unique.sql
+/receipt*.pdf
+/images.jpg
