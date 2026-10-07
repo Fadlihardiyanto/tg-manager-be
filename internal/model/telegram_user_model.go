@@ -77,11 +77,11 @@ type MemberDetailResponse struct {
 
 // MemberFilterRequest holds the query parameters for member list.
 type MemberFilterRequest struct {
-	Page         int        `json:"page" validate:"omitempty,min=1"`
-	Limit        int        `json:"limit" validate:"omitempty,min=1,max=100"`
-	Status       string     `json:"status" validate:"omitempty,oneof=active expired all"`
-	Search       string     `json:"search" validate:"omitempty,max=100"`
-	PackageID    uuid.UUID  `json:"package_id" validate:"omitempty,uuid"`
+	Page               int        `json:"page" validate:"omitempty,min=1"`
+	Limit              int        `json:"limit" validate:"omitempty,min=1,max=100"`
+	Status             string     `json:"status" validate:"omitempty,oneof=active expired all"`
+	Search             string     `json:"search" validate:"omitempty,max=100"`
+	PackageID          uuid.UUID  `json:"package_id" validate:"omitempty,uuid"`
 	JoinedStart        *time.Time `json:"joined_start" validate:"omitempty"`
 	JoinedEnd          *time.Time `json:"joined_end" validate:"omitempty"`
 	ExpiredStart       *time.Time `json:"expired_start" validate:"omitempty"`

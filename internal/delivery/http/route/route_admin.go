@@ -28,10 +28,10 @@ type AdminRouteConfig struct {
 	AdminClientUserController *controller.AdminClientUserController
 
 	// platform plan & billing
-	PlatformPlanController      *controller.PlatformPlanController
-	ClientBillingController     *controller.ClientBillingController
-	PlatformDiscountController  *controller.PlatformDiscountController
-	AuditLogController          *controller.AuditLogController
+	PlatformPlanController     *controller.PlatformPlanController
+	ClientBillingController    *controller.ClientBillingController
+	PlatformDiscountController *controller.PlatformDiscountController
+	AuditLogController         *controller.AuditLogController
 
 	// impersonation
 	AdminImpersonationController *controller.AdminImpersonationController

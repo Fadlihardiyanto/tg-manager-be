@@ -184,7 +184,6 @@ func (p *RabbitMQPublisher) PublishBroadcast(ctx context.Context, payload interf
 	return p.publish(ctx, rabbitmq.ExchangeTelegram, rabbitmq.RoutingKeyBroadcast, body)
 }
 
-
 // Close closes the publisher's dedicated channel.
 func (p *RabbitMQPublisher) Close() error {
 	p.mu.Lock()

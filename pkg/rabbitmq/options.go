@@ -16,21 +16,21 @@ const (
 
 // Queue names
 const (
-	QueueTelegramAction      = "task.telegram_action"
-	QueueTelegramActionHigh  = "task.telegram_action.high"
-	QueueTelegramActionDLQ   = "task.telegram_action.dlq"
+	QueueTelegramAction        = "task.telegram_action"
+	QueueTelegramActionHigh    = "task.telegram_action.high"
+	QueueTelegramActionDLQ     = "task.telegram_action.dlq"
 	QueueTelegramActionHighDLQ = "task.telegram_action.high.dlq"
-	QueueNotification        = "task.notification"
-	QueuePaymentWebhook      = "task.payment_webhook"
-	QueuePaymentWebhookDLQ   = "task.payment_webhook.dlq"
-	QueueGatekeeping         = "task.telegram_gatekeeping"
-	QueueGatekeepingDLQ      = "task.telegram_gatekeeping.dlq"
-	QueueEnforcer            = "task.telegram_enforcer"
-	QueueEnforcerDLQ         = "task.telegram_enforcer.dlq"
-	QueueExpiryReminder      = "task.telegram_expiry_reminder"
-	QueueExpiryReminderDLQ   = "task.telegram_expiry_reminder.dlq"
-	QueueBroadcast           = "task.broadcast"
-	QueueBroadcastDLQ        = "task.broadcast.dlq"
+	QueueNotification          = "task.notification"
+	QueuePaymentWebhook        = "task.payment_webhook"
+	QueuePaymentWebhookDLQ     = "task.payment_webhook.dlq"
+	QueueGatekeeping           = "task.telegram_gatekeeping"
+	QueueGatekeepingDLQ        = "task.telegram_gatekeeping.dlq"
+	QueueEnforcer              = "task.telegram_enforcer"
+	QueueEnforcerDLQ           = "task.telegram_enforcer.dlq"
+	QueueExpiryReminder        = "task.telegram_expiry_reminder"
+	QueueExpiryReminderDLQ     = "task.telegram_expiry_reminder.dlq"
+	QueueBroadcast             = "task.broadcast"
+	QueueBroadcastDLQ          = "task.broadcast.dlq"
 )
 
 // Routing keys

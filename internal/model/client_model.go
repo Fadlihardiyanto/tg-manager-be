@@ -38,13 +38,13 @@ type ClientUpdateRequest struct {
 }
 
 type PaymentSettingsUpdateRequest struct {
-	SandboxServerKey      *string `json:"sandbox_server_key" validate:"omitempty"`
-	SandboxClientKey      *string `json:"sandbox_client_key" validate:"omitempty"`
-	SandboxMerchantID     *string `json:"sandbox_merchant_id" validate:"omitempty"`
-	ProductionServerKey   *string `json:"production_server_key" validate:"omitempty"`
-	ProductionClientKey   *string `json:"production_client_key" validate:"omitempty"`
-	ProductionMerchantID  *string `json:"production_merchant_id" validate:"omitempty"`
-	IsSandbox             *bool   `json:"is_sandbox" validate:"required"`
+	SandboxServerKey     *string `json:"sandbox_server_key" validate:"omitempty"`
+	SandboxClientKey     *string `json:"sandbox_client_key" validate:"omitempty"`
+	SandboxMerchantID    *string `json:"sandbox_merchant_id" validate:"omitempty"`
+	ProductionServerKey  *string `json:"production_server_key" validate:"omitempty"`
+	ProductionClientKey  *string `json:"production_client_key" validate:"omitempty"`
+	ProductionMerchantID *string `json:"production_merchant_id" validate:"omitempty"`
+	IsSandbox            *bool   `json:"is_sandbox" validate:"required"`
 }
 
 type KeyExchangeRequest struct {

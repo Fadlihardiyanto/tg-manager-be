@@ -14,12 +14,12 @@ type RoleCreateRequest struct {
 }
 
 type RoleResponse struct {
-	ID          uuid.UUID           `json:"id"`
-	Name        string              `json:"name"`
-	DisplayName string              `json:"display_name"`
-	Description string              `json:"description"`
+	ID          uuid.UUID            `json:"id"`
+	Name        string               `json:"name"`
+	DisplayName string               `json:"display_name"`
+	Description string               `json:"description"`
 	Permissions []PermissionResponse `json:"permissions,omitempty"`
-	CreatedAt   time.Time           `json:"created_at"`
+	CreatedAt   time.Time            `json:"created_at"`
 }
 
 // Permission Models

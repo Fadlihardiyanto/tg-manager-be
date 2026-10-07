@@ -43,11 +43,11 @@ func HashIdentifier(value string) string {
 }
 
 var (
-	pBrTag        = regexp.MustCompile(`<br\s*/?>`)
-	pOpenP        = regexp.MustCompile(`<p[^>]*>`)
-	pCloseP       = regexp.MustCompile(`</p>`)
-	pLinkAttrs    = regexp.MustCompile(`\s+(target|rel)="[^"]*"`)
-	pUnsupported  = regexp.MustCompile(`</?(div|span|ul|ol|li|h[1-6]|font|table|tr|td|th|tbody|thead|section|article|header|footer|figure|figcaption|blockquote|hr|img|video|audio|iframe|script|style)[^>]*>`)
+	pBrTag       = regexp.MustCompile(`<br\s*/?>`)
+	pOpenP       = regexp.MustCompile(`<p[^>]*>`)
+	pCloseP      = regexp.MustCompile(`</p>`)
+	pLinkAttrs   = regexp.MustCompile(`\s+(target|rel)="[^"]*"`)
+	pUnsupported = regexp.MustCompile(`</?(div|span|ul|ol|li|h[1-6]|font|table|tr|td|th|tbody|thead|section|article|header|footer|figure|figcaption|blockquote|hr|img|video|audio|iframe|script|style)[^>]*>`)
 )
 
 // SanitizeTelegramHTML strips tags that Telegram's HTML parse mode does not

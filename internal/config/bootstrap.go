@@ -387,21 +387,21 @@ func BootstrapWeb(config *BootstrapConfig) {
 
 	// Routes
 	adminRoute := &route.AdminRouteConfig{
-		App:                       config.App,
-		Log:                       config.Log,
-		AdminAuthRateLimiter:      adminAuthLimiter,
-		AdminAuthController:       adminAuthCtrl,
-		AdminRoleController:       adminRoleCtrl,
-		AdminPermissionController: adminPermissionCtrl,
-		AdminUserController:       adminUserCtrl,
-		AdminClientController:     adminClientCtrl,
-		AdminClientUserController: adminClientUserCtrl,
-		PlatformPlanController:      planCtrl,
-		ClientBillingController:     billingCtrl,
-		PlatformDiscountController:  platformDiscountCtrl,
-		AuditLogController:          auditLogCtrl,
+		App:                          config.App,
+		Log:                          config.Log,
+		AdminAuthRateLimiter:         adminAuthLimiter,
+		AdminAuthController:          adminAuthCtrl,
+		AdminRoleController:          adminRoleCtrl,
+		AdminPermissionController:    adminPermissionCtrl,
+		AdminUserController:          adminUserCtrl,
+		AdminClientController:        adminClientCtrl,
+		AdminClientUserController:    adminClientUserCtrl,
+		PlatformPlanController:       planCtrl,
+		ClientBillingController:      billingCtrl,
+		PlatformDiscountController:   platformDiscountCtrl,
+		AuditLogController:           auditLogCtrl,
 		AdminImpersonationController: impersonationCtrl,
-		AdminAuthMiddleware:         middleware.AdminAuth(config.Jwt),
+		AdminAuthMiddleware:          middleware.AdminAuth(config.Jwt),
 	}
 	adminRoute.Setup()
 

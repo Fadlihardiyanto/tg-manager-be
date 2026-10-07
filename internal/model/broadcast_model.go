@@ -12,21 +12,21 @@ type BroadcastFailure struct {
 }
 
 type BroadcastResponse struct {
-	ID            uuid.UUID          `json:"id"`
-	ClientID      uuid.UUID          `json:"client_id"`
-	BotID         uuid.UUID          `json:"bot_id"`
-	TargetType    string             `json:"target_type"`
-	MessageType   string             `json:"message_type"`
-	MessageText   string             `json:"message_text"`
-	FileUrl       *string            `json:"file_url"`
-	Status        string             `json:"status"`
-	TotalTargets  int                `json:"total_targets"`
-	SentCount     int                `json:"sent_count"`
-	FailedCount   int                `json:"failed_count"`
+	ID            uuid.UUID           `json:"id"`
+	ClientID      uuid.UUID           `json:"client_id"`
+	BotID         uuid.UUID           `json:"bot_id"`
+	TargetType    string              `json:"target_type"`
+	MessageType   string              `json:"message_type"`
+	MessageText   string              `json:"message_text"`
+	FileUrl       *string             `json:"file_url"`
+	Status        string              `json:"status"`
+	TotalTargets  int                 `json:"total_targets"`
+	SentCount     int                 `json:"sent_count"`
+	FailedCount   int                 `json:"failed_count"`
 	FailedDetails *[]BroadcastFailure `json:"failed_details,omitempty"`
-	ScheduledAt   *time.Time         `json:"scheduled_at"`
-	CreatedAt     time.Time          `json:"created_at"`
-	UpdatedAt     time.Time          `json:"updated_at"`
+	ScheduledAt   *time.Time          `json:"scheduled_at"`
+	CreatedAt     time.Time           `json:"created_at"`
+	UpdatedAt     time.Time           `json:"updated_at"`
 }
 
 type CreateBroadcastRequest struct {

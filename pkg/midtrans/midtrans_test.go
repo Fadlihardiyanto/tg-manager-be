@@ -10,10 +10,10 @@ import (
 
 func TestEnvironmentURLs(t *testing.T) {
 	tests := []struct {
-		name           string
-		isSandbox      bool
-		wantBaseURL    string
-		wantSnapURL    string
+		name        string
+		isSandbox   bool
+		wantBaseURL string
+		wantSnapURL string
 	}{
 		{
 			name:        "sandbox",
@@ -165,9 +165,9 @@ func TestIsFailed(t *testing.T) {
 
 func TestExtractSnapToken(t *testing.T) {
 	tests := []struct {
-		name    string
-		url     string
-		want    string
+		name string
+		url  string
+		want string
 	}{
 		{
 			name: "valid snap URL",
@@ -284,11 +284,11 @@ func TestVerifySignature(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		orderID       string
-		statusCode    string
-		grossAmount   string
-		want          bool
+		name        string
+		orderID     string
+		statusCode  string
+		grossAmount string
+		want        bool
 	}{
 		{
 			name:        "valid signature",

@@ -23,13 +23,13 @@ type Config struct {
 
 // AppConfig holds general application settings.
 type AppConfig struct {
-	Name          string
-	Env           string
-	Debug         bool
-	Port          int
-	Timezone      string
-	EncryptionKey  string // 32-bytes key for AES-256
-	BaseURL        string
+	Name                    string
+	Env                     string
+	Debug                   bool
+	Port                    int
+	Timezone                string
+	EncryptionKey           string // 32-bytes key for AES-256
+	BaseURL                 string
 	FrontendURL             string
 	AllowedOrigin           string
 	BcryptCost              int
@@ -150,13 +150,13 @@ func LoadConfig() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:          viper.GetString("APP_NAME"),
-			Env:           viper.GetString("APP_ENV"),
-			Debug:         viper.GetBool("APP_DEBUG"),
-			Port:          viper.GetInt("APP_PORT"),
-			Timezone:      viper.GetString("APP_TIMEZONE"),
-			EncryptionKey: viper.GetString("APP_ENCRYPTION_KEY"),
-			BaseURL:       viper.GetString("APP_BASE_URL"),
+			Name:                    viper.GetString("APP_NAME"),
+			Env:                     viper.GetString("APP_ENV"),
+			Debug:                   viper.GetBool("APP_DEBUG"),
+			Port:                    viper.GetInt("APP_PORT"),
+			Timezone:                viper.GetString("APP_TIMEZONE"),
+			EncryptionKey:           viper.GetString("APP_ENCRYPTION_KEY"),
+			BaseURL:                 viper.GetString("APP_BASE_URL"),
 			FrontendURL:             viper.GetString("APP_FRONTEND_URL"),
 			AllowedOrigin:           viper.GetString("ALLOWED_ORIGIN"),
 			BcryptCost:              viper.GetInt("BCRYPT_COST"),

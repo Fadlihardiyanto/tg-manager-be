@@ -119,7 +119,7 @@ func TestEncrypt_InvalidKey(t *testing.T) {
 		name string
 		key  string
 	}{
-		{"too short key", "short-key-16-bytes"},                 // 19 bytes
+		{"too short key", "short-key-16-bytes"},                     // 19 bytes
 		{"too long key", "this-key-is-way-too-long-at-forty-bytes"}, // 41 bytes
 		{"empty key", ""},
 	}

@@ -48,9 +48,9 @@ type PackageGroupAssociateRequest struct {
 }
 
 type PackageFilterRequest struct {
-	Page        int      `json:"page"`
-	Limit       int      `json:"limit"`
-	Search      string   `json:"search"`
-	IsAllAccess []bool   `json:"is_all_access"`
-	IsActive    []bool   `json:"is_active"`
+	Page        int    `json:"page"`
+	Limit       int    `json:"limit"`
+	Search      string `json:"search"`
+	IsAllAccess []bool `json:"is_all_access"`
+	IsActive    []bool `json:"is_active"`
 }

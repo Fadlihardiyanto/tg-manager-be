@@ -227,10 +227,10 @@ func TestValidate(t *testing.T) {
 		{
 			name: "expired",
 			discount: &Discount{
-				IsActive:  true,
-				ValidFrom: past.Add(-2 * time.Hour),
+				IsActive:   true,
+				ValidFrom:  past.Add(-2 * time.Hour),
 				ValidUntil: func() *time.Time { e := past; return &e }(),
-				MaxUsage: -1,
+				MaxUsage:   -1,
 			},
 			amount:         decimal.NewFromInt(100000),
 			wantErr:        true,

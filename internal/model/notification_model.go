@@ -4,8 +4,8 @@ package model
 type EmailNotificationType string
 
 const (
-	EmailNotificationOTP               EmailNotificationType = "otp"
-	EmailNotificationAdminVerification EmailNotificationType = "admin_verification"
+	EmailNotificationOTP                EmailNotificationType = "otp"
+	EmailNotificationAdminVerification  EmailNotificationType = "admin_verification"
 	EmailNotificationTenantVerification EmailNotificationType = "tenant_verification"
 )
 

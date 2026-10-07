@@ -98,7 +98,7 @@ func MembersToResponse(users []model.AggregatedMemberRow, orderCounts map[string
 	responses := make([]model.MemberResponse, 0, len(users))
 	for i := range users {
 		count := orderCounts[users[i].ID.String()]
-		
+
 		var subscriptions []model.MemberSubscriptionBrief
 		if len(users[i].Subscriptions) > 0 && string(users[i].Subscriptions) != "null" {
 			_ = json.Unmarshal(users[i].Subscriptions, &subscriptions)

@@ -11,9 +11,9 @@ import (
 
 func TestMapMemberOrderWebhookStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func(n *midtrans.WebhookNotification)
-		want     string
+		name        string
+		setup       func(n *midtrans.WebhookNotification)
+		want        string
 		wantHandled bool
 	}{
 		{

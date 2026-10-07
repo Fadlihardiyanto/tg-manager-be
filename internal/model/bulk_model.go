@@ -9,7 +9,7 @@ type BulkDeleteRequest struct {
 
 // BulkDeleteResult reports how many items were deleted and which failed.
 type BulkDeleteResult struct {
-	Deleted int                `json:"deleted"`
+	Deleted int                 `json:"deleted"`
 	Failed  []BulkDeleteFailure `json:"failed,omitempty"`
 }
 

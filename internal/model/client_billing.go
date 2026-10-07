@@ -37,7 +37,7 @@ type CancelBillingRequest struct {
 	BillingID         uuid.UUID `json:"billing_id" validate:"required,uuid"`
 	Reason            string    `json:"reason"`
 	CallerPermissions []string  `json:"-"`
-	CallerRoles       []string              `json:"-" validate:"-"`
+	CallerRoles       []string  `json:"-" validate:"-"`
 	AdminID           uuid.UUID `json:"-"`
 }
 
@@ -48,7 +48,7 @@ type AdminListBillingRequest struct {
 	Page              int        `query:"page"`
 	Limit             int        `query:"limit"`
 	CallerPermissions []string   `json:"-"`
-	CallerRoles       []string              `json:"-" validate:"-"`
+	CallerRoles       []string   `json:"-" validate:"-"`
 }
 
 // ── Response ─────────────────────────────────────────────────

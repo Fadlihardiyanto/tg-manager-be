@@ -152,10 +152,10 @@ func (c *TenantAuthController) Logout(ctx fiber.Ctx) error {
 // GET /api/v1/auth/me
 func (c *TenantAuthController) Me(ctx fiber.Ctx) error {
 	log := logger.FromContext(ctx.Context(), c.log)
-	
+
 	userID := middleware.GetTenantUserID(ctx)
 	clientID := middleware.GetTenantClientID(ctx)
-	
+
 	log.Info("tenant auth get profile request", zap.String("user_id", userID.String()), zap.String("client_id", clientID.String()))
 
 	res, err := c.tenantAuthUC.GetProfile(ctx.Context(), userID, clientID)

@@ -12,15 +12,15 @@ type MigrationMemberCSVRow struct {
 }
 
 type MigrationMemberImportRequest struct {
-	PackageID string                    `json:"package_id" validate:"required,uuid"`
-	Members   []MigrationMemberCSVRow   `json:"members" validate:"required,min=1,max=1000,dive"`
+	PackageID string                  `json:"package_id" validate:"required,uuid"`
+	Members   []MigrationMemberCSVRow `json:"members" validate:"required,min=1,max=1000,dive"`
 }
 
 type MigrationMemberImportResponse struct {
-	TotalSubmitted int                              `json:"total_submitted"`
-	Imported       int                              `json:"imported"`
-	Skipped        int                              `json:"skipped"`
-	Errors         []MigrationMemberImportRowError  `json:"errors,omitempty"`
+	TotalSubmitted int                             `json:"total_submitted"`
+	Imported       int                             `json:"imported"`
+	Skipped        int                             `json:"skipped"`
+	Errors         []MigrationMemberImportRowError `json:"errors,omitempty"`
 }
 
 type MigrationMemberImportRowError struct {

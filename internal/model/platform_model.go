@@ -40,44 +40,44 @@ type PlatformPlanResponse struct {
 }
 
 type CreatePlatformPlanRequest struct {
-	Name              string                `json:"name" validate:"required,min=2,max=50,alphanum"`
-	DisplayName       string                `json:"display_name" validate:"required,max=100"`
-	PriceMonthly      decimal.Decimal       `json:"price_monthly" validate:"gte=0"`
-	PriceYearly       decimal.Decimal       `json:"price_yearly" validate:"gte=0"`
-	MaxBots           int                   `json:"max_bots" validate:"gte=-1"`
-	MaxGroups         int                   `json:"max_groups" validate:"gte=-1"`
-	MaxPackages       int                   `json:"max_packages" validate:"gte=-1"`
-	MaxMembers        int                   `json:"max_members" validate:"gte=-1"`
-	MaxCustomCommands int                   `json:"max_custom_commands" validate:"gte=-1"`
-	MaxBroadcasts     int                   `json:"max_broadcasts" validate:"gte=-1"`
-	AllowMediaBroadcast bool                `json:"allow_media_broadcast"`
-	AllowDiscountSystem bool                `json:"allow_discount_system"`
-	AllowReportsExport  bool                `json:"allow_reports_export"`
-	AllowHighPriority   bool                `json:"allow_high_priority"`
-	TransactionLimit    int                 `json:"transaction_limit" validate:"gte=-1"`
-	Features          []PlatformPlanFeature `json:"features" validate:"dive"`
-	IsActive          bool                  `json:"is_active"`
-	IsLandingPage     bool                  `json:"is_landing_page"`
+	Name                string                `json:"name" validate:"required,min=2,max=50,alphanum"`
+	DisplayName         string                `json:"display_name" validate:"required,max=100"`
+	PriceMonthly        decimal.Decimal       `json:"price_monthly" validate:"gte=0"`
+	PriceYearly         decimal.Decimal       `json:"price_yearly" validate:"gte=0"`
+	MaxBots             int                   `json:"max_bots" validate:"gte=-1"`
+	MaxGroups           int                   `json:"max_groups" validate:"gte=-1"`
+	MaxPackages         int                   `json:"max_packages" validate:"gte=-1"`
+	MaxMembers          int                   `json:"max_members" validate:"gte=-1"`
+	MaxCustomCommands   int                   `json:"max_custom_commands" validate:"gte=-1"`
+	MaxBroadcasts       int                   `json:"max_broadcasts" validate:"gte=-1"`
+	AllowMediaBroadcast bool                  `json:"allow_media_broadcast"`
+	AllowDiscountSystem bool                  `json:"allow_discount_system"`
+	AllowReportsExport  bool                  `json:"allow_reports_export"`
+	AllowHighPriority   bool                  `json:"allow_high_priority"`
+	TransactionLimit    int                   `json:"transaction_limit" validate:"gte=-1"`
+	Features            []PlatformPlanFeature `json:"features" validate:"dive"`
+	IsActive            bool                  `json:"is_active"`
+	IsLandingPage       bool                  `json:"is_landing_page"`
 }
 
 type UpdatePlatformPlanRequest struct {
-	DisplayName       string                `json:"display_name" validate:"omitempty,max=100"`
-	PriceMonthly      *decimal.Decimal      `json:"price_monthly" validate:"omitempty,gte=0"`
-	PriceYearly       *decimal.Decimal      `json:"price_yearly" validate:"omitempty,gte=0"`
-	MaxBots           *int                  `json:"max_bots" validate:"omitempty,gte=-1"`
-	MaxGroups         *int                  `json:"max_groups" validate:"omitempty,gte=-1"`
-	MaxPackages       *int                  `json:"max_packages" validate:"omitempty,gte=-1"`
-	MaxMembers        *int                  `json:"max_members" validate:"omitempty,gte=-1"`
-	MaxCustomCommands *int                  `json:"max_custom_commands" validate:"omitempty,gte=-1"`
-	MaxBroadcasts     *int                  `json:"max_broadcasts" validate:"omitempty,gte=-1"`
-	AllowMediaBroadcast *bool               `json:"allow_media_broadcast"`
-	AllowDiscountSystem *bool               `json:"allow_discount_system"`
-	AllowReportsExport  *bool               `json:"allow_reports_export"`
-	AllowHighPriority   *bool               `json:"allow_high_priority"`
-	TransactionLimit    *int                `json:"transaction_limit" validate:"omitempty,gte=-1"`
-	Features          []PlatformPlanFeature `json:"features" validate:"omitempty,dive"`
-	IsActive          *bool                 `json:"is_active"`
-	IsLandingPage     *bool                 `json:"is_landing_page"`
+	DisplayName         string                `json:"display_name" validate:"omitempty,max=100"`
+	PriceMonthly        *decimal.Decimal      `json:"price_monthly" validate:"omitempty,gte=0"`
+	PriceYearly         *decimal.Decimal      `json:"price_yearly" validate:"omitempty,gte=0"`
+	MaxBots             *int                  `json:"max_bots" validate:"omitempty,gte=-1"`
+	MaxGroups           *int                  `json:"max_groups" validate:"omitempty,gte=-1"`
+	MaxPackages         *int                  `json:"max_packages" validate:"omitempty,gte=-1"`
+	MaxMembers          *int                  `json:"max_members" validate:"omitempty,gte=-1"`
+	MaxCustomCommands   *int                  `json:"max_custom_commands" validate:"omitempty,gte=-1"`
+	MaxBroadcasts       *int                  `json:"max_broadcasts" validate:"omitempty,gte=-1"`
+	AllowMediaBroadcast *bool                 `json:"allow_media_broadcast"`
+	AllowDiscountSystem *bool                 `json:"allow_discount_system"`
+	AllowReportsExport  *bool                 `json:"allow_reports_export"`
+	AllowHighPriority   *bool                 `json:"allow_high_priority"`
+	TransactionLimit    *int                  `json:"transaction_limit" validate:"omitempty,gte=-1"`
+	Features            []PlatformPlanFeature `json:"features" validate:"omitempty,dive"`
+	IsActive            *bool                 `json:"is_active"`
+	IsLandingPage       *bool                 `json:"is_landing_page"`
 }
 
 type PlatformPlanFilterRequest struct {

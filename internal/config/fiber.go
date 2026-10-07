@@ -3,8 +3,8 @@ package config
 import (
 	"errors"
 
-	"github.com/bytedance/sonic"
 	"github.com/Fadlihardiyanto/telegram-management-app/pkg/helper"
+	"github.com/bytedance/sonic"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/recover"

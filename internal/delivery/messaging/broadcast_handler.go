@@ -22,13 +22,13 @@ import (
 )
 
 type BroadcastHandler struct {
-	db                *gorm.DB
-	broadcastRepo     repository.IBroadcastRepository
-	botRepo           repository.ITelegramBotRepository
-	telegramFactory   telegram.BotFactory
-	s3Client          *pkg_s3.Client
-	encryptionKey     string
-	logger            *zap.Logger
+	db              *gorm.DB
+	broadcastRepo   repository.IBroadcastRepository
+	botRepo         repository.ITelegramBotRepository
+	telegramFactory telegram.BotFactory
+	s3Client        *pkg_s3.Client
+	encryptionKey   string
+	logger          *zap.Logger
 }
 
 const broadcastPresignTTL = 30 * time.Minute

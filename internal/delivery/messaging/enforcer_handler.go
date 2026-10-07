@@ -17,12 +17,12 @@ import (
 )
 
 type EnforcerHandler struct {
-	db              *gorm.DB
-	botRepo         repository.ITelegramBotRepository
+	db               *gorm.DB
+	botRepo          repository.ITelegramBotRepository
 	subscriptionRepo repository.ISubscriptionRepository
-	telegramFactory telegram.BotFactory
-	encryptionKey   string
-	logger          *zap.Logger
+	telegramFactory  telegram.BotFactory
+	encryptionKey    string
+	logger           *zap.Logger
 }
 
 func NewEnforcerHandler(
@@ -34,12 +34,12 @@ func NewEnforcerHandler(
 	logger *zap.Logger,
 ) *EnforcerHandler {
 	return &EnforcerHandler{
-		db:              db,
-		botRepo:         botRepo,
+		db:               db,
+		botRepo:          botRepo,
 		subscriptionRepo: subscriptionRepo,
-		telegramFactory: telegramFactory,
-		encryptionKey:   encryptionKey,
-		logger:          logger,
+		telegramFactory:  telegramFactory,
+		encryptionKey:    encryptionKey,
+		logger:           logger,
 	}
 }
 
@@ -106,7 +106,7 @@ func (h *EnforcerHandler) Handle(ctx context.Context, body []byte) error {
 	if err := botClient.KickChatMember(ctx, payload.TelegramChatID, payload.TelegramUserID, untilDate); err != nil {
 		if strings.Contains(err.Error(), "USER_NOT_PARTICIPANT") {
 			h.logger.Warn("enforcer handler: user is not a participant of the group, skipping eviction",
-				append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Int64("chat_id", payload.TelegramChatID))...
+				append(logFields, zap.Int64("user_id", payload.TelegramUserID), zap.Int64("chat_id", payload.TelegramChatID))...,
 			)
 			return nil // ignore this error, successfully consumed
 		}

@@ -178,5 +178,3 @@ func renderTenantVerificationTemplate(name, verificationLink string) (string, er
 	}
 	return buf.String(), nil
 }
-
-

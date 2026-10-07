@@ -2,8 +2,8 @@ package entity
 
 import (
 	"database/sql/driver"
-	json "github.com/bytedance/sonic"
 	"fmt"
+	json "github.com/bytedance/sonic"
 )
 
 // JSONMap adalah custom type untuk kolom JSONB di PostgreSQL
